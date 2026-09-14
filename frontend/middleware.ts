@@ -36,6 +36,6 @@ export const config = {
   // Skip static assets, the API namespace, and the files a Trusted Web Activity
   // reads from the origin (manifest, service worker, offline page, asset links).
   matcher: [
-    "/((?!_next/static|_next/image|manifest\\.webmanifest|sw\\.js|offline$|\\.well-known/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|manifest\\.webmanifest|sw\\.js|offline$|architecture$|legal/|\\.well-known/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 }

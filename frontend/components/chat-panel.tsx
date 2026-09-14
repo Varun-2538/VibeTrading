@@ -468,10 +468,11 @@ export default function ChatPanel({
         <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground/70">
           Analysis, not financial advice — and the assistant can be wrong.
           Decisions are yours.{" "}
+          {/* Same tab on purpose. Inside the Android app a new tab is a
+              Custom Tab - Chrome's own close button and URL bar drawn over
+              the app - which is exactly the chrome the app exists to hide. */}
           <a
             href="/legal/risk"
-            target="_blank"
-            rel="noopener noreferrer"
             className="underline underline-offset-2 hover:text-muted-foreground"
           >
             Risk disclosure
