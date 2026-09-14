@@ -123,6 +123,26 @@ def parse_draft(raw: str, default_symbol: Optional[str], default_timeframe: str)
         raise RuleParseError(f"That rule isn't valid ({where}: {first.get('msg')}).")
 
 
+KIND_NAMES = {
+    "W": "double bottom", "M": "double top", "HS": "head and shoulders",
+    "IHS": "inverse head and shoulders", "CUP": "cup and handle",
+}
+
+
+def describe_draft(draft: RuleCreate) -> str:
+    """One line for the confirm card, whichever form the draft took."""
+    params = draft.params.model_dump()
+    if params.get("agent") == "pattern":
+        kinds = " or ".join(KIND_NAMES.get(k, k) for k in params.get("kinds", []))
+        states = "/".join(params.get("states", ["confirmed"]))
+        return f"{kinds} {states}, confidence at least {params.get('min_confidence', 70):g}%"
+    within = params.get("within_bars", 3)
+    return (
+        f"{describe_steps(params.get('steps', []))}, "
+        f"each step within {within} bar{'s' if within != 1 else ''} of the last"
+    )
+
+
 async def draft_rule(message: str, default_symbol: Optional[str], default_timeframe: str) -> RuleCreate:
     """One short, deterministic call. Nothing is armed here."""
     llm = make_llm(temperature=0, max_tokens=500)
