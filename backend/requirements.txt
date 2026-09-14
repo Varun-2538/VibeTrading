@@ -1,0 +1,26 @@
+fastapi
+uvicorn[standard]
+websockets
+python-dotenv
+asyncpg
+redis
+pydantic
+pydantic-settings
+
+# AI & Agents
+langchain
+langchain-cerebras
+langchain-core
+
+# MCP
+mcp
+
+# Data & API
+httpx
+pandas
+numpy
+apscheduler
+
+# Database
+sqlalchemy
+alembic
