@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from analysis.candles import SHAPE_BIAS
 from analysis.levels import detect_levels
-from analysis.patterns import detect_double_patterns
+from analysis.patterns_big import PATTERN_BIAS, detect_all_patterns
 from analysis.sequence import describe_steps, match_sequence
 from models.rule_schemas import STRENGTH_ORDER
 from repositories.rule_repository import RuleEventRepository, RuleRepository
@@ -114,7 +114,7 @@ def _match_pattern(
         if pattern["confidence"] < min_confidence:
             continue
 
-        direction = "bullish" if pattern["kind"] == "W" else "bearish"
+        direction = PATTERN_BIAS.get(pattern["kind"], "neutral")
         provisional = pattern["state"] != "confirmed"
         return _pattern_identity(pattern), direction, provisional, pattern
 
@@ -239,7 +239,7 @@ class RuleEngine:
 
         if agent == "pattern":
             if patterns is None:
-                patterns = detect_double_patterns(
+                patterns = detect_all_patterns(
                     candles,
                     strictness=params.get("strictness", "balanced"),
                     source=params.get("source", "wick"),
@@ -429,7 +429,7 @@ class RuleEngine:
                         params.get("scale", "swing"),
                     )
                     if key not in pattern_cache:
-                        pattern_cache[key] = detect_double_patterns(
+                        pattern_cache[key] = detect_all_patterns(
                             closed,
                             strictness=key[0],
                             source=key[1],

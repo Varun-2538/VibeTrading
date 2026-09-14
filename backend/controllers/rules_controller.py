@@ -11,7 +11,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 
-from analysis.patterns import KINDS, PRESETS, SCALES, SOURCES
+from analysis.patterns import PRESETS, SCALES, SOURCES
+from analysis.patterns_big import ALL_KINDS as KINDS
 from services.auth_service import AuthError, read_token
 from models.rule_schemas import (
     PATTERN_STATES,

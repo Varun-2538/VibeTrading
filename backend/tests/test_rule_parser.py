@@ -115,3 +115,24 @@ def test_unknown_structure_event_is_rejected():
     data["params"]["steps"] = [{"type": "structure", "event": "order_block", "side": "bullish"}]
     with pytest.raises(RuleParseError, match="event"):
         parse_draft(json.dumps(data), None, "1h")
+
+
+def test_pattern_form_is_accepted_and_named():
+    data = {"symbol": "BTCUSDT", "timeframe": "4h",
+            "params": {"agent": "pattern", "kinds": ["HS", "IHS"], "states": ["confirmed"], "min_confidence": 65}}
+    rule = parse_draft(json.dumps(data), None, "1h")
+    assert rule.params.agent == "pattern"
+    assert rule.params.kinds == ["HS", "IHS"]
+    assert rule.resolved_persist_bars() == 1  # patterns can repaint; keep the wait
+    assert rule.name == "BTCUSDT HS/IHS confirmed"
+
+
+def test_pattern_form_agent_is_inferred_from_kinds():
+    data = {"symbol": "ETHUSDT", "params": {"kinds": ["CUP"]}}
+    assert parse_draft(json.dumps(data), None, "1h").params.agent == "pattern"
+
+
+def test_unknown_pattern_kind_is_rejected():
+    data = {"symbol": "ETHUSDT", "params": {"agent": "pattern", "kinds": ["WEDGE"]}}
+    with pytest.raises(RuleParseError, match="kinds"):
+        parse_draft(json.dumps(data), None, "1h")

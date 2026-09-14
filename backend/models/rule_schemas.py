@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from analysis.candles import DEFAULT_DOJI_BODY_PCT, SHAPES
 from analysis.levels import MAX_LEVELS_PER_SIDE  # noqa: F401  (kept for callers)
 from analysis.patterns import DEFAULT_SCALE, KINDS, PRESETS, SCALES, SOURCES
+from analysis.patterns_big import ALL_KINDS
 from analysis.sequence import DEFAULT_WITHIN_BARS
 from analysis.structure import EVENTS as STRUCTURE_EVENTS
 from analysis.structure import SIDES as STRUCTURE_SIDES
@@ -23,7 +24,7 @@ from analysis.structure import SIDES as STRUCTURE_SIDES
 STRENGTH_ORDER = ("weak", "medium", "strong")
 PATTERN_STATES = ("forming", "approaching", "confirmed")
 
-PatternKind = Literal["W", "M"]
+PatternKind = Literal[ALL_KINDS]  # type: ignore[valid-type]
 PatternState = Literal["forming", "approaching", "confirmed"]
 Strength = Literal["weak", "medium", "strong"]
 

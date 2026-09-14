@@ -21,6 +21,7 @@ export default function RiskPage() {
       <h2>This is not financial advice</h2>
       <p>
         Nothing produced by VibeTrading — the levels, the W and M patterns, the
+        head-and-shoulders and cup-and-handle shapes, the candle shapes, the
         confidence percentages, the measured-move targets, the alerts your
         rules fire, or anything the chat assistant writes — is investment
         advice, a recommendation, or a solicitation to buy or sell anything. It is arithmetic applied to public

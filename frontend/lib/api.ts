@@ -93,6 +93,10 @@ export type PatternSource = (typeof SOURCES)[number]
 
 /** Where a pattern is in its life, judged against the latest close. */
 export type PatternState = "forming" | "approaching" | "confirmed"
+export const PATTERN_KINDS = ["W", "M", "HS", "IHS", "CUP"] as const
+export type PatternKind = (typeof PATTERN_KINDS)[number]
+/** Which way each kind resolves; drives the overlay colour and label placement. */
+export const PATTERN_BULLISH: Record<PatternKind, boolean> = { W: true, M: false, HS: false, IHS: true, CUP: true }
 
 export interface PatternPoint {
   time: number
@@ -101,7 +105,8 @@ export interface PatternPoint {
 }
 
 export interface Pattern {
-  kind: "W" | "M"
+  /** W/M are double bottoms/tops; HS/IHS head and shoulders; CUP cup and handle. */
+  kind: PatternKind
   state: PatternState
   confidence: number
   components: { similarity: number; depth: number; symmetry: number }
@@ -120,7 +125,7 @@ export interface PatternResponse {
   patterns: Pattern[]
 }
 
-/** The three points of a pattern in chronological order, whatever its kind. */
+/** The points of a pattern in chronological order, whatever its kind or size. */
 export function patternPoints(pattern: Pattern): PatternPoint[] {
   return Object.values(pattern.points).sort((a, b) => a.index - b.index)
 }

@@ -36,12 +36,19 @@ Schema (every key required unless marked optional):
   "name": string, at most 80 chars, short human label,
   "symbol": one of BTCUSDT ETHUSDT BNBUSDT SOLUSDT XRPUSDT ADAUSDT DOGEUSDT DOTUSDT AVAXUSDT,
   "timeframe": one of 1m 5m 15m 30m 1h 4h 1d,
-  "params": {
-    "agent": "sequence",
-    "steps": [ one to four steps, in the order they must happen ],
-    "within_bars": integer 1-50, how many bars a step may follow the previous one by (optional, default 3)
-  }
+  "params": ONE of the two forms below
 }
+
+Form A - a sequence of events:
+  {"agent": "sequence",
+   "steps": [ one to four steps, in the order they must happen ],
+   "within_bars": integer 1-50, how many bars a step may follow the previous one by (optional, default 3)}
+
+Form B - a chart pattern:
+  {"agent": "pattern",
+   "kinds": list from W (double bottom), M (double top), HS (head and shoulders), IHS (inverse head and shoulders), CUP (cup and handle),
+   "states": ["confirmed"] by default; add "forming" or "approaching" only if the user asks to be told while it is still developing,
+   "min_confidence": number 0-100 (optional, default 70)}
 
 A step is exactly one of:
   {"type": "candle", "shape": one of SHAPES below, "max_body_pct": number 0-50 (optional, doji only, default 10)}
@@ -53,7 +60,8 @@ Structure wording: "liquidity sweep", "stop hunt", "sweep the lows", "liquidity 
 Synonyms: "pin bar" or "bullish pin" or "dragonfly" -> hammer; "inverted hammer" or "bearish pin" or "gravestone" -> shooting_star; "engulfing" alone -> ask which by direction words, default bullish_engulfing; "inside candle" or "harami" -> inside_bar.
 
 Rules:
-- Only the shapes, indicators and structure events listed exist. If the sentence needs anything else (MACD, EMA, volume, open interest, three white soldiers, morning star), output {"error": "<one sentence saying which part is unsupported>"}.
+- Use Form B when the sentence names a chart pattern (double bottom/top, W, M, head and shoulders, inverse head and shoulders, cup and handle). Use Form A for candles, indicators and structure events. A pattern cannot be a step inside a sequence.
+- Only the shapes, indicators, structure events and pattern kinds listed exist. If the sentence needs anything else (MACD, EMA, volume, open interest, three white soldiers, morning star), output {"error": "<one sentence saying which part is unsupported>"}.
 - "RSI crossover of 14" or "RSI 14 crossover" means period 14; if the level is not stated, use 30 for "above"/bullish/oversold wording and 70 for "below"/bearish/overbought wording; if direction is not stated, use "above" with level 30.
 - "followed by", "then", "after" set step order. "within N candles/bars" sets within_bars.
 - If the sentence names no symbol, use the default symbol given. Same for timeframe.
@@ -96,9 +104,11 @@ def parse_draft(raw: str, default_symbol: Optional[str], default_timeframe: str)
 
     params = data.get("params") or {}
     if isinstance(params, dict):
-        params.setdefault("agent", "sequence")
+        params.setdefault("agent", "pattern" if "kinds" in params else "sequence")
         data["params"] = params
 
+    if not data.get("name") and isinstance(params, dict) and params.get("kinds"):
+        data["name"] = f"{data['symbol']} {'/'.join(params['kinds'])} {'/'.join(params.get('states', ['confirmed']))}"[:80]
     if not data.get("name") and isinstance(params, dict) and params.get("steps"):
         try:
             data["name"] = f"{data['symbol']} {describe_steps(params['steps'])}"[:80]

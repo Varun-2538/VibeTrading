@@ -447,3 +447,26 @@ async def test_sequence_with_a_structure_step_fires_on_a_sweep(monkeypatch):
     assert blocked is None and signal is not None
     assert signal.direction == "bullish"
     assert signal.evidence["summary"] == "bullish sweep"
+
+
+async def test_pattern_rule_accepts_big_kinds_and_reads_their_bias(monkeypatch):
+    """A confirmed head and shoulders is bearish; the rule engine must say so."""
+    from test_patterns import ramp
+    from test_patterns_big import hs_series
+
+    async def no_exists(_key):
+        return False
+
+    monkeypatch.setattr(RuleEventRepository, "exists", no_exists)
+    bars = hs_series(tail=ramp(110, 97, 8))
+    rule = {
+        "id": "00000000-0000-0000-0000-0000000000hs", "owner_key": "0xabc", "agent": "pattern",
+        "symbol": "BTCUSDT", "timeframe": "1h",
+        "params": {"agent": "pattern", "kinds": ["HS"], "states": ["confirmed"], "min_confidence": 0,
+                   "strictness": "balanced", "source": "wick", "scale": "swing", "lookback": 500},
+        "persist_bars": 0, "cooldown_secs": 0, "pending": None, "last_candle_time": None, "last_fired_at": None,
+    }
+    signal, blocked = await RuleEngine.evaluate_rule(rule, bars, dry_run=True)
+    assert blocked is None and signal is not None
+    assert signal.direction == "bearish"
+    assert signal.evidence["kind"] == "HS"

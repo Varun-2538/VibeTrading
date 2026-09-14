@@ -19,7 +19,7 @@ import numpy as np
 from analysis import candles as candle_shapes
 from analysis import indicators
 from analysis.levels import detect_levels
-from analysis.patterns import detect_double_patterns
+from analysis.patterns_big import detect_all_patterns
 from analysis import structure as market_structure
 
 # List caps. Raising these costs tokens on every question.
@@ -49,7 +49,10 @@ UNSUPPORTED = (
 # What the model may talk about. Grows as detectors are added.
 VOCABULARY = {
     "levels": ["support", "resistance"],
-    "patterns": ["W (double bottom)", "M (double top)"],
+    "patterns": [
+        "W (double bottom)", "M (double top)",
+        "HS (head and shoulders)", "IHS (inverse head and shoulders)", "CUP (cup and handle)",
+    ],
     "candles": list(candle_shapes.SHAPES),
     "indicators": ["rsi", "ema", "macd"],
     "structure": [
@@ -96,7 +99,7 @@ def _patterns(
     scale: str,
     places: int,
 ) -> List[Dict[str, Any]]:
-    found = detect_double_patterns(
+    found = detect_all_patterns(
         list(candles),
         strictness=strictness,
         source=source,
