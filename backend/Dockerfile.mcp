@@ -1,0 +1,41 @@
+# TradeSmart.AI MCP Server Dockerfile
+# Docker MCP Gateway Implementation for Hackathon
+
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy only necessary files for MCP server
+COPY config/ ./config/
+COPY models/ ./models/
+COPY repositories/ ./repositories/
+COPY services/ ./services/
+COPY mcp/ ./mcp/
+COPY utils/ ./utils/
+
+# Create non-root user
+RUN useradd -m -u 1000 mcpuser && chown -R mcpuser:mcpuser /app
+USER mcpuser
+
+# Expose MCP server port (stdio-based, but expose for monitoring)
+EXPOSE 5000
+
+# Health check for MCP server
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python -c "import sys; sys.exit(0)" || exit 1
+
+# Run MCP server
+CMD ["python", "mcp/server.py"]

@@ -1,0 +1,90 @@
+# --- General ---
+# Keep Markdown files tracked
+!*.md
+!**/*.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.rar
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Node / Frontend ---
+node_modules/
+.next/
+.out/
+out/
+.build/
+build/
+dist/
+.cache/
+.turbo/
+.eslintcache
+.stylelintcache
+coverage/
+.vercel/
+.netlify/
+.storybook-out/
+
+# Package managers cache
+.pnpm-store/
+
+# Env / secrets
+.env
+.env.*
+*.local
+
+# --- Python / Backend ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual envs
+.venv/
+venv/
+env/
+ENV/
+
+# Python tooling caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Python build
+backend/build/
+backend/dist/
+*.egg-info/
+.eggs/
+
+# --- IDE / Editors ---
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
+
+# --- Docker / Compose runtime ---
+.env.docker
+.env.supabase
+
+# --- Misc ---
+# SQLite or local dbs (uncomment if you generate local DBs)
+# *.db
+# *.sqlite
+
+# Keep important docs
+!README.md
+!**/README.md
