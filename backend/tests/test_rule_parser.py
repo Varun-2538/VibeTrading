@@ -136,3 +136,14 @@ def test_unknown_pattern_kind_is_rejected():
     data = {"symbol": "ETHUSDT", "params": {"agent": "pattern", "kinds": ["WEDGE"]}}
     with pytest.raises(RuleParseError, match="kinds"):
         parse_draft(json.dumps(data), None, "1h")
+
+
+def test_describe_draft_covers_both_forms():
+    """The chat card once assumed every draft had steps; a pattern draft 500ed in production."""
+    from agents.rule_parser import describe_draft
+
+    seq = parse_draft(json.dumps(GOOD), None, "1h")
+    assert describe_draft(seq) == "doji, then RSI(14) crosses above 30, each step within 3 bars of the last"
+
+    pat = parse_draft(json.dumps({"symbol": "ETHUSDT", "params": {"kinds": ["IHS"], "min_confidence": 60}}), None, "4h")
+    assert describe_draft(pat) == "inverse head and shoulders confirmed, confidence at least 60%"
