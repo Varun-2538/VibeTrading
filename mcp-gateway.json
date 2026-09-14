@@ -1,0 +1,92 @@
+{
+  "name": "tradesmart-mcp-gateway",
+  "version": "1.0.0",
+  "description": "Docker MCP Gateway for TradeSmart.AI - AI-powered trading strategy builder",
+  "server": {
+    "type": "stdio",
+    "command": "python",
+    "args": ["mcp/server.py"],
+    "env": {
+      "PYTHONUNBUFFERED": "1"
+    }
+  },
+  "tools": [
+    {
+      "name": "get_ohlc_data",
+      "description": "Fetch OHLC candlestick data from TimescaleDB for technical analysis",
+      "category": "data"
+    },
+    {
+      "name": "calculate_indicators",
+      "description": "Calculate technical indicators (RSI, MACD, EMA) for trading signals",
+      "category": "analysis"
+    },
+    {
+      "name": "detect_liquidation_levels",
+      "description": "Detect support/resistance zones and liquidation levels from price action",
+      "category": "analysis"
+    },
+    {
+      "name": "create_chart_annotation",
+      "description": "Create visual annotations on trading charts (rectangles, lines, arrows)",
+      "category": "visualization"
+    },
+    {
+      "name": "create_liquidation_zone",
+      "description": "Create rectangle annotations specifically for liquidation zones",
+      "category": "visualization"
+    },
+    {
+      "name": "generate_strategy",
+      "description": "Generate complete trading strategy from liquidation and indicator analyses",
+      "category": "strategy"
+    }
+  ],
+  "docker": {
+    "image": "tradesmart-mcp-server",
+    "network": "tradesmart-network",
+    "volumes": [
+      "./backend:/app"
+    ],
+    "environment": {
+      "CEREBRAS_API_KEY": "${CEREBRAS_API_KEY}",
+      "DATABASE_URL": "${DATABASE_URL}",
+      "REDIS_URL": "${REDIS_URL}"
+    }
+  },
+  "hackathon": {
+    "track": "Docker MCP Gateway",
+    "features": [
+      "6 specialized MCP tools for trading analysis",
+      "Containerized MCP server with Docker",
+      "Integration with Cerebras AI agents",
+      "Real-time market data processing",
+      "Chart annotation generation",
+      "Multi-service orchestration with docker-compose"
+    ],
+    "creative_aspects": [
+      "Using MCP tools for financial market analysis",
+      "AI-generated chart annotations via MCP",
+      "Parallel agent coordination through MCP gateway",
+      "Real-time strategy generation pipeline"
+    ]
+  },
+  "integration": {
+    "backend": {
+      "url": "http://backend:8000",
+      "endpoints": [
+        "/api/strategy/build",
+        "/api/ohlc/{symbol}",
+        "/api/indicators/{symbol}"
+      ]
+    },
+    "database": {
+      "type": "timescaledb",
+      "host": "timescaledb:5432"
+    },
+    "cache": {
+      "type": "redis",
+      "host": "redis:6379"
+    }
+  }
+}
