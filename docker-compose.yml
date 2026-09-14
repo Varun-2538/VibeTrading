@@ -1,0 +1,132 @@
+version: '3.9'
+
+services:
+  # TimescaleDB - Time-series database for OHLC data
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: tradesmart-timescaledb
+    environment:
+      POSTGRES_DB: tradesmart
+      POSTGRES_USER: ${TIMESCALE_USER:-tradesmart}
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:-tradesmart123}
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - tradesmart-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TIMESCALE_USER:-tradesmart}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - Caching layer for high-performance data retrieval
+  redis:
+    image: redis:7-alpine
+    container_name: tradesmart-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - tradesmart-network
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MCP Server - Docker MCP Gateway (Hackathon Track 3)
+  mcp-server:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.mcp
+    container_name: tradesmart-mcp-server
+    environment:
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY}
+      - DATABASE_URL=postgresql://${TIMESCALE_USER:-tradesmart}:${TIMESCALE_PASSWORD:-tradesmart123}@timescaledb:5432/tradesmart
+      - TIMESCALE_HOST=timescaledb
+      - TIMESCALE_PORT=5432
+      - TIMESCALE_DB=tradesmart
+      - TIMESCALE_USER=${TIMESCALE_USER:-tradesmart}
+      - TIMESCALE_PASSWORD=${TIMESCALE_PASSWORD:-tradesmart123}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - tradesmart-network
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+  # FastAPI Backend - Main API server with AI agents
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tradesmart-backend
+    environment:
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY}
+      - DATABASE_URL=postgresql://${TIMESCALE_USER:-tradesmart}:${TIMESCALE_PASSWORD:-tradesmart123}@timescaledb:5432/tradesmart
+      - TIMESCALE_HOST=timescaledb
+      - TIMESCALE_PORT=5432
+      - TIMESCALE_DB=tradesmart
+      - TIMESCALE_USER=${TIMESCALE_USER:-tradesmart}
+      - TIMESCALE_PASSWORD=${TIMESCALE_PASSWORD:-tradesmart123}
+      - REDIS_URL=redis://redis:6379
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - BACKEND_PORT=8000
+      - BINANCE_API_KEY=${BINANCE_API_KEY:-}
+      - BINANCE_API_SECRET=${BINANCE_API_SECRET:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mcp-server:
+        condition: service_started
+    networks:
+      - tradesmart-network
+    volumes:
+      - ./backend:/app
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend (Next.js) - Optional, uncomment when ready
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   container_name: tradesmart-frontend
+  #   environment:
+  #     - NEXT_PUBLIC_API_URL=http://backend:8000
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - backend
+  #   networks:
+  #     - tradesmart-network
+  #   restart: unless-stopped
+
+networks:
+  tradesmart-network:
+    driver: bridge
+    name: tradesmart-network
+
+volumes:
+  timescale_data:
+    name: tradesmart-timescale-data
+  redis_data:
+    name: tradesmart-redis-data

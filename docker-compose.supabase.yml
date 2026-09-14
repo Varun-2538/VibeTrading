@@ -1,0 +1,109 @@
+# Docker Compose for Supabase Setup (Lightweight)
+# No local database - uses Supabase cloud PostgreSQL
+
+version: '3.9'
+
+services:
+  # Redis - Caching layer (only service needed locally)
+  redis:
+    image: redis:7-alpine
+    container_name: tradesmart-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - tradesmart-network
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MCP Server - Docker MCP Gateway
+  mcp-server:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.mcp
+    container_name: tradesmart-mcp-server
+    environment:
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY}
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - tradesmart-network
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+  # FastAPI Backend - Main API server
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tradesmart-backend
+    environment:
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY}
+      - DATABASE_URL=${DATABASE_URL}  # Supabase connection
+      - REDIS_URL=redis://redis:6379
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - BACKEND_PORT=8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      mcp-server:
+        condition: service_started
+    networks:
+      - tradesmart-network
+    volumes:
+      - ./backend:/app
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  tradesmart-network:
+    driver: bridge
+    name: tradesmart-network
+
+volumes:
+  redis_data:
+    name: tradesmart-redis-data
+
+# ========================================
+# USAGE:
+# ========================================
+#
+# 1. Setup Supabase first (see SUPABASE-SETUP.md)
+#
+# 2. Create .env file:
+#    cp .env.supabase .env
+#    # Add your Supabase DATABASE_URL
+#
+# 3. Start services:
+#    docker-compose -f docker-compose.supabase.yml up -d
+#
+# 4. Seed database:
+#    docker exec tradesmart-backend python seed_data.py
+#
+# 5. Test API:
+#    curl http://localhost:8000/health
+#
+# ========================================
+# BENEFITS:
+# ========================================
+# ✅ No local database container
+# ✅ Faster startup
+# ✅ Less resource usage
+# ✅ Managed by Supabase
+# ✅ Automatic backups
+# ========================================
