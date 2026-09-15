@@ -24,8 +24,12 @@ def twaManifest = [
     applicationId: 'club.vibetrading.app',
     hostName: 'app.vibetrading.club', // The domain being opened in the TWA.
     launchUrl: '/', // The start path for the TWA. Must be relative to the domain.
-    name: 'VibetradingClub', // The application name.
-    launcherName: 'VibeTrading', // The name shown on the Android Launcher.
+    name: 'VibeTrading Club', // The application name.
+    // The same full name as the application label. It is longer than a
+    // launcher icon can show, so some launchers will truncate it - which is
+    // the deliberate choice: one name everywhere rather than a short one that
+    // reads as a different app.
+    launcherName: 'VibeTrading Club', // The name shown on the Android Launcher.
     themeColor: '#040609', // The color used for the status bar.
     themeColorDark: '#000000', // The color used for the dark status bar.
     navigationColor: '#000000', // The color used for the navigation bar.
@@ -68,8 +72,8 @@ android {
         // anything those devices ship.
         minSdkVersion 24
         targetSdkVersion 36
-        versionCode 3
-        versionName "1.1"
+        versionCode 4
+        versionName "1.2"
 
         // The name for the application
         resValue "string", "appName", twaManifest.name
