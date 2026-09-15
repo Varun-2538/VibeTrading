@@ -45,7 +45,14 @@ def twaManifest = [
     generatorApp: 'bubblewrap-cli', // Application that generated the Android Project
     // The fallback strategy for when Trusted Web Activity is not available. Possible values are
     // 'customtabs' and 'webview'.
-    fallbackType: 'customtabs',
+    // When the device's browser cannot verify this app against the site, the
+    // Trusted Web Activity falls back to this. 'customtabs' renders the site
+    // in a Custom Tab - with the browser's own close button, URL bar and menu
+    // drawn over the app, which is what the app exists to avoid. 'webview'
+    // renders in a WebView the app owns, so a verification failure is
+    // invisible instead of disfiguring. The TWA is still preferred whenever it
+    // does verify; this only changes the worst case.
+    fallbackType: 'webview',
     enableSiteSettingsShortcut: 'true',
     orientation: 'portrait',
 ]
@@ -57,8 +64,8 @@ android {
         applicationId "club.vibetrading.app"
         minSdkVersion 21
         targetSdkVersion 36
-        versionCode 1
-        versionName "1"
+        versionCode 2
+        versionName "1.1"
 
         // The name for the application
         resValue "string", "appName", twaManifest.name
