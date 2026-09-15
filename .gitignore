@@ -99,3 +99,7 @@ android/*.aab
 android/*.idsig
 *.keystore
 *.jks
+
+# Signed release bundles. Build artefacts, and a signed one should never be
+# committed - it is the thing an attacker would want and it is reproducible.
+android/releases/
