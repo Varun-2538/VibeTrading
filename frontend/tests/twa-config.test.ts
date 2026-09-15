@@ -41,6 +41,15 @@ describe("Android wrapper configuration", () => {
     expect(gradle).toContain(`applicationId "${twa.packageId}"`)
   })
 
+  it("declares a minimum SDK Play will accept", () => {
+    // Play's installer check rejects the upload below 24, and bubblewrap
+    // generates 21 by default - so this drifts back every time the project is
+    // regenerated, and the only signal is a failed release.
+    expect(twa.minSdkVersion).toBeGreaterThanOrEqual(24)
+    const gradleMin = Number(gradle.match(/minSdkVersion\s+(\d+)/)?.[1])
+    expect(gradleMin).toBe(twa.minSdkVersion)
+  })
+
   it("has a version code matching the manifest, for the next Play release", () => {
     const code = Number(gradle.match(/versionCode\s+(\d+)/)?.[1])
     expect(code).toBe(twa.appVersionCode)
