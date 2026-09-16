@@ -137,3 +137,111 @@ async def test_fetch_page_does_not_retry_a_bad_request():
     with pytest.raises(hs.HistoryFetchError, match="400"):
         await hs.fetch_page(client, "NOPE", "1h", 0, now_ms=NOW, sleep=no_sleep)
     assert len(client.calls) == 1
+
+
+class FakeRepo:
+    def __init__(self, latest=None):
+        self.latest = latest
+        self.rows = {}
+        self.trimmed = None
+
+    async def latest_time(self, symbol, timeframe):
+        return self.latest
+
+    async def upsert(self, symbol, timeframe, candles):
+        for c in candles:
+            self.rows[c["time"]] = c
+        return len(candles)
+
+    async def trim(self, symbol, timeframe, before_ms):
+        self.trimmed = before_ms
+        self.rows = {t: c for t, c in self.rows.items() if t >= before_ms}
+
+
+def fake_exchange(first_ms, step, now_ms, page=1000):
+    """A fetch function serving contiguous bars from first_ms up to the last closed bar."""
+    calls = []
+
+    async def fetch(client, symbol, timeframe, start_ms, *, now_ms=now_ms, sleep=None):
+        calls.append(start_ms)
+        t = max(start_ms, first_ms)
+        t += (-t) % step
+        out = []
+        while len(out) < page and t + step <= now_ms:
+            out.append({"time": t, "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0})
+            t += step
+        return out
+
+    return fetch, calls
+
+
+async def test_backfill_from_empty_assembles_contiguous_history():
+    step = hs.TIMEFRAME_MS["1h"]
+    start = hs.depth_start_ms("1h", NOW)
+    fetch, calls = fake_exchange(start, step, NOW)
+    repo = FakeRepo()
+    result = await hs.backfill("BTCUSDT", "1h", client=None, now_ms=NOW, repo=repo, fetch=fetch, sleep=no_sleep)
+    times = sorted(repo.rows)
+    assert times[0] == start
+    assert all(b - a == step for a, b in zip(times, times[1:]))
+    assert times[-1] + step <= NOW
+    assert result.bars == len(times) and result.pages == len(calls) and result.error is None
+    assert calls[0] == start
+
+
+async def test_backfill_resumes_after_the_newest_stored_bar():
+    step = hs.TIMEFRAME_MS["1h"]
+    last_closed_open = NOW - (NOW % step) - step
+    stored = last_closed_open - 5 * step
+    fetch, calls = fake_exchange(0, step, NOW)
+    repo = FakeRepo(latest=stored)
+    result = await hs.backfill("BTCUSDT", "1h", client=None, now_ms=NOW, repo=repo, fetch=fetch, sleep=no_sleep)
+    assert calls == [stored + step]
+    assert result.bars == 5
+
+
+async def test_backfill_trims_below_the_depth():
+    step = hs.TIMEFRAME_MS["5m"]
+    fetch, _ = fake_exchange(0, step, NOW)
+    repo = FakeRepo(latest=NOW - (NOW % step) - 2 * step)
+    await hs.backfill("BTCUSDT", "5m", client=None, now_ms=NOW, repo=repo, fetch=fetch, sleep=no_sleep)
+    assert repo.trimmed == hs.depth_start_ms("5m", NOW)
+
+
+async def test_backfill_keeps_everything_for_daily():
+    step = hs.TIMEFRAME_MS["1d"]
+    fetch, calls = fake_exchange(1_500_000_000_000 - (1_500_000_000_000 % step), step, NOW)
+    repo = FakeRepo()
+    await hs.backfill("BTCUSDT", "1d", client=None, now_ms=NOW, repo=repo, fetch=fetch, sleep=no_sleep)
+    assert calls[0] == 0
+    assert repo.trimmed is None
+
+
+async def test_backfill_keeps_pages_already_stored_when_a_later_page_fails():
+    step = hs.TIMEFRAME_MS["1h"]
+    good, _ = fake_exchange(hs.depth_start_ms("1h", NOW), step, NOW)
+    pages = {"n": 0}
+
+    async def flaky(client, symbol, timeframe, start_ms, *, now_ms, sleep=None):
+        pages["n"] += 1
+        if pages["n"] == 2:
+            raise hs.HistoryFetchError("boom")
+        return await good(client, symbol, timeframe, start_ms, now_ms=now_ms)
+
+    repo = FakeRepo()
+    result = await hs.backfill("BTCUSDT", "1h", client=None, now_ms=NOW, repo=repo, fetch=flaky, sleep=no_sleep)
+    assert result.error == "boom"
+    assert result.bars == 1000 and len(repo.rows) == 1000
+
+
+async def test_backfill_stops_when_a_page_does_not_advance():
+    step = hs.TIMEFRAME_MS["1h"]
+    start = hs.depth_start_ms("1h", NOW)
+
+    async def stuck(client, symbol, timeframe, start_ms, *, now_ms, sleep=None):
+        stuck.calls += 1
+        return [{"time": start, "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0}]
+
+    stuck.calls = 0
+    await hs.backfill("BTCUSDT", "1h", client=None, now_ms=NOW, repo=FakeRepo(), fetch=stuck, sleep=no_sleep)
+    assert stuck.calls == 2
