@@ -164,6 +164,9 @@ def ground(answer: FellowAnswer, scene: Dict[str, Any]) -> Tuple[FellowAnswer, i
     dropped = 0
 
     for finding in answer.findings:
+        # Server-only fields. The model may have written them; it does not get to.
+        finding.grounded = True
+        finding.subscribe = None
         kept = []
         for mark in finding.marks:
             ok = False
