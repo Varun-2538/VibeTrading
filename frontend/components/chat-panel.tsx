@@ -240,6 +240,30 @@ export default function ChatPanel({
     }
   }
 
+  // Findings already turned into a draft card, by `${messageId}:${index}`, so a
+  // second tap does not stack duplicate cards.
+  const [subscribed, setSubscribed] = useState<Set<string>>(new Set())
+
+  /**
+   * Level two: offer what the fellow sees as an alert. The draft was built by
+   * the server; this only puts it in front of the user through the same card
+   * and Arm path as a typed "alert me when..." - nothing is armed here.
+   */
+  const handleSubscribe = (messageId: string, index: number, sub: { summary: string; draft: RuleDraft }) => {
+    const key = `${messageId}:${index}`
+    if (subscribed.has(key)) return
+    setSubscribed((prev) => new Set(prev).add(key))
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}-sub`,
+        role: "assistant",
+        content: `${sub.summary}. Arm it and I'll ping you in the Strategy panel when it fires.`,
+        ruleDraft: { draft: sub.draft, summary: sub.summary, status: "pending" },
+      },
+    ])
+  }
+
   const handleRejectLevels = (messageId: string) => {
     // Just hide the action buttons
     setMessages((prev) =>
@@ -335,6 +359,19 @@ export default function ChatPanel({
                                 {on ? "Marked" : "Mark"}
                               </Button>
                             )}
+                            {f.subscribe && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleSubscribe(message.id, i, f.subscribe!)}
+                                disabled={subscribed.has(`${message.id}:${i}`)}
+                                className="h-6 shrink-0 gap-1 px-2 text-[11px]"
+                                title={f.subscribe.summary}
+                              >
+                                <Bell className="h-3 w-3" />
+                                {subscribed.has(`${message.id}:${i}`) ? "Drafted" : "Alert"}
+                              </Button>
+                            )}
                           </div>
                         )
                       })}
@@ -372,6 +409,7 @@ export default function ChatPanel({
                       <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
                         {message.ruleDraft.summary}
                         {message.ruleDraft.draft.params.agent === "sequence" &&
+                          message.ruleDraft.draft.params.steps.length > 1 &&
                           ` · each step within ${message.ruleDraft.draft.params.within_bars} bars`}
                       </p>
                       {message.ruleDraft.error && (
