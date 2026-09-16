@@ -39,3 +39,38 @@ def test_summary_counts_bars_and_names_failures():
     ])
     assert "1500 bars" in line and "2 series" in line
     assert "ETHUSDT 5m: rate limited (429)" in line
+
+
+import asyncio
+
+
+async def test_job_loop_requeues_then_runs_claimed_jobs_in_order():
+    ran, stop = [], asyncio.Event()
+
+    class Jobs:
+        queue = [{"id": "a"}, {"id": "b"}]
+        requeued = False
+
+        async def requeue_running(self):
+            Jobs.requeued = True
+            return 1
+
+        async def claim_next(self):
+            if not Jobs.queue:
+                stop.set()
+                return None
+            return Jobs.queue.pop(0)
+
+    async def run(job):
+        ran.append(job["id"])
+
+    await asyncio.wait_for(worker.job_loop(stop, jobs=Jobs(), run=run, poll=0.01), timeout=2)
+    assert Jobs.requeued and ran == ["a", "b"]
+
+
+async def test_scheduler_evicts_tapes_when_asked():
+    async def noop():
+        pass
+
+    scheduler = worker.build_scheduler(noop, lambda: None, evict=noop)
+    assert scheduler.get_job(worker.EVICT_JOB_ID).trigger.interval.total_seconds() == 6 * 3600

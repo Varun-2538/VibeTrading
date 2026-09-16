@@ -126,16 +126,16 @@ memory. Existing `test_rule_engine.py` must pass unchanged; that is the refactor
   takes `first_passing` per bar and runs `decide()` with bar-time clocks. It is cheap (microseconds per
   bar), so tuning over filter values never replays detectors.
 - **What the tape depends on:** symbol, timeframe, the rule's *detector* parameters (pattern
-  `strictness/source/scale/kinds/states`, liquidity `side/event`, sequence `steps/within_bars`,
-  `lookback`), and the history's last bar time. Filters, `persist_bars` and `cooldown_secs` are not in
-  the key. `proximity_pct` is the one filter that can admit a level the detector call did not return
-  — it does not: `detect_levels` returns all levels and distance is recorded per candidate, so any
-  proximity up to 50% can be applied afterwards.
-- **Tape cache:** table `signal_tapes(key sha256, created_at, rows jsonb)`. Re-tuning the same rule
-  skips replay. Rows older than 14 days are deleted by the hourly job. Topping up history never
-  invalidates a tape: the key includes the history's last bar time, so a job over newer history
-  computes a new key.
-- **Progress:** written to `backtest_jobs.progress` every 2% of bars.
+  `strictness/source/scale/kinds/states`, liquidity `side/event/proximity_pct`, sequence
+  `steps/within_bars`, `lookback`), and the history's last bar time. Filters (`min_confidence`,
+  `min_strength`), `persist_bars` and `cooldown_secs` are not in the key. *(Slice 2 decision:)*
+  `proximity_pct` is a detector parameter — approach candidates are recorded only within it —
+  because recording every level on every bar made tapes tens of megabytes.
+- **Tape cache:** table `signal_tapes(key text, created_at, bars integer, rows bytea)` holding
+  gzip-compressed JSON. Re-tuning the same rule skips replay. Rows older than 14 days are deleted by
+  a job every 6 hours. Topping up history never invalidates a tape: the key includes the history's
+  last bar time, so a job over newer history computes a new key. Only complete tapes are stored.
+- **Progress:** written to `backtest_jobs.progress` before each 500-bar chunk.
 
 ### 3. Signal study (`slice 2`)
 
@@ -149,6 +149,14 @@ job's neutral handling; skipped signals are excluded from the study and counted)
 direction mix as the signals (a 70%-long signal set is compared with a 70%-long baseline). **Edge** =
 signal mean − baseline mean, with a 95% bootstrap confidence interval (2,000 resamples, fixed seed so
 reports are reproducible). Reported separately for seen and unseen.
+
+*(Slice 2 decisions:)*
+
+- **Distinct setups:** the study counts the first fire of each setup identity. A live rule re-fires on
+  every bar its setup persists; counting those fires as separate observations would make the interval
+  falsely narrow. The report shows both fires and setups.
+- **Boundary:** a seen signal whose horizon reaches the split is excluded at that horizon, so no seen
+  statistic reads an unseen price.
 
 ### 4. Trade model (`slice 3`)
 
@@ -215,11 +223,13 @@ All routes require the wallet session (`require_owner`), and jobs are scoped to 
 | `GET /api/history/coverage` | Public; per pair and timeframe coverage. |
 
 **Migration `005_backtests.sql`:** `backtest_jobs(id uuid, owner_key, created_at, started_at,
-finished_at, status, stage, progress, request jsonb, report jsonb, error text)` and `signal_tapes`.
+finished_at, status, progress, request jsonb, report jsonb, error text)` and `signal_tapes`. The
+status carries the stage; there is no separate stage column.
 
-**Worker loop:** claims the oldest queued job with `SELECT … FOR UPDATE SKIP LOCKED`; on start, jobs in
-a running status whose `started_at` is older than one hour are returned to `queued` (resumed from the
-tape cache when present). One job at a time.
+**Worker loop:** claims the oldest queued job with `SELECT … FOR UPDATE SKIP LOCKED`; on start, every
+job in a running status is returned to `queued` — there is one worker, so a running status after a
+restart always means an interrupted job. A job whose replay finished before the interruption reuses
+the cached tape; a partial replay starts again. One job at a time.
 
 ## UI
 
@@ -244,8 +254,8 @@ tape cache when present). One job at a time.
   2025-09-17; this rule needs 300 warm-up bars").
 - Binance failures during backfill → retry with backoff; resume from the last stored bar; the gap
   shows in coverage.
-- Worker crash or deploy mid-job → the stale-job sweep requeues it; the tape cache avoids repeating
-  finished replay work.
+- Worker crash or deploy mid-job → the worker requeues it on start; a completed tape in the cache
+  avoids repeating finished replay work.
 - A job over one hour of runtime is failed with `timeout`, so a pathological rule cannot hold the queue.
 
 ## Testing
