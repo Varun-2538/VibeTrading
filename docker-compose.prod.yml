@@ -46,7 +46,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: tradesmart-backend
-    environment:
+    environment: &backend-env
       LLM_API_KEY: ${LLM_API_KEY:?set LLM_API_KEY in .env}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.groq.com/openai/v1}
       LLM_MODEL: ${LLM_MODEL:-openai/gpt-oss-120b}
@@ -63,6 +63,35 @@ services:
       # every session, which is the intended way to force everyone to sign in again.
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       BACKEND_PORT: 8000
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - tradesmart-network
+    restart: unless-stopped
+
+  # Backtest worker: keeps candle history current (slice 1) and later runs
+  # backtest jobs. Same image as the API, a quarter of its CPU weight, so a
+  # long replay can never delay the live alert sweep. No ports.
+  backtester:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tradesmart-backtester
+    command: ["python", "worker.py"]
+    environment: *backend-env
+    cpu_shares: 256
+    mem_limit: 512m
+    healthcheck:
+      # The image's healthcheck probes the API port, which the worker does not
+      # serve. The worker touches this file every minute instead.
+      test: ["CMD", "python", "-c", "import os,sys,time; sys.exit(0 if time.time() - os.path.getmtime('/tmp/worker-heartbeat') < 180 else 1)"]
+      interval: 60s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
     depends_on:
       timescaledb:
         condition: service_healthy
