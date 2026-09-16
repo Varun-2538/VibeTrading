@@ -341,7 +341,7 @@ export default function ArchitecturePage() {
 
       <h2>Testing</h2>
       <p>
-        307 tests. Pattern fixtures are built from line segments so the geometry
+        308 tests. Pattern fixtures are built from line segments so the geometry
         is known exactly and assertions can be made on prices rather than on
         "something was found". A good number of those tests exist because a real
         chart disagreed with the detector and the disagreement turned out to be

@@ -254,9 +254,11 @@ def _draft(finding: Finding, scene: Dict[str, Any], settings: PatternSettings) -
                 "min_strength": strength,
                 "event": "approach",
             },
+            # Weak is the floor, so a weak threshold is every level.
             "summary": (
-                f"Alert when price comes near a {strength}-or-stronger "
-                f"{level['side']} on {where}"
+                f"Alert when price comes near any {level['side']} on {where}"
+                if strength == "weak"
+                else f"Alert when price comes near a {strength} or stronger {level['side']} on {where}"
             ),
         }
 
