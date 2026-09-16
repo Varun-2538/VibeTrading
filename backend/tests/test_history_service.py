@@ -76,3 +76,64 @@ def test_row_round_trip_keeps_ms_and_utc():
 
 def test_ms_conversion_is_exact_for_whole_seconds():
     assert hr.dt_to_ms(hr.ms_to_dt(1_780_000_000_000)) == 1_780_000_000_000
+
+
+import httpx
+
+
+class StubClient:
+    """Replays a list of (status, json, headers) responses and records params."""
+
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    async def get(self, url, params=None):
+        self.calls.append(params)
+        status, body, headers = self.responses.pop(0)
+        return httpx.Response(status, json=body, headers=headers, request=httpx.Request("GET", url))
+
+
+async def no_sleep(_seconds):
+    no_sleep.slept.append(_seconds)
+
+
+no_sleep.slept = []
+
+
+async def test_fetch_page_requests_the_right_window_and_parses():
+    step = hs.TIMEFRAME_MS["1h"]
+    start = NOW - 10 * step - (NOW % step)
+    client = StubClient([(200, [kline(start, step)], {})])
+    candles = await hs.fetch_page(client, "btcusdt", "1h", start, now_ms=NOW, sleep=no_sleep)
+    assert client.calls == [{"symbol": "BTCUSDT", "interval": "1h", "startTime": start, "limit": 1000}]
+    assert [c["time"] for c in candles] == [start]
+
+
+async def test_fetch_page_honours_retry_after_on_429():
+    no_sleep.slept.clear()
+    step = hs.TIMEFRAME_MS["1h"]
+    start = NOW - 10 * step - (NOW % step)
+    client = StubClient([
+        (429, {"code": -1003}, {"Retry-After": "7"}),
+        (200, [kline(start, step)], {}),
+    ])
+    candles = await hs.fetch_page(client, "BTCUSDT", "1h", start, now_ms=NOW, sleep=no_sleep)
+    assert len(candles) == 1
+    assert no_sleep.slept == [7.0]
+
+
+async def test_fetch_page_backs_off_on_5xx_then_gives_up():
+    no_sleep.slept.clear()
+    client = StubClient([(502, {}, {})] * hs.MAX_ATTEMPTS)
+    with pytest.raises(hs.HistoryFetchError):
+        await hs.fetch_page(client, "BTCUSDT", "1h", 0, now_ms=NOW, sleep=no_sleep)
+    assert len(client.calls) == hs.MAX_ATTEMPTS
+    assert no_sleep.slept == sorted(no_sleep.slept) and no_sleep.slept[0] >= 1
+
+
+async def test_fetch_page_does_not_retry_a_bad_request():
+    client = StubClient([(400, {"code": -1121, "msg": "Invalid symbol."}, {})])
+    with pytest.raises(hs.HistoryFetchError, match="400"):
+        await hs.fetch_page(client, "NOPE", "1h", 0, now_ms=NOW, sleep=no_sleep)
+    assert len(client.calls) == 1
