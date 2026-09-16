@@ -245,3 +245,21 @@ async def test_backfill_stops_when_a_page_does_not_advance():
     stuck.calls = 0
     await hs.backfill("BTCUSDT", "1h", client=None, now_ms=NOW, repo=FakeRepo(), fetch=stuck, sleep=no_sleep)
     assert stuck.calls == 2
+
+
+async def test_topup_all_continues_past_a_failing_series():
+    seen = []
+
+    async def run(symbol, timeframe, *, client, now_ms):
+        seen.append((symbol, timeframe))
+        if symbol == "ETHUSDT" and timeframe == "15m":
+            raise RuntimeError("db went away")
+        return hs.BackfillResult(symbol, timeframe, pages=1, bars=3)
+
+    results = await hs.topup_all(
+        client=None, now_ms=NOW, pairs=("BTCUSDT", "ETHUSDT"), timeframes=("15m", "1h"), run=run
+    )
+    assert seen == [("BTCUSDT", "15m"), ("BTCUSDT", "1h"), ("ETHUSDT", "15m"), ("ETHUSDT", "1h")]
+    failed = [r for r in results if r.error]
+    assert len(failed) == 1 and "db went away" in failed[0].error
+    assert sum(r.bars for r in results) == 9
