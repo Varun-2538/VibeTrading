@@ -1,30 +1,43 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { FlaskConical, Loader2 } from "lucide-react"
+import { FlaskConical, Loader2, MapPin } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import {
   ACTIVE_STATUSES,
   BACKTEST_TIMEFRAMES,
+  DEFAULT_EXIT,
   canBeNeutral,
   cancelBacktest,
   createBacktest,
+  equityLines,
   fmtPct,
+  fmtR,
   getBacktest,
+  markable,
+  showTradesOnChart,
+  tradeMarks,
+  tradeVerdict,
   verdict,
   type Backtest,
+  type BacktestReport,
   type BacktestRule,
+  type ExitPlan,
   type Neutral,
   type PeriodStudy,
+  type TradePeriod,
+  type TradeRow,
 } from "@/lib/backtests"
 import { UnauthorizedError } from "@/lib/rules"
 import { cn } from "@/lib/utils"
 
 const POLL_MS = 3000
 const SPLITS = [0.6, 0.7, 0.8]
+const LISTED = 50
 const STAGE: Record<string, string> = {
   queued: "Waiting for the worker",
   replaying: "Replaying history bar by bar",
@@ -85,6 +98,144 @@ function StudyTable({ title, period }: { title: string; period: PeriodStudy }) {
   )
 }
 
+function NumberField({
+  label,
+  value,
+  step,
+  onChange,
+}: {
+  label: string
+  value: number | null
+  step: number
+  onChange: (value: number) => void
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-[10px] text-muted-foreground">{label}</span>
+      <Input
+        type="number"
+        inputMode="decimal"
+        step={step}
+        min={0}
+        value={value ?? ""}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="h-7 px-2 font-mono text-xs"
+      />
+    </label>
+  )
+}
+
+const METRICS: { label: string; get: (p: TradePeriod) => string }[] = [
+  { label: "Trades", get: (p) => String(p.trades) },
+  { label: "Win rate", get: (p) => (p.win_rate === null ? "—" : `${Math.round(p.win_rate * 100)}%`) },
+  { label: "Per trade", get: (p) => fmtR(p.expectancy_r) },
+  { label: "Avg win / loss", get: (p) => `${fmtR(p.avg_win_r)} / ${fmtR(p.avg_loss_r)}` },
+  { label: "Profit factor", get: (p) => p.profit_factor?.toFixed(2) ?? "—" },
+  { label: "Return", get: (p) => fmtPct(p.total_return_pct) },
+  { label: "Max drawdown", get: (p) => fmtPct(p.max_drawdown_pct) },
+  { label: "Sharpe", get: (p) => p.sharpe?.toFixed(2) ?? "—" },
+  { label: "Time in market", get: (p) => (p.exposure_pct === null ? "—" : `${Math.round(p.exposure_pct)}%`) },
+  { label: "Longest losing run", get: (p) => String(p.longest_losing_streak) },
+  { label: "Buy & hold", get: (p) => fmtPct(p.buy_hold_pct) },
+]
+
+function MetricsTable({ seen, unseen }: { seen: TradePeriod; unseen: TradePeriod }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-[11px]">
+        <thead className="text-muted-foreground">
+          <tr className="text-left">
+            <th className="py-1 pr-2 font-normal" />
+            <th className="py-1 pr-2 font-normal">Unseen</th>
+            <th className="py-1 font-normal">Seen</th>
+          </tr>
+        </thead>
+        <tbody className="font-mono">
+          {METRICS.map((m) => (
+            <tr key={m.label} className="border-t border-border">
+              <td className="py-1 pr-2 font-sans text-muted-foreground">{m.label}</td>
+              <td className="py-1 pr-2">{m.get(unseen)}</td>
+              <td className="py-1">{m.get(seen)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function EquityChart({ seen, unseen }: { seen: TradePeriod; unseen: TradePeriod }) {
+  const width = 300
+  const height = 80
+  const lines = equityLines(seen.equity, unseen.equity, width, height)
+  return (
+    <div className="space-y-1">
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="h-20 w-full" aria-label="Equity curve, seen then unseen">
+        {lines.boundaryX !== null && (
+          <line x1={lines.boundaryX} x2={lines.boundaryX} y1={0} y2={height} className="stroke-border" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+        )}
+        <polyline points={lines.seen} fill="none" className="stroke-muted-foreground" strokeWidth={1.2} vectorEffect="non-scaling-stroke" />
+        <polyline points={lines.unseen} fill="none" className="stroke-primary" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div className="flex justify-between font-mono text-[10px] text-muted-foreground">
+        <span>seen</span>
+        <span>unseen →</span>
+      </div>
+    </div>
+  )
+}
+
+function TradeList({
+  period,
+  meta,
+  onMark,
+}: {
+  period: TradePeriod
+  meta: BacktestReport["meta"]
+  onMark: (trades: TradeRow[]) => void
+}) {
+  const rows = period.trade_list.slice(-LISTED).reverse()
+  const recent = period.trade_list.filter((t) => markable(t, meta)).slice(-LISTED)
+  if (rows.length === 0) return <p className="text-[11px] text-muted-foreground">No trades in this period.</p>
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] text-muted-foreground">
+          Latest {rows.length} of {period.trades}
+        </span>
+        {recent.length > 0 && (
+          <Button size="sm" variant="outline" className="h-6 gap-1 px-2 text-[11px]" onClick={() => onMark(recent)}>
+            <MapPin className="h-3 w-3" /> Mark {recent.length} on chart
+          </Button>
+        )}
+      </div>
+      <div className="max-h-64 overflow-auto">
+        <table className="w-full text-[11px]">
+          <tbody className="font-mono">
+            {rows.map((t, k) => (
+              <tr key={`${t.entry_time}-${k}`} className="border-t border-border">
+                <td className="py-1 pr-2 whitespace-nowrap">{new Date(t.entry_time).toISOString().slice(0, 16).replace("T", " ")}</td>
+                <td className="py-1 pr-2">{t.direction === "long" ? "L" : "S"}</td>
+                <td className={cn("py-1 pr-2", t.r > 0 ? "text-emerald-500" : "text-red-400")}>{fmtR(t.r)}</td>
+                <td className="py-1 pr-2 font-sans text-muted-foreground">{t.reason}</td>
+                <td className="py-1 text-right">
+                  {markable(t, meta) ? (
+                    <button type="button" onClick={() => onMark([t])} className="text-primary" aria-label="Mark this trade on the chart">
+                      <MapPin className="inline h-3 w-3" />
+                    </button>
+                  ) : (
+                    <span className="text-muted-foreground/50" title="Older than the candles the chart loads">—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 export default function BacktestSheet({
   rule,
   open,
@@ -96,6 +247,8 @@ export default function BacktestSheet({
 }) {
   const [neutral, setNeutral] = useState<Neutral>("skip")
   const [split, setSplit] = useState(0.7)
+  const [exitPlan, setExitPlan] = useState<ExitPlan>(DEFAULT_EXIT)
+  const [tradesPeriod, setTradesPeriod] = useState<"unseen" | "seen">("unseen")
   const [job, setJob] = useState<Backtest | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
@@ -127,13 +280,14 @@ export default function BacktestSheet({
   if (!rule) return null
   const supported = (BACKTEST_TIMEFRAMES as readonly string[]).includes(rule.timeframe)
   const neutralChoice = canBeNeutral(rule.params)
+  const setExit = (patch: Partial<ExitPlan>) => setExitPlan((plan) => ({ ...plan, ...patch }))
 
   async function start() {
     if (!rule) return
     setStarting(true)
     setError(null)
     try {
-      const { id } = await createBacktest(rule, { neutral, split })
+      const { id } = await createBacktest(rule, { neutral, split, exit: exitPlan })
       setJob(await getBacktest(id))
     } catch (err) {
       setError(
@@ -158,6 +312,18 @@ export default function BacktestSheet({
     }
   }
 
+  function mark(trades: TradeRow[]) {
+    if (!job?.report) return
+    showTradesOnChart({
+      symbol: job.report.meta.symbol,
+      timeframe: job.report.meta.timeframe,
+      marks: trades.flatMap(tradeMarks),
+    })
+    onOpenChange(false)
+  }
+
+  const report = job?.status === "done" ? job.report : null
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
@@ -171,24 +337,21 @@ export default function BacktestSheet({
         </SheetHeader>
 
         <div className="space-y-4 px-4 pb-6">
-          {!supported && (
-            <p className="text-xs text-muted-foreground">Backtests run on 5m, 15m, 1h and 1d charts.</p>
-          )}
+          {!supported && <p className="text-xs text-muted-foreground">Backtests run on 5m, 15m, 1h and 1d charts.</p>}
 
           {supported && job === null && (
             <div className="space-y-3">
               <p className="text-xs leading-relaxed text-muted-foreground">
-                Replays this rule over stored history exactly as the live alert would have run, then measures
-                what price did after each signal against the market as a whole. The last part of history is
-                held back as unseen data.
+                Replays this rule over stored history exactly as the live alert would have run, measures what price
+                did after each signal, and trades it with the exit plan below. The last part of history is held back
+                as unseen data.
               </p>
               {neutralChoice && (
                 <div className="space-y-1">
                   <span className="text-[11px] text-muted-foreground">This candle has no direction. Read it as</span>
                   <div className="flex gap-1.5">
                     {(["skip", "long", "short"] as Neutral[]).map((n) => (
-                      <Button key={n} size="sm" variant={neutral === n ? "default" : "outline"}
-                        className="h-7 flex-1 text-xs" onClick={() => setNeutral(n)}>
+                      <Button key={n} size="sm" variant={neutral === n ? "default" : "outline"} className="h-7 flex-1 text-xs" onClick={() => setNeutral(n)}>
                         {n === "skip" ? "Skip it" : n === "long" ? "Long" : "Short"}
                       </Button>
                     ))}
@@ -196,11 +359,23 @@ export default function BacktestSheet({
                 </div>
               )}
               <div className="space-y-1">
+                <span className="text-[11px] text-muted-foreground">Exit plan</span>
+                <div className="grid grid-cols-3 gap-2">
+                  <NumberField label="Stop (× ATR)" value={exitPlan.stop_atr} step={0.25} onChange={(v) => setExit({ stop_atr: v > 0 ? v : DEFAULT_EXIT.stop_atr })} />
+                  <NumberField label="Target (× risk)" value={exitPlan.target_r} step={0.5} onChange={(v) => setExit({ target_r: v > 0 ? v : null })} />
+                  <NumberField label="Max bars held" value={exitPlan.max_bars} step={1} onChange={(v) => setExit({ max_bars: Math.max(1, Math.round(v) || 1) })} />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <NumberField label="Fee per side %" value={exitPlan.fee_pct} step={0.01} onChange={(v) => setExit({ fee_pct: Math.max(0, v) })} />
+                  <NumberField label="Slippage %" value={exitPlan.slippage_pct} step={0.01} onChange={(v) => setExit({ slippage_pct: Math.max(0, v) })} />
+                  <NumberField label="Risk per trade %" value={exitPlan.risk_pct} step={0.25} onChange={(v) => setExit({ risk_pct: v > 0 ? v : DEFAULT_EXIT.risk_pct })} />
+                </div>
+              </div>
+              <div className="space-y-1">
                 <span className="text-[11px] text-muted-foreground">Seen / unseen split</span>
                 <div className="flex gap-1.5">
                   {SPLITS.map((s) => (
-                    <Button key={s} size="sm" variant={split === s ? "default" : "outline"}
-                      className="h-7 flex-1 font-mono text-xs" onClick={() => setSplit(s)}>
+                    <Button key={s} size="sm" variant={split === s ? "default" : "outline"} className="h-7 flex-1 font-mono text-xs" onClick={() => setSplit(s)}>
                       {Math.round(s * 100)} / {Math.round((1 - s) * 100)}
                     </Button>
                   ))}
@@ -219,7 +394,9 @@ export default function BacktestSheet({
               <Progress value={Math.round(job.progress * 100)} />
               <div className="flex items-center justify-between">
                 <span className="font-mono text-[10px] text-muted-foreground">{Math.round(job.progress * 100)}%</span>
-                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={cancel}>Cancel</Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={cancel}>
+                  Cancel
+                </Button>
               </div>
               <p className="text-[10px] text-muted-foreground">
                 The first run of a rule replays every bar and can take many minutes. It keeps running if you close this.
@@ -230,17 +407,40 @@ export default function BacktestSheet({
           {job?.status === "failed" && <p className="text-xs text-destructive">{job.error}</p>}
           {job?.status === "cancelled" && <p className="text-xs text-muted-foreground">Cancelled.</p>}
 
-          {job?.status === "done" && job.report && (
-            <div className="space-y-4">
-              <p className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-foreground">
-                {verdict(job.report)}
-              </p>
-              <StudyTable title="Unseen" period={job.report.study.unseen} />
-              <StudyTable title="Seen" period={job.report.study.seen} />
+          {report && (
+            <div className="space-y-5">
+              <div className="space-y-2 rounded-md border border-border bg-secondary px-3 py-2 text-xs text-foreground">
+                <p>{verdict(report)}</p>
+                {tradeVerdict(report) && <p>{tradeVerdict(report)}</p>}
+              </div>
+
+              {report.trades && (
+                <section className="space-y-3">
+                  <h3 className="text-xs font-semibold text-foreground">Trading it</h3>
+                  <EquityChart seen={report.trades.seen} unseen={report.trades.unseen} />
+                  <MetricsTable seen={report.trades.seen} unseen={report.trades.unseen} />
+                  <div className="flex gap-1.5">
+                    {(["unseen", "seen"] as const).map((p) => (
+                      <Button key={p} size="sm" variant={tradesPeriod === p ? "default" : "outline"} className="h-6 flex-1 text-[11px] capitalize" onClick={() => setTradesPeriod(p)}>
+                        {p} trades
+                      </Button>
+                    ))}
+                  </div>
+                  <TradeList period={report.trades[tradesPeriod]} meta={report.meta} onMark={mark} />
+                </section>
+              )}
+
+              <section className="space-y-3">
+                <h3 className="text-xs font-semibold text-foreground">Does the signal predict anything?</h3>
+                <StudyTable title="Unseen" period={report.study.unseen} />
+                <StudyTable title="Seen" period={report.study.seen} />
+              </section>
+
               <p className="text-[10px] leading-relaxed text-muted-foreground">
-                {job.report.signals.fires} alerts from {job.report.signals.setups} distinct setups over{" "}
-                {job.report.meta.bars.toLocaleString()} bars. Each setup counts once.{" "}
-                {job.report.meta.tape_cached ? "Replay reused from cache." : `Replay took ${Math.round(job.report.meta.replay_seconds)}s.`}{" "}
+                {report.signals.fires} alerts from {report.signals.setups} distinct setups over{" "}
+                {report.meta.bars.toLocaleString()} bars; each setup counts and trades once. Fills assume the worse
+                case inside a bar and pay fees and slippage.{" "}
+                {report.meta.tape_cached ? "Replay reused from cache." : `Replay took ${Math.round(report.meta.replay_seconds)}s.`}{" "}
                 Past behaviour on this data is not a forecast.
               </p>
             </div>
