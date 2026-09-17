@@ -1,5 +1,6 @@
 import { API_BASE } from "@/lib/api"
 import { authHeaders, failResponse, type RuleParams } from "@/lib/rules"
+import type { BarMark } from "@/lib/marks"
 
 export type BacktestStatus = "queued" | "replaying" | "studying" | "tuning" | "done" | "failed" | "cancelled"
 export type Neutral = "skip" | "long" | "short"
@@ -46,9 +47,11 @@ export interface BacktestReport {
     split_time: number
     tape_cached: boolean
     replay_seconds: number
+    exit?: ExitPlan
   }
   signals: { fires: number; setups: number }
   study: { seen: PeriodStudy; unseen: PeriodStudy }
+  trades?: { seen: TradePeriod; unseen: TradePeriod }
 }
 
 export interface Backtest {
@@ -74,7 +77,7 @@ export interface BacktestRule {
 
 export async function createBacktest(
   rule: BacktestRule,
-  options: { neutral: Neutral; split: number },
+  options: { neutral: Neutral; split: number; exit: ExitPlan },
 ): Promise<{ id: string; status: BacktestStatus }> {
   const res = await fetch(`${API_BASE}/api/backtests`, {
     method: "POST",
@@ -90,6 +93,7 @@ export async function createBacktest(
       },
       neutral: options.neutral,
       split: options.split,
+      exit: options.exit,
     }),
   })
   if (!res.ok) await failResponse(res, "Could not start the backtest")
@@ -139,4 +143,154 @@ export function verdict(report: BacktestReport): string {
     return `No edge on unseen data: ${fmtPct(h.edge_pct)} per signal vs the market over ${HEADLINE_HORIZON} bars${ci}.`
   }
   return `Unseen edge ${fmtPct(h.edge_pct)} per signal over ${HEADLINE_HORIZON} bars${ci}, across ${unseen.signals} signals.`
+}
+
+
+export interface ExitPlan {
+  stop_atr: number | null
+  stop_pct: number | null
+  target_r: number | null
+  target_pct: number | null
+  max_bars: number
+  exit_on_opposite: boolean
+  fee_pct: number
+  slippage_pct: number
+  risk_pct: number
+}
+
+export const DEFAULT_EXIT: ExitPlan = {
+  stop_atr: 1.5,
+  stop_pct: null,
+  target_r: 2,
+  target_pct: null,
+  max_bars: 20,
+  exit_on_opposite: false,
+  fee_pct: 0.1,
+  slippage_pct: 0.02,
+  risk_pct: 1,
+}
+
+export interface TradeRow {
+  entry_time: number
+  entry: number
+  exit_time: number
+  exit: number
+  direction: "long" | "short"
+  reason: "stop" | "target" | "time" | "opposite" | "end"
+  r: number
+  pct: number
+  bars: number
+}
+
+export interface TradePeriod {
+  from: number
+  to: number
+  bars: number
+  trades: number
+  win_rate: number | null
+  avg_win_r: number | null
+  avg_loss_r: number | null
+  expectancy_r: number | null
+  profit_factor: number | null
+  total_return_pct: number | null
+  max_drawdown_pct: number | null
+  sharpe: number | null
+  exposure_pct: number | null
+  longest_losing_streak: number
+  buy_hold_pct: number | null
+  skipped_in_position: number
+  skipped_neutral: number
+  skipped_no_room: number
+  equity: [number, number][]
+  trade_list: TradeRow[]
+  trades_listed: number
+  flags: string[]
+}
+
+export const TIMEFRAME_MS: Record<string, number> = {
+  "5m": 300_000,
+  "15m": 900_000,
+  "1h": 3_600_000,
+  "1d": 86_400_000,
+}
+
+/** Candles the chart loads. A trade older than this cannot be drawn on it. */
+export const CHART_BARS = 1000
+
+export function fmtR(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "—"
+  return `${value > 0 ? "+" : ""}${value.toFixed(2)}R`
+}
+
+export function markable(trade: TradeRow, meta: { to: number; timeframe: string }): boolean {
+  const step = TIMEFRAME_MS[meta.timeframe]
+  if (!step) return false
+  return trade.entry_time >= meta.to - (CHART_BARS - 10) * step
+}
+
+export function tradeMarks(trade: TradeRow): BarMark[] {
+  const long = trade.direction === "long"
+  return [
+    { type: "bar", time: trade.entry_time, position: long ? "below" : "above", shape: long ? "arrowUp" : "arrowDown", text: long ? "Long" : "Short" },
+    { type: "bar", time: trade.exit_time, position: long ? "above" : "below", shape: "circle", text: `${fmtR(trade.r)} ${trade.reason}` },
+  ]
+}
+
+/** The page listens for this and draws the marks on the pair and timeframe they belong to. */
+export const TRADE_MARKS_EVENT = "vt:trade-marks"
+
+export interface TradeMarksDetail {
+  symbol: string
+  timeframe: string
+  marks: BarMark[]
+}
+
+export function showTradesOnChart(detail: TradeMarksDetail): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent<TradeMarksDetail>(TRADE_MARKS_EVENT, { detail }))
+  }
+}
+
+/**
+ * SVG polyline points for the equity curve. Unseen continues from seen's final
+ * equity, so the line is unbroken; x is proportional to time.
+ */
+export function equityLines(
+  seen: [number, number][],
+  unseen: [number, number][],
+  width: number,
+  height: number,
+): { seen: string; unseen: string; boundaryX: number | null } {
+  const carry = seen.length ? seen[seen.length - 1][1] : 1
+  const points: [number, number][] = [...seen, ...unseen.map(([t, e]) => [t, e * carry] as [number, number])]
+  if (points.length === 0) return { seen: "", unseen: "", boundaryX: null }
+
+  const t0 = points[0][0]
+  const t1 = points[points.length - 1][0]
+  const values = points.map(([, e]) => e)
+  const min = Math.min(...values)
+  const span = Math.max(...values) - min || 1
+  const x = (t: number) => (t1 === t0 ? 0 : ((t - t0) / (t1 - t0)) * width)
+  const y = (e: number) => height - ((e - min) / span) * height
+  const text = points.map(([t, e]) => `${x(t).toFixed(1)},${y(e).toFixed(1)}`)
+
+  return {
+    seen: text.slice(0, seen.length).join(" "),
+    unseen: unseen.length ? text.slice(Math.max(0, seen.length - 1)).join(" ") : "",
+    boundaryX: seen.length && unseen.length ? x(seen[seen.length - 1][0]) : null,
+  }
+}
+
+export function tradeVerdict(report: BacktestReport): string | null {
+  if (!report.trades) return null
+  const { seen, unseen } = report.trades
+  if (unseen.trades === 0) return "No trades on unseen data."
+  if (unseen.flags.includes("too_few_trades")) {
+    return `Only ${unseen.trades} unseen trades — too few to judge this exit plan.`
+  }
+  return (
+    `Trading it on unseen data: ${fmtR(unseen.expectancy_r)} per trade over ${unseen.trades} trades, ` +
+    `${fmtPct(unseen.total_return_pct)} total, worst drawdown ${fmtPct(unseen.max_drawdown_pct)} ` +
+    `(seen: ${fmtR(seen.expectancy_r)} per trade).`
+  )
 }
