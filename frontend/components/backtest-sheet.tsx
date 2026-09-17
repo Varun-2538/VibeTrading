@@ -427,6 +427,11 @@ export default function BacktestSheet({
                     ))}
                   </div>
                   <TradeList period={report.trades[tradesPeriod]} meta={report.meta} onMark={mark} />
+                  {[...report.trades.seen.trade_list, ...report.trades.unseen.trade_list].some((t) => t.direction === "short") && (
+                    <p className="text-[10px] text-muted-foreground">
+                      Short trades assume you can sell what you do not hold — futures or margin, not spot.
+                    </p>
+                  )}
                 </section>
               )}
 

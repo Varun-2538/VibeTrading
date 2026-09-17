@@ -177,6 +177,18 @@ reports are reproducible). Reported separately for seen and unseen.
   records its result in R and in %.
 - Shorts are labelled in the report as requiring futures or margin.
 
+*(Slice 3 decisions:)*
+
+- **Trades come from distinct setups**, like the study: a setup is traded once, not re-entered on every
+  bar its alert repeats.
+- A signal on the bar before a trade's open-price exit is skipped: the position is still held at that close.
+- A signal whose stop cannot be sized (ATR not yet available, or zero) is counted in `skipped_no_room`
+  together with signals too late to enter.
+- Equity is marked to market at every close, so drawdown includes losses on open trades.
+- The equity chart draws unseen continuing from seen's final equity; each period's metrics start at 1.0.
+- Chart marks are offered only for trades inside the chart's loaded 1,000 candles, and markers whose bar
+  is not loaded are never drawn — the markers plugin would otherwise snap them to the nearest candle.
+
 ### 5. Metrics (`slice 3`)
 
 `backtest/metrics.py`, pure, computed separately for seen and unseen: trade count, win rate, average
