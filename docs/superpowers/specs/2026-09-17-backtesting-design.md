@@ -222,6 +222,19 @@ return over the same bars. Equity curve (downsampled to ≤ 1,000 points) and th
   top 5 on seen and the unseen result for the chosen one only.
 - Without tuning (`tune: false`) the job's own exit plan is run on both periods.
 
+*(Slice 4 decisions:)*
+
+- **Tuning is on by default** in the sheet, because a cached tape makes it cheap - and every report states how
+  many settings were tried, so a tuned number is never presented as an untuned one.
+- **The grid is searched by filter group:** signals depend only on the rule filter and exits only on the plan,
+  so each filter's signals are derived from the tape once and reused across exit combinations.
+- **Percentage stops and targets are not tuned** - a grid mixing ATR and percentage stops would not compare
+  like with like. They remain available for a single untuned run.
+- **`tuning.top` reports seen metrics only.** Running the runners-up on unseen data would make unseen a second
+  tuning set.
+- Repeating a backtest after new candles arrive still replays from scratch, because the tape is keyed to the
+  newest candle. Extending a tape bar by bar is a later slice.
+
 ## API
 
 All routes require the wallet session (`require_owner`), and jobs are scoped to the owner.
