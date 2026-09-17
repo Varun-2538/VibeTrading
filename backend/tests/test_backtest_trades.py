@@ -104,3 +104,28 @@ def test_neutral_signals_follow_the_choice_and_late_signals_have_no_room():
 def test_one_position_at_a_time():
     sim = one(bars(*[FLAT] * 6), [sig(0), sig(1), sig(3)], plan(max_bars=2))
     assert [t.entry_index for t in sim.trades] == [1, 4] and sim.skipped_in_position == 1
+
+
+from backtest.metrics import max_drawdown_pct, trade_period
+
+
+def test_metrics_add_up_by_hand():
+    candles = bars(FLAT, (100, 105, 99, 104), FLAT, (100, 101, 97, 98), FLAT, FLAT, FLAT, FLAT)
+    m = trade_period(candles, [sig(0), sig(2)], 0, 8, plan(), "skip", H)
+    assert m["trades"] == 2 and m["win_rate"] == 0.5
+    assert (m["expectancy_r"], m["avg_win_r"], m["avg_loss_r"]) == (0.5, 2.0, -1.0)
+    assert m["profit_factor"] == 2.0
+    assert m["total_return_pct"] == pytest.approx(0.98, abs=1e-3)
+    assert m["max_drawdown_pct"] == pytest.approx(-1.0, abs=1e-3)
+    assert m["exposure_pct"] == 25.0 and m["longest_losing_streak"] == 1 and m["buy_hold_pct"] == 0.0
+    assert [t["reason"] for t in m["trade_list"]] == ["target", "stop"]
+    assert m["trade_list"][0]["direction"] == "long" and m["trade_list"][0]["entry_time"] == T0 + H
+    assert m["equity"][0] == [T0, 1.0] and m["equity"][-1][1] == pytest.approx(1.0098, abs=1e-5)
+    assert m["flags"] == ["too_few_trades"]
+
+
+def test_drawdown_and_an_account_that_never_traded():
+    assert max_drawdown_pct([1.0, 1.2, 0.9, 1.3]) == pytest.approx(-25.0)
+    m = trade_period(bars(*[FLAT] * 10), [], 0, 10, plan(), "skip", H)
+    assert m["trades"] == 0 and m["sharpe"] is None and m["expectancy_r"] is None
+    assert m["profit_factor"] is None and m["equity"][-1][1] == 1.0
