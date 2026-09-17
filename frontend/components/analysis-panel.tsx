@@ -50,7 +50,7 @@ import { useStrategySocket } from "@/hooks/use-strategy-socket"
 import { ARBITRUM_NAME, shortAddress } from "@/lib/wallet"
 import { cn } from "@/lib/utils"
 import BacktestSheet from "@/components/backtest-sheet"
-import type { BacktestRule } from "@/lib/backtests"
+import { listBacktests, type BacktestRule, type BacktestSummary } from "@/lib/backtests"
 
 interface AnalysisPanelProps {
   symbol: string
@@ -155,6 +155,21 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
   const [busy, setBusy] = useState(false)
   const [testing, setTesting] = useState<string | null>(null)
   const [backtestRule, setBacktestRule] = useState<BacktestRule | null>(null)
+  const [backtestJobId, setBacktestJobId] = useState<string | undefined>(undefined)
+  const [backtests, setBacktests] = useState<BacktestSummary[]>([])
+
+  const refreshBacktests = useCallback(async () => {
+    if (status !== "ready") return
+    try {
+      setBacktests(await listBacktests())
+    } catch {
+      // The tab simply stays empty; the sheet reports real failures.
+    }
+  }, [status])
+
+  useEffect(() => {
+    void refreshBacktests()
+  }, [refreshBacktests])
   const [testResult, setTestResult] = useState<{ id: string; message: string } | null>(null)
 
   // Builder state. Symbol and timeframe come from the chart; everything else is
@@ -387,6 +402,9 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
                   {unseen}
                 </span>
               )}
+            </TabsTrigger>
+            <TabsTrigger value="tests" className="h-5 px-2 text-xs">
+              Tests
             </TabsTrigger>
           </TabsList>
         </div>
@@ -633,7 +651,10 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
                       </p>
                     </div>
                     <Button
-                      onClick={() => setBacktestRule(rule)}
+                      onClick={() => {
+                        setBacktestJobId(undefined)
+                        setBacktestRule(rule)
+                      }}
                       variant="ghost"
                       size="sm"
                       className="h-6 gap-1 px-2 text-[11px]"
@@ -736,14 +757,71 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
             </ScrollArea>
           )}
         </TabsContent>
+        {/* Tests: backtests this wallet has run, newest first. ------------- */}
+        <TabsContent value="tests" className="mt-0 min-h-0 flex-1">
+          {backtests.length === 0 ? (
+            <div className="flex h-full items-center justify-center px-6 text-center">
+              <p className="text-xs text-muted-foreground">
+                No backtests yet. Run one from a rule with the Backtest button.
+              </p>
+            </div>
+          ) : (
+            <ScrollArea className="h-full">
+              <div className="divide-y divide-border">
+                {backtests.map((run) => (
+                  <button
+                    key={run.id}
+                    type="button"
+                    onClick={() => {
+                      setBacktestJobId(run.id)
+                      setBacktestRule({
+                        name: run.request?.rule?.name ?? "Backtest",
+                        symbol: run.request?.rule?.symbol ?? symbol,
+                        timeframe: run.request?.rule?.timeframe ?? timeframe,
+                        params: {},
+                      })
+                    }}
+                    className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-secondary lg:px-4"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate text-xs font-medium text-foreground">
+                          {run.request?.rule?.name ?? "Backtest"}
+                        </span>
+                        <span className="font-mono text-[10px] text-muted-foreground">
+                          {run.request?.rule?.symbol} {run.request?.rule?.timeframe}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-[10px] text-muted-foreground">
+                        {run.status === "done"
+                          ? `Finished ${run.created_at ? relativeTime(run.created_at) : ""}`
+                          : run.status === "failed"
+                            ? run.error ?? "Failed"
+                            : `${run.status} · ${Math.round(run.progress * 100)}%`}
+                      </p>
+                    </div>
+                    <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+                      {run.status}
+                    </Badge>
+                  </button>
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+        </TabsContent>
       </Tabs>
-      <BacktestSheet
-        rule={backtestRule}
-        open={backtestRule !== null}
-        onOpenChange={(next) => {
-          if (!next) setBacktestRule(null)
-        }}
-      />
+        <BacktestSheet
+          rule={backtestRule}
+          jobId={backtestJobId}
+          open={backtestRule !== null}
+          onOpenChange={(next) => {
+            if (!next) {
+              setBacktestRule(null)
+              setBacktestJobId(undefined)
+              void refreshBacktests()
+            }
+          }}
+        />
     </div>
   )
 }

@@ -95,6 +95,25 @@ export default function RiskPage() {
         present, not evidence that a move will follow.
       </p>
 
+      <h2>Backtests are not forecasts</h2>
+      <p>
+        A backtest replays stored candles through the same code that fires your
+        alerts, and models entries, exits, fees and slippage. It cannot model
+        the order book you would really have traded into, funding, exchange
+        outages, or your own behaviour on the day.
+      </p>
+      <p>
+        Results on the <em>seen</em> period are selected: the platform searches
+        many settings there and keeps the best, which flatters that number by
+        construction. The <em>unseen</em> period is measured once, with that
+        single choice, and it is the number worth reading. A large drop from
+        seen to unseen is ordinary, and we flag it — it means the settings fitted
+        noise rather than anything that repeats. Every report says how many
+        settings were tried. Fewer than thirty trades tells you very little
+        either way, and we say so on the report rather than leaving you to
+        notice.
+      </p>
+
       <h2>Trading can lose you money</h2>
       <p>
         Trading cryptocurrency carries substantial risk, including the total

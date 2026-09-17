@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { canBeNeutral, equityLines, fmtPct, markable, tradeMarks, tradeVerdict, verdict, type BacktestReport, type PeriodStudy, type TradePeriod, type TradeRow } from "@/lib/backtests"
+import { canBeNeutral, equityLines, fmtPct, markable, overfit, settingLabel, tradeMarks, tradeVerdict, verdict, type BacktestReport, type PeriodStudy, type TradePeriod, type TradeRow, type TuningReport } from "@/lib/backtests"
 
 function period(over: Partial<PeriodStudy> = {}, edge = 0.4, ci: [number, number] | null = [0.1, 0.7]): PeriodStudy {
   return {
@@ -95,11 +95,44 @@ describe("trades", () => {
   it("sums up the unseen trades, or says there are too few", () => {
     const base = report(period())
     expect(tradeVerdict({ ...base, trades: { seen: tp({ expectancy_r: 0.5 }), unseen: tp() } })).toBe(
-      "Trading it on unseen data: +0.35R per trade over 40 trades, +12.50% total, worst drawdown -6.20% (seen: +0.50R per trade).",
+      "Trading it on unseen data: +0.35R per trade over 40 unseen trades, +12.50% total, worst drawdown -6.20% (seen: +0.50R per trade).",
     )
     expect(tradeVerdict({ ...base, trades: { seen: tp(), unseen: tp({ trades: 7, flags: ["too_few_trades"] }) } })).toBe(
       "Only 7 unseen trades — too few to judge this exit plan.",
     )
     expect(tradeVerdict(base)).toBeNull()
+  })
+})
+
+
+function tuning(over: Partial<TuningReport> = {}): TuningReport {
+  const settings = { filters: {}, stop_atr: 1.5, target_r: 2, max_bars: 20 }
+  return {
+    tried: 27, objective: "expectancy in R per trade on seen data", min_trades: 30, qualified: true,
+    chosen: settings,
+    top: [{ settings, trades: 44, expectancy_r: 0.4, max_drawdown_pct: -8, total_return_pct: 15 }],
+    ...over,
+  }
+}
+
+describe("tuning", () => {
+  it("labels a setting the way a trader would read it", () => {
+    expect(settingLabel({ filters: {}, stop_atr: 1.5, target_r: 2, max_bars: 20 })).toBe("stop 1.5 ATR · target 2R · 20 bars")
+    expect(settingLabel({ filters: { min_confidence: 70 }, stop_atr: 1, target_r: 3, max_bars: 10 })).toBe(
+      "stop 1 ATR · target 3R · 10 bars · confidence 70",
+    )
+    expect(settingLabel({ filters: { min_strength: "strong" }, stop_atr: 2, target_r: 1, max_bars: 40 })).toBe(
+      "stop 2 ATR · target 1R · 40 bars · strength strong",
+    )
+  })
+
+  it("says a tuned verdict was selected from many tries, and flags a collapse", () => {
+    const base = report(period())
+    const tuned = { ...base, tuning: tuning(), flags: ["tuned", "likely_overfit"], trades: { seen: tp({ expectancy_r: 0.9 }), unseen: tp() } }
+    expect(tradeVerdict(tuned)).toBe(
+      "Selected from 27 settings: +0.35R per trade over 40 unseen trades, +12.50% total, worst drawdown -6.20% (seen: +0.90R per trade) — far below seen, so likely fitted to the seen data.",
+    )
+    expect(overfit(tuned)).toBe(true)
+    expect(overfit({ ...base, trades: { seen: tp(), unseen: tp() } })).toBe(false)
   })
 })
