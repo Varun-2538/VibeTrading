@@ -54,15 +54,25 @@ A step is exactly one of:
   {"type": "candle", "shape": one of SHAPES below, "max_body_pct": number 0-50 (optional, doji only, default 10)}
   {"type": "indicator", "indicator": "rsi", "period": integer 2-200, "cross": "above" | "below", "level": number 0-100}
   {"type": "structure", "event": "sweep" | "breakout" | "rejection" | "pullback", "side": "bullish" | "bearish"}
+  {"type": "ema_cross", "fast": integer 1-400, "slow": integer 2-400, "cross": "above" | "below"}
+  {"type": "macd_cross", "fast": 12, "slow": 26, "signal": 9, "against": "signal" | "zero", "cross": "above" | "below"}
+  {"type": "stoch_cross", "k": 14, "k_smooth": 3, "d": 3, "against": "d" | "level", "level": number 0-100, "cross": "above" | "below"}
+  {"type": "bollinger", "band": "upper" | "middle" | "lower", "cross": "above" | "below", "period": 20, "std": 2}
+  {"type": "bollinger_squeeze", "period": 20, "std": 2, "lookback": integer 10-1000}
+  {"type": "vwap_cross", "anchor": "day" | "week", "cross": "above" | "below"}
+  {"type": "volume_spike", "multiple": number above 1, "period": 20}
+  {"type": "atr_expansion", "multiple": number above 1, "period": 14}
 
 SHAPES: __SHAPES__
 Structure wording: "liquidity sweep", "stop hunt", "sweep the lows", "liquidity grab below" -> sweep bullish; "sweep the highs" -> sweep bearish; "breakout above resistance" -> breakout bullish; "breakdown", "break below support" -> breakout bearish; "rejection at support", "bounce off support" -> rejection bullish; "rejection at resistance" -> rejection bearish; "pullback in an uptrend", "dip in the trend" -> pullback bullish; "pullback in a downtrend", "relief rally" -> pullback bearish. "Smart money" or "institutional" sweep means the sweep event.
+Indicator wording: "golden cross" -> ema_cross fast 50 slow 200 above; "death cross" -> ema_cross fast 50 slow 200 below; "price crosses the 200 EMA" -> ema_cross fast 1 slow 200 (fast 1 is the close itself); "MACD crossover"/"MACD bullish cross" -> macd_cross against signal above; "MACD crosses zero" -> against zero; "stochastic oversold cross" -> stoch_cross against level, level 20, above; "overbought" -> level 80, below; "stoch %K crosses %D" -> against d; "closes above the upper band"/"Bollinger breakout" -> bollinger upper above; "loses the lower band" -> bollinger lower below; "squeeze", "bands tightening", "coiling", "low volatility" -> bollinger_squeeze; "crosses VWAP", "reclaims VWAP" -> vwap_cross above, anchor day (use week when the sentence says weekly, and always on the 1d timeframe); "volume spike", "unusual volume", "volume climax" -> volume_spike; "range expansion", "wide bar", "volatility expansion", "big candle" -> atr_expansion.
 Synonyms: "pin bar" or "bullish pin" or "dragonfly" -> hammer; "inverted hammer" or "bearish pin" or "gravestone" -> shooting_star; "engulfing" alone -> ask which by direction words, default bullish_engulfing; "inside candle" or "harami" -> inside_bar.
 
 Rules:
 - Use Form B when the sentence names a chart pattern (double bottom/top, W, M, head and shoulders, inverse head and shoulders, cup and handle). Use Form A for candles, indicators and structure events. A pattern cannot be a step inside a sequence.
-- Only the shapes, indicators, structure events and pattern kinds listed exist. If the sentence needs anything else (MACD, EMA, volume, open interest, three white soldiers, morning star), output {"error": "<one sentence saying which part is unsupported>"}.
+- Only the shapes, indicators, structure events and pattern kinds listed exist. If the sentence needs anything else (open interest, funding rate, long/short ratio, order flow, Ichimoku, three white soldiers, morning star), output {"error": "<one sentence saying which part is unsupported>"}.
 - "RSI crossover of 14" or "RSI 14 crossover" means period 14; if the level is not stated, use 30 for "above"/bullish/oversold wording and 70 for "below"/bearish/overbought wording; if direction is not stated, use "above" with level 30.
+- Add "lookback": integer 50-1000 to Form A when a step is slow to warm up: at least the slow EMA, or the Bollinger period plus its squeeze lookback, plus room for the steps. A squeeze over 120 bars needs 400.
 - "followed by", "then", "after" set step order. "within N candles/bars" sets within_bars.
 - If the sentence names no symbol, use the default symbol given. Same for timeframe.
 - If the sentence is not asking for an alert on a condition, output {"error": "..."}.

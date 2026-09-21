@@ -112,3 +112,118 @@ def test_nan_warm_up_never_registers_a_cross():
 def test_unknown_direction_is_an_error():
     with pytest.raises(ValueError):
         crosses(np.array([1.0, 2.0]), 1.5, "sideways")
+
+
+import numpy as np
+
+from analysis import indicators as ind
+
+DAY = 86_400_000
+HOUR = 3_600_000
+
+
+def test_sma_warms_up_with_nan():
+    out = ind.sma(np.array([1.0, 2, 3, 4]), 3)
+    assert np.isnan(out[:2]).all()
+    assert out[2] == 2.0 and out[3] == 3.0
+
+
+def test_stochastic_reads_position_in_the_range():
+    # Closes climb to the top of a 0-10 range, so %K ends at 100.
+    highs = np.array([10.0] * 6)
+    lows = np.array([0.0] * 6)
+    closes = np.array([5.0, 5, 5, 10, 10, 10])
+    k, d = ind.stochastic(highs, lows, closes, k_period=3, k_smooth=1, d_period=3)
+    assert np.isnan(k[:2]).all()
+    assert k[2] == 50.0 and k[5] == 100.0
+    assert d[5] == pytest.approx(100.0) and np.isnan(d[3])
+
+
+def test_stochastic_on_a_flat_range_is_not_a_division_by_zero():
+    flat = np.array([5.0] * 5)
+    k, _ = ind.stochastic(flat, flat, flat, k_period=3, k_smooth=1, d_period=3)
+    assert np.isnan(k[2:]).all() or (k[2:] == 50.0).all()
+
+
+def test_bollinger_bands_are_symmetric_about_the_mean():
+    closes = np.array([1.0, 2, 3, 4, 5, 6])
+    mid, up, low, width = ind.bollinger(closes, period=3, std=2.0)
+    assert np.isnan(mid[:2]).all()
+    assert mid[2] == 2.0
+    spread = np.std(np.array([1.0, 2, 3]))
+    assert up[2] == 2.0 + 2 * spread and low[2] == 2.0 - 2 * spread
+    assert width[2] == (up[2] - low[2]) / mid[2]
+
+
+def test_vwap_resets_each_utc_day():
+    times = np.array([0, HOUR, DAY, DAY + HOUR])
+    price = np.array([10.0, 20.0, 100.0, 200.0])
+    volumes = np.array([1.0, 1.0, 1.0, 1.0])
+    out = ind.vwap(price, price, price, volumes, times, anchor="day")
+    assert out[0] == 10.0 and out[1] == 15.0  # first day accumulates
+    assert out[2] == 100.0 and out[3] == 150.0  # second day starts again
+
+
+def test_vwap_weighs_by_volume_and_uses_typical_price():
+    times = np.array([0, HOUR])
+    highs, lows, closes = np.array([12.0, 22.0]), np.array([8.0, 18.0]), np.array([10.0, 20.0])
+    out = ind.vwap(highs, lows, closes, np.array([1.0, 3.0]), times, anchor="day")
+    assert out[0] == 10.0
+    assert out[1] == (10.0 * 1 + 20.0 * 3) / 4
+
+
+def test_vwap_can_anchor_to_the_week():
+    # 1970-01-01 was a Thursday; the week boundary is Monday 1970-01-05.
+    times = np.array([0, 4 * DAY, 4 * DAY + HOUR])
+    price = np.array([10.0, 100.0, 200.0])
+    out = ind.vwap(price, price, price, np.array([1.0, 1.0, 1.0]), times, anchor="week")
+    assert out[0] == 10.0 and out[1] == 100.0 and out[2] == 150.0
+
+
+def test_volume_ratio_compares_with_the_bars_before():
+    volumes = np.array([10.0, 10, 10, 30])
+    out = ind.volume_ratio(volumes, period=3)
+    assert np.isnan(out[:3]).all()
+    assert out[3] == 3.0
+
+
+def test_true_range_accounts_for_gaps():
+    highs = np.array([10.0, 20.0])
+    lows = np.array([9.0, 19.0])
+    closes = np.array([9.5, 19.5])
+    tr = ind.true_range(highs, lows, closes)
+    assert np.isnan(tr[0])
+    assert tr[1] == 20.0 - 9.5
+
+
+def test_atr_series_excludes_the_bar_it_labels():
+    highs = np.array([10.0, 11, 12, 40])
+    lows = np.array([9.0, 10, 11, 10])
+    closes = np.array([9.5, 10.5, 11.5, 39.0])
+    atr = ind.atr_series(highs, lows, closes, period=2)
+    assert np.isnan(atr[:2]).all()
+    assert atr[3] == np.mean([11.0 - 9.5, 12.0 - 10.5])
+
+
+def test_crosses_series_needs_a_real_crossing():
+    a = np.array([1.0, 2.0, 3.0, 1.0])
+    b = np.array([2.0, 2.0, 2.0, 2.0])
+    above = ind.crosses_series(a, b, "above")
+    below = ind.crosses_series(a, b, "below")
+    assert not above[0] and not above[1]  # touching is not crossing
+    assert above[2] and not above[3]
+    assert below[3] and not below[:3].any()
+    # Coming to rest exactly on the line is not a cross either.
+    level = ind.crosses_series(np.array([3.0, 2.0]), np.array([2.0, 2.0]), "below")
+    assert not level.any()
+
+
+def test_crosses_series_is_false_wherever_an_input_is_nan():
+    a = np.array([np.nan, 1.0, 3.0])
+    b = np.array([2.0, 2.0, 2.0])
+    assert not ind.crosses_series(a, b, "above")[:2].any()
+    assert ind.crosses_series(a, b, "above")[2]
+
+
+def test_indicator_names_cover_the_new_triggers():
+    assert ind.INDICATORS == ("rsi", "ema", "macd", "stochastic", "bollinger", "vwap", "volume", "atr")

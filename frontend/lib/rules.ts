@@ -63,7 +63,79 @@ export interface StructureStep {
   side: "bullish" | "bearish"
 }
 
-export type SequenceStep = CandleStep | IndicatorStep | StructureStep
+export interface EmaCrossStep {
+  type: "ema_cross"
+  /** 1 means the close itself, so "price crosses the 200 EMA". */
+  fast: number
+  slow: number
+  cross: "above" | "below"
+}
+
+export interface MacdCrossStep {
+  type: "macd_cross"
+  fast?: number
+  slow?: number
+  signal?: number
+  against: "signal" | "zero"
+  cross: "above" | "below"
+}
+
+export interface StochCrossStep {
+  type: "stoch_cross"
+  k?: number
+  k_smooth?: number
+  d?: number
+  against: "d" | "level"
+  level?: number
+  cross: "above" | "below"
+}
+
+export interface BollingerStep {
+  type: "bollinger"
+  band: "upper" | "middle" | "lower"
+  cross: "above" | "below"
+  period?: number
+  std?: number
+}
+
+export interface BollingerSqueezeStep {
+  type: "bollinger_squeeze"
+  period?: number
+  std?: number
+  lookback?: number
+}
+
+export interface VwapCrossStep {
+  type: "vwap_cross"
+  /** A day anchor is refused on the 1d timeframe. */
+  anchor: "day" | "week"
+  cross: "above" | "below"
+}
+
+export interface VolumeSpikeStep {
+  type: "volume_spike"
+  multiple?: number
+  period?: number
+}
+
+export interface AtrExpansionStep {
+  type: "atr_expansion"
+  multiple?: number
+  period?: number
+}
+
+export type SequenceStep =
+  | CandleStep
+  | IndicatorStep
+  | StructureStep
+  | EmaCrossStep
+  | MacdCrossStep
+  | StochCrossStep
+  | BollingerStep
+  | BollingerSqueezeStep
+  | VwapCrossStep
+  | VolumeSpikeStep
+  | AtrExpansionStep
 
 /** Steps in order, the last one landing on the newest closed bar. */
 export interface SequenceRuleParams {
