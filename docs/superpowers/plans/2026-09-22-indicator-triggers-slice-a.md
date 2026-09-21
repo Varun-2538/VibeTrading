@@ -78,7 +78,7 @@ def test_stochastic_reads_position_in_the_range():
     k, d = ind.stochastic(highs, lows, closes, k_period=3, k_smooth=1, d_period=3)
     assert np.isnan(k[:2]).all()
     assert k[2] == 50.0 and k[5] == 100.0
-    assert d[5] == 100.0 and np.isnan(d[3])
+    assert d[5] == pytest.approx(100.0) and np.isnan(d[3])
 
 
 def test_stochastic_on_a_flat_range_is_not_a_division_by_zero():
@@ -148,13 +148,16 @@ def test_atr_series_excludes_the_bar_it_labels():
 
 
 def test_crosses_series_needs_a_real_crossing():
-    a = np.array([1.0, 2.0, 3.0, 2.0])
+    a = np.array([1.0, 2.0, 3.0, 1.0])
     b = np.array([2.0, 2.0, 2.0, 2.0])
     above = ind.crosses_series(a, b, "above")
     below = ind.crosses_series(a, b, "below")
     assert not above[0] and not above[1]  # touching is not crossing
     assert above[2] and not above[3]
-    assert below[3]
+    assert below[3] and not below[:3].any()
+    # Coming to rest exactly on the line is not a cross either.
+    level = ind.crosses_series(np.array([3.0, 2.0]), np.array([2.0, 2.0]), "below")
+    assert not level.any()
 
 
 def test_crosses_series_is_false_wherever_an_input_is_nan():
