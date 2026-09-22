@@ -21,6 +21,7 @@ from analysis.indicators import (
     crosses_series,
     ema,
     macd,
+    rolling_min,
     rsi,
     stochastic,
     true_range,
@@ -116,15 +117,10 @@ def step_mask(candles: Sequence[Dict[str, Any]], step: Dict[str, Any]) -> np.nda
         _, _, _, width = bollinger(
             closes, period=int(step.get("period", 20)), std=float(step.get("std", 2.0))
         )
-        lookback = int(step.get("lookback", 120))
-        out = np.zeros(closes.shape, dtype=bool)
-        for i in range(closes.size):
-            window = width[max(0, i + 1 - lookback): i + 1]
-            if np.isnan(width[i]) or np.isnan(window).all():
-                continue
-            # The tightest bandwidth of the window, this bar included.
-            out[i] = width[i] <= np.nanmin(window)
-        return out
+        # The tightest bandwidth of the window, this bar included.
+        tightest = rolling_min(width, int(step.get("lookback", 120)))
+        with np.errstate(invalid="ignore"):
+            return ~np.isnan(width) & (width <= tightest)
 
     if kind == "vwap_cross":
         line = vwap(highs, lows, closes, volumes, times, anchor=step.get("anchor", "day"))
