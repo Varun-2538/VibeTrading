@@ -111,6 +111,15 @@ def crosses(series: np.ndarray, level: float, direction: str) -> np.ndarray:
     return out
 
 
+def _windows(values: np.ndarray, period: int) -> np.ndarray:
+    """
+    A view of every window of `period` values, so a window statistic is one
+    vectorised call rather than a Python loop per bar. Callers must check
+    there are at least `period` values.
+    """
+    return np.lib.stride_tricks.sliding_window_view(np.asarray(values, dtype=float), period)
+
+
 def sma(values: np.ndarray, period: int) -> np.ndarray:
     """Simple moving average, NaN until there are `period` values."""
     values = np.asarray(values, dtype=float)
@@ -142,11 +151,13 @@ def stochastic(
     closes = np.asarray(closes, dtype=float)
     raw = np.full(closes.shape, np.nan)
 
-    for i in range(k_period - 1, closes.size):
-        window = slice(i + 1 - k_period, i + 1)
-        top, bottom = highs[window].max(), lows[window].min()
-        if top > bottom:
-            raw[i] = (closes[i] - bottom) / (top - bottom) * 100.0
+    if closes.size >= k_period:
+        top = _windows(highs, k_period).max(axis=1)
+        bottom = _windows(lows, k_period).min(axis=1)
+        span = top - bottom
+        with np.errstate(invalid="ignore", divide="ignore"):
+            position = (closes[k_period - 1:] - bottom) / span * 100.0
+        raw[k_period - 1:] = np.where(span > 0, position, np.nan)
 
     k = raw if k_smooth <= 1 else sma(raw, k_smooth)
     return k, sma(k, d_period)
@@ -161,8 +172,8 @@ def bollinger(
     closes = np.asarray(closes, dtype=float)
     middle = sma(closes, period)
     deviation = np.full(closes.shape, np.nan)
-    for i in range(period - 1, closes.size):
-        deviation[i] = closes[i + 1 - period: i + 1].std()
+    if closes.size >= period:
+        deviation[period - 1:] = _windows(closes, period).std(axis=1)
     upper = middle + std * deviation
     lower = middle - std * deviation
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -270,13 +281,14 @@ def rolling_min(values: np.ndarray, window: int) -> np.ndarray:
     """
     Smallest value in the `window` ending at each position, ignoring NaN.
 
-    One pass, with a monotonic deque of candidate indices: the naive version
-    rescans the window at every bar, and a backtest calls this once per
-    replayed bar, so the difference is a minute against an hour.
+    One pass, with a monotonic deque of candidate indices. Rescanning the
+    window at every bar costs about five times as much, and a backtest calls
+    this once per replayed bar.
     """
     values = np.asarray(values, dtype=float)
     out = np.full(values.shape, np.nan)
     candidates: List[int] = []  # indices, their values increasing
+
 
     for i in range(values.size):
         while candidates and candidates[0] <= i - window:
