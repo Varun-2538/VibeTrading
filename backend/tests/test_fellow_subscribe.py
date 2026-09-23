@@ -311,11 +311,23 @@ def test_a_band_finding_becomes_a_bollinger_step_and_a_squeeze_becomes_a_squeeze
     assert squeeze.draft["params"]["steps"][0]["type"] == "bollinger_squeeze"
 
 
-def test_a_vwap_finding_keeps_the_anchor_the_scene_used():
-    scene = scene_with(vwap={"anchor": "day", "value": 60_750.0, "side": "above",
-                             "recent_crosses": [{"dir": "above", "t": T0 + 92 * H}]})
-    sub = subscription_for(finding("indicator", "VWAP", [{"type": "hline", "price": 60_750.0}]), scene)
-    assert sub.draft["params"]["steps"][0] == {"type": "vwap_cross", "anchor": "day", "cross": "above"}
+def test_a_vwap_finding_keeps_the_anchor_and_watches_the_side_it_is_not_on():
+    # Marking the VWAP line says "this line matters", not which way. The event
+    # worth an alert is the crossing away from where price already sits: above
+    # VWAP, that is losing it; below it, reclaiming it.
+    above = scene_with(vwap={"anchor": "day", "value": 60_750.0, "side": "above", "recent_crosses": []})
+    sub = subscription_for(finding("indicator", "VWAP", [{"type": "hline", "price": 60_750.0}]), above)
+    assert sub.draft["params"]["steps"][0] == {"type": "vwap_cross", "anchor": "day", "cross": "below"}
+
+    below = scene_with(vwap={"anchor": "week", "value": 60_750.0, "side": "below", "recent_crosses": []})
+    reclaim = subscription_for(finding("indicator", "VWAP", [{"type": "hline", "price": 60_750.0}]), below)
+    assert reclaim.draft["params"]["steps"][0] == {"type": "vwap_cross", "anchor": "week", "cross": "above"}
+
+    # A marked cross still wins: it says which way it went.
+    crossed = scene_with(vwap={"anchor": "day", "value": 60_750.0, "side": "above",
+                               "recent_crosses": [{"dir": "above", "t": T0 + 92 * H}]})
+    marked = subscription_for(finding("indicator", "VWAP", [{"type": "bar", "time": T0 + 92 * H}]), crossed)
+    assert marked.draft["params"]["steps"][0]["cross"] == "above"
 
 
 def test_volume_and_range_findings_become_their_steps():
@@ -338,3 +350,30 @@ def test_the_lookback_is_long_enough_for_the_step_it_builds():
     sub = subscription_for(finding("indicator", "Bollinger squeeze"), scene)
     # RuleCreate refuses a lookback that cannot cover a 120-bar squeeze.
     assert_armable(sub)
+
+
+def test_a_bands_finding_does_not_borrow_an_rsi_alert():
+    # Seen in production: the bands finding marked a bar that was also an RSI
+    # cross, and came back as an RSI alert. The label decides the subject.
+    scene = scene_with(
+        rsi={"period": 14, "now": 45.0, "prev": 50.0,
+             "recent_crosses": [{"level": 70, "dir": "below", "t": T0 + 96 * H}]},
+        bollinger={"upper": 62_500.0, "lower": 59_900.0, "width": 0.03, "squeeze": False,
+                   "recent_crosses": [{"band": "upper", "dir": "above", "t": T0 + 96 * H}]},
+    )
+    sub = subscription_for(
+        finding("indicator", "bollinger bands activity", [{"type": "bar", "time": T0 + 96 * H}]), scene
+    )
+    assert_armable(sub)
+    assert sub.draft["params"]["steps"][0]["type"] == "bollinger"
+
+
+def test_a_label_naming_an_indicator_the_scene_lacks_gets_nothing():
+    # Even though the marked bar is an RSI cross, a stochastic label cannot
+    # become an RSI alert.
+    scene = scene_with(rsi={"period": 14, "now": 45.0, "prev": 50.0,
+                            "recent_crosses": [{"level": 70, "dir": "below", "t": T0 + 96 * H}]})
+    scene["indicators"].pop("stoch", None)
+    assert subscription_for(
+        finding("indicator", "stochastic cross", [{"type": "bar", "time": T0 + 96 * H}]), scene
+    ) is None
