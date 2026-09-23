@@ -176,11 +176,14 @@ def test_rsi_cross_from_its_bar():
     ]
 
 
-def test_ema_and_macd_crosses_have_no_rule_to_become():
-    # The EMA cross bar is not an RSI cross bar, and the label is not about RSI.
+def test_ema_and_macd_crosses_now_have_steps_of_their_own():
+    # Until the indicator triggers shipped, neither could be alerted on.
     ema = finding("indicator", "EMA 20/50 cross", [{"type": "bar", "time": T0 + 96 * H}])
-    assert subscription_for(ema, SCENE) is None
-    assert subscription_for(finding("indicator", "MACD bullish cross"), SCENE) is None
+    assert subscription_for(ema, SCENE).draft["params"]["steps"][0]["type"] == "ema_cross"
+    # The scene here has no MACD cross to point at, so the label alone still
+    # gets a MACD step - the scene does hold a MACD reading.
+    macd = subscription_for(finding("indicator", "MACD bullish cross"), SCENE)
+    assert macd.draft["params"]["steps"][0]["type"] == "macd_cross"
 
 
 def test_level_from_its_line_keeps_that_level_strength():
@@ -246,7 +249,10 @@ def test_a_subscription_the_model_writes_is_replaced():
     level, macd = answer.findings
     assert level.subscribe.draft["symbol"] == "BTCUSDT"
     assert level.subscribe.summary != "free money"
-    assert macd.subscribe is None
+    # MACD is armable now, but on the server's terms: its own step, its own
+    # words, and never the empty draft the model asked for.
+    assert macd.subscribe.summary != "invented"
+    assert macd.subscribe.draft["params"]["steps"][0]["type"] == "macd_cross"
 
 
 def test_serialised_answer_carries_the_draft():
@@ -258,3 +264,77 @@ def test_serialised_answer_carries_the_draft():
     attach_subscriptions(answer, SCENE)
     dumped = answer.model_dump(by_alias=True)
     assert dumped["findings"][0]["subscribe"]["draft"]["params"]["steps"][0]["shape"] == "doji"
+
+
+def scene_with(**indicators):
+    scene = copy.deepcopy(SCENE)
+    scene["indicators"] = {**scene["indicators"], **indicators}
+    return scene
+
+
+def test_an_ema_cross_finding_becomes_an_ema_step():
+    scene = scene_with(ema={"20": 60_900.0, "50": 60_400.0, "stack": "bullish",
+                            "recent_cross": {"dir": "bullish", "t": T0 + 96 * H}})
+    sub = subscription_for(finding("indicator", "EMA 20/50 cross", [{"type": "bar", "time": T0 + 96 * H}]), scene)
+    assert_armable(sub)
+    assert sub.draft["params"]["steps"] == [
+        {"type": "ema_cross", "fast": 20, "slow": 50, "cross": "above"}
+    ]
+    assert "EMA(20) crosses above EMA(50)" in sub.summary
+
+
+def test_a_macd_finding_becomes_a_macd_step():
+    scene = scene_with(macd={"line": 10.0, "signal": 8.0, "hist": 2.0,
+                             "recent_cross": {"dir": "bearish", "t": T0 + 95 * H}})
+    sub = subscription_for(finding("indicator", "MACD cross", [{"type": "bar", "time": T0 + 95 * H}]), scene)
+    assert sub.draft["params"]["steps"] == [
+        {"type": "macd_cross", "fast": 12, "slow": 26, "signal": 9, "against": "signal", "cross": "below"}
+    ]
+
+
+def test_a_stochastic_finding_reads_its_own_cross():
+    scene = scene_with(stoch={"k": 25.0, "d": 20.0, "state": "oversold",
+                              "recent_crosses": [{"level": 20, "dir": "above", "t": T0 + 94 * H}]})
+    sub = subscription_for(finding("indicator", "stochastic", [{"type": "bar", "time": T0 + 94 * H}]), scene)
+    step = sub.draft["params"]["steps"][0]
+    assert step["type"] == "stoch_cross" and step["against"] == "level" and step["level"] == 20.0
+
+
+def test_a_band_finding_becomes_a_bollinger_step_and_a_squeeze_becomes_a_squeeze_step():
+    scene = scene_with(bollinger={"upper": 62_500.0, "lower": 59_900.0, "width": 0.03, "squeeze": True,
+                                  "recent_crosses": [{"band": "upper", "dir": "above", "t": T0 + 93 * H}]})
+    band = subscription_for(finding("indicator", "upper Bollinger band", [{"type": "hline", "price": 62_500.0}]), scene)
+    assert band.draft["params"]["steps"][0] == {
+        "type": "bollinger", "band": "upper", "cross": "above", "period": 20, "std": 2.0
+    }
+    squeeze = subscription_for(finding("indicator", "Bollinger squeeze"), scene)
+    assert squeeze.draft["params"]["steps"][0]["type"] == "bollinger_squeeze"
+
+
+def test_a_vwap_finding_keeps_the_anchor_the_scene_used():
+    scene = scene_with(vwap={"anchor": "day", "value": 60_750.0, "side": "above",
+                             "recent_crosses": [{"dir": "above", "t": T0 + 92 * H}]})
+    sub = subscription_for(finding("indicator", "VWAP", [{"type": "hline", "price": 60_750.0}]), scene)
+    assert sub.draft["params"]["steps"][0] == {"type": "vwap_cross", "anchor": "day", "cross": "above"}
+
+
+def test_volume_and_range_findings_become_their_steps():
+    scene = scene_with(volume={"ratio": 3.2, "spikes": [T0 + 91 * H]},
+                       atr={"value": 300.0, "expansion": True, "recent": [T0 + 90 * H]})
+    volume = subscription_for(finding("indicator", "volume spike", [{"type": "bar", "time": T0 + 91 * H}]), scene)
+    assert volume.draft["params"]["steps"][0]["type"] == "volume_spike"
+    atr = subscription_for(finding("indicator", "range expansion", [{"type": "bar", "time": T0 + 90 * H}]), scene)
+    assert atr.draft["params"]["steps"][0]["type"] == "atr_expansion"
+
+
+def test_an_indicator_the_scene_does_not_hold_gets_no_alert():
+    # The scene has no stochastic at all, so a stochastic finding is not armable.
+    assert subscription_for(finding("indicator", "stochastic cross"), SCENE) is None
+
+
+def test_the_lookback_is_long_enough_for_the_step_it_builds():
+    scene = scene_with(bollinger={"upper": 62_500.0, "lower": 59_900.0, "width": 0.03, "squeeze": True,
+                                  "recent_crosses": []})
+    sub = subscription_for(finding("indicator", "Bollinger squeeze"), scene)
+    # RuleCreate refuses a lookback that cannot cover a 120-bar squeeze.
+    assert_armable(sub)

@@ -31,6 +31,10 @@ LAST_BARS = 5
 MAX_SWINGS = 6
 MAX_EVENTS = 6
 
+# Recent events per new indicator. Two is enough to say "again, and before
+# that"; more is tokens for nothing.
+MAX_INDICATOR_EVENTS = 2
+
 # How far back an indicator cross still counts as "recent", in bars.
 RECENT_BARS = 12
 
@@ -54,7 +58,10 @@ VOCABULARY = {
         "HS (head and shoulders)", "IHS (inverse head and shoulders)", "CUP (cup and handle)",
     ],
     "candles": list(candle_shapes.SHAPES),
-    "indicators": ["rsi", "ema", "macd"],
+    "indicators": [
+        "rsi", "ema", "macd", "stochastic", "bollinger (and squeeze)",
+        "vwap", "volume spike", "atr expansion",
+    ],
     "structure": [
         "trend (HH/HL, LH/LL swings)",
         "breakout", "liquidity sweep", "rejection", "pullback",
@@ -194,6 +201,88 @@ def _indicators(candles: Sequence[Dict[str, Any]], places: int) -> Dict[str, Any
                 "t": cross[0]["t"],
             }
         out["macd"] = macd
+
+    highs = np.array([float(c["high"]) for c in candles], dtype=float)
+    lows = np.array([float(c["low"]) for c in candles], dtype=float)
+    volumes = np.array([float(c["volume"]) for c in candles], dtype=float)
+    bar_times = np.array(times, dtype=np.int64)
+
+    def recent(mask: np.ndarray) -> List[int]:
+        """Bar times where `mask` is true inside the recent window, newest last."""
+        if mask.size == 0:
+            return []
+        start = max(0, mask.size - RECENT_BARS)
+        hits = [int(times[i]) for i in np.flatnonzero(mask[start:]) + start]
+        return hits[-MAX_INDICATOR_EVENTS:]
+
+    k_line, d_line = indicators.stochastic(highs, lows, closes)
+    if not np.isnan(k_line[-1]):
+        k_now = float(k_line[-1])
+        stoch: Dict[str, Any] = {
+            "k": _r(k_now, 1),
+            "state": "overbought" if k_now >= 80 else "oversold" if k_now <= 20 else "middle",
+            "recent_crosses": [],
+        }
+        if not np.isnan(d_line[-1]):
+            stoch["d"] = _r(d_line[-1], 1)
+            for direction in ("above", "below"):
+                for t in recent(indicators.crosses_series(k_line, d_line, direction)):
+                    stoch["recent_crosses"].append({"level": "d", "dir": direction, "t": t})
+        for level in (20, 80):
+            for direction in ("above", "below"):
+                for t in recent(indicators.crosses(k_line, float(level), direction)):
+                    stoch["recent_crosses"].append({"level": level, "dir": direction, "t": t})
+        stoch["recent_crosses"] = sorted(stoch["recent_crosses"], key=lambda c: c["t"], reverse=True)[:MAX_INDICATOR_EVENTS]
+        out["stoch"] = stoch
+
+    middle, upper, lower, width = indicators.bollinger(closes)
+    if not np.isnan(upper[-1]):
+        tightest = indicators.rolling_min(width, 120)
+        bands: Dict[str, Any] = {
+            "upper": _r(upper[-1], places),
+            "lower": _r(lower[-1], places),
+            "width": _r(width[-1], 4),
+            # The coiled-spring setup: bandwidth at its tightest in 120 bars.
+            "squeeze": bool(not np.isnan(width[-1]) and width[-1] <= tightest[-1]),
+            "recent_crosses": [],
+        }
+        for band, series in (("upper", upper), ("lower", lower)):
+            for direction in ("above", "below"):
+                for t in recent(indicators.crosses_series(closes, series, direction)):
+                    bands["recent_crosses"].append({"band": band, "dir": direction, "t": t})
+        bands["recent_crosses"] = sorted(bands["recent_crosses"], key=lambda c: c["t"], reverse=True)[:MAX_INDICATOR_EVENTS]
+        out["bollinger"] = bands
+
+    vwap_line = indicators.vwap(highs, lows, closes, volumes, bar_times, anchor="day")
+    if not np.isnan(vwap_line[-1]):
+        vwap_block: Dict[str, Any] = {
+            "anchor": "day",
+            "value": _r(vwap_line[-1], places),
+            "side": "above" if closes[-1] >= vwap_line[-1] else "below",
+            "recent_crosses": [],
+        }
+        for direction in ("above", "below"):
+            for t in recent(indicators.crosses_series(closes, vwap_line, direction)):
+                vwap_block["recent_crosses"].append({"dir": direction, "t": t})
+        vwap_block["recent_crosses"] = sorted(vwap_block["recent_crosses"], key=lambda c: c["t"], reverse=True)[:MAX_INDICATOR_EVENTS]
+        out["vwap"] = vwap_block
+
+    ratio = indicators.volume_ratio(volumes)
+    if not np.isnan(ratio[-1]):
+        with np.errstate(invalid="ignore"):
+            spikes = np.nan_to_num(ratio, nan=0.0) >= 2.0
+        out["volume"] = {"ratio": _r(ratio[-1], 2), "spikes": recent(spikes)}
+
+    ranges = indicators.true_range(highs, lows, closes)
+    unit = indicators.atr_series(highs, lows, closes)
+    if not np.isnan(unit[-1]):
+        with np.errstate(invalid="ignore"):
+            wide = np.nan_to_num(ranges, nan=0.0) >= 2.0 * np.nan_to_num(unit, nan=np.inf)
+        out["atr"] = {
+            "value": _r(unit[-1], places),
+            "expansion": bool(wide[-1]),
+            "recent": recent(wide),
+        }
 
     return out
 

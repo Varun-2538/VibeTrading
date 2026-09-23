@@ -20,7 +20,9 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
@@ -51,6 +53,7 @@ import { ARBITRUM_NAME, shortAddress } from "@/lib/wallet"
 import { cn } from "@/lib/utils"
 import BacktestSheet from "@/components/backtest-sheet"
 import { listBacktests, type BacktestRule, type BacktestSummary } from "@/lib/backtests"
+import { TRIGGERS, signalParams, triggerById, triggerName } from "@/lib/triggers"
 
 interface AnalysisPanelProps {
   symbol: string
@@ -175,7 +178,13 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
   // Builder state. Symbol and timeframe come from the chart; everything else is
   // snapshotted into the rule so later chart fiddling cannot change its meaning.
   const [name, setName] = useState("")
-  const [agent, setAgent] = useState<RuleAgent>("pattern")
+  // "signal" is this panel's word, not the server's: a signal rule is a
+  // one-step sequence rule.
+  const [agent, setAgent] = useState<RuleAgent | "signal">("pattern")
+  const [triggerId, setTriggerId] = useState(TRIGGERS[0].id)
+  const [triggerValues, setTriggerValues] = useState<Record<string, string | number>>(
+    TRIGGERS[0].defaults,
+  )
   const [kind, setKind] = useState<PatternKind | "both">("both")
   const [confirmedOnly, setConfirmedOnly] = useState(true)
   const [minConfidence, setMinConfidence] = useState(70)
@@ -247,7 +256,17 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
     if (tab === "fired") setUnseen(0)
   }, [tab, events.length])
 
+  function chooseTrigger(id: string) {
+    const def = triggerById(id)
+    setTriggerId(id)
+    setTriggerValues(def ? { ...def.defaults } : {})
+  }
+
   const params = useMemo((): RuleParams => {
+    if (agent === "signal") {
+      const def = triggerById(triggerId)
+      if (def) return signalParams(def, triggerValues)
+    }
     if (agent === "pattern") {
       return {
         agent: "pattern",
@@ -268,15 +287,19 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
       proximity_pct: proximity,
       lookback: 500,
     }
-  }, [agent, kind, confirmedOnly, minConfidence, strictness, scale, side, minStrength, levelEvent, proximity])
+  }, [agent, kind, confirmedOnly, minConfidence, strictness, scale, side, minStrength, levelEvent, proximity, triggerId, triggerValues])
 
   const defaultName = useMemo(() => {
+    if (agent === "signal") {
+      const def = triggerById(triggerId)
+      if (def) return `${symbol} ${triggerName(def, triggerValues)}`
+    }
     if (agent === "pattern") {
       const which = kind === "both" ? "W/M" : kind
       return `${symbol} ${which} ${confirmedOnly ? "confirmed" : "forming"}`
     }
     return `${symbol} ${side} ${levelEvent}`
-  }, [agent, kind, confirmedOnly, symbol, side, levelEvent])
+  }, [agent, kind, confirmedOnly, symbol, side, levelEvent, triggerId, triggerValues])
 
   async function handleArm() {
     setBusy(true)
@@ -287,9 +310,10 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
         symbol,
         timeframe,
         params,
-        // A rule must hold for one further close before it counts, which is what
-        // stops a pattern that repaints away from raising an alert.
-        persist_bars: 1,
+        // A pattern must hold for one further close before it counts, which is
+        // what stops one that repaints away from raising an alert. A sequence
+        // step is settled at its close, so it waits for nothing.
+        persist_bars: agent === "signal" ? 0 : 1,
         cooldown_secs: 900,
       })
       setName("")
@@ -430,11 +454,12 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
                 <SelectContent>
                   <SelectItem value="pattern">Pattern</SelectItem>
                   <SelectItem value="liquidity">Liquidity</SelectItem>
+                  <SelectItem value="signal">Signal</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {agent === "pattern" ? (
+            {agent === "pattern" && (
               <>
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -513,7 +538,9 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
                   Confirmed only
                 </label>
               </>
-            ) : (
+            )}
+
+            {agent === "liquidity" && (
               <>
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -582,6 +609,73 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
                     />
                   </div>
                 )}
+              </>
+            )}
+
+            {agent === "signal" && (
+              <>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                    Trigger
+                  </label>
+                  <Select value={triggerId} onValueChange={chooseTrigger}>
+                    <SelectTrigger className={cn(FIELD, "w-[150px]")}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {["Indicators", "Candles", "Structure"].map((group) => (
+                        <SelectGroup key={group}>
+                          <SelectLabel className="text-[10px]">{group}</SelectLabel>
+                          {TRIGGERS.filter((t) => t.group === group).map((t) => (
+                            <SelectItem key={t.id} value={t.id}>
+                              {t.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {(triggerById(triggerId)?.fields ?? []).map((field) => (
+                  <div key={field.key} className="flex flex-col gap-1">
+                    <label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {field.label}
+                    </label>
+                    {field.kind === "choice" ? (
+                      <Select
+                        value={String(triggerValues[field.key] ?? "")}
+                        onValueChange={(v) =>
+                          setTriggerValues((prev) => ({ ...prev, [field.key]: v }))
+                        }
+                      >
+                        <SelectTrigger className={cn(FIELD, "w-[150px]")}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(field.choices ?? []).map((choice) => (
+                            <SelectItem key={choice.value} value={choice.value}>
+                              {choice.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step={field.step}
+                        min={field.min}
+                        max={field.max}
+                        value={String(triggerValues[field.key] ?? "")}
+                        onChange={(e) =>
+                          setTriggerValues((prev) => ({ ...prev, [field.key]: Number(e.target.value) }))
+                        }
+                        className={cn(FIELD, "w-[90px]")}
+                      />
+                    )}
+                  </div>
+                ))}
               </>
             )}
 
