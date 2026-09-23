@@ -219,3 +219,56 @@ def test_swings_can_be_joined_by_a_polyline():
 def test_a_sweep_the_scene_does_not_list_is_still_refused():
     a = parse_answer(answer_with([{"type": "hline", "price": 60_050.0, "label": "swept"}], kind="structure"), SCENE)
     assert a.findings[0].marks == []
+
+
+def test_marks_on_the_new_indicators_survive_the_guard():
+    scene = dict(SCENE)
+    scene["indicators"] = {
+        **SCENE["indicators"],
+        "bollinger": {"upper": 62_100.0, "lower": 59_900.0, "width": 0.03, "squeeze": True,
+                      "recent_crosses": [{"band": "upper", "dir": "above", "t": T0 + 96 * H}]},
+        "vwap": {"anchor": "day", "value": 60_750.0, "side": "above",
+                 "recent_crosses": [{"dir": "above", "t": T0 + 95 * H}]},
+        "volume": {"ratio": 3.1, "spikes": [T0 + 94 * H]},
+        "atr": {"value": 300.0, "expansion": True, "recent": [T0 + 93 * H]},
+        "stoch": {"k": 85.0, "d": 70.0, "state": "overbought",
+                  "recent_crosses": [{"level": "d", "dir": "above", "t": T0 + 92 * H}]},
+    }
+    answer = parse_answer(json.dumps({
+        "reply_md": "Bands, VWAP and a volume spike.",
+        "findings": [
+            {"kind": "indicator", "label": "upper band", "present": True,
+             "marks": [{"type": "hline", "price": 62_100.0},
+                       {"type": "bar", "time": T0 + 96 * H}]},
+            {"kind": "indicator", "label": "VWAP", "present": True,
+             "marks": [{"type": "hline", "price": 60_750.0}]},
+            {"kind": "indicator", "label": "volume spike", "present": True,
+             "marks": [{"type": "bar", "time": T0 + 94 * H}]},
+            {"kind": "indicator", "label": "range expansion", "present": True,
+             "marks": [{"type": "bar", "time": T0 + 93 * H}]},
+            {"kind": "indicator", "label": "stochastic cross", "present": True,
+             "marks": [{"type": "bar", "time": T0 + 92 * H}]},
+        ],
+    }), scene)
+    assert all(f.grounded for f in answer.findings), [f.label for f in answer.findings if not f.grounded]
+    assert sum(len(f.marks) for f in answer.findings) == 6
+
+
+def test_a_band_price_that_is_not_in_the_scene_is_still_dropped():
+    scene = dict(SCENE)
+    scene["indicators"] = {**SCENE["indicators"],
+                           "bollinger": {"upper": 62_100.0, "lower": 59_900.0, "width": 0.03,
+                                         "squeeze": False, "recent_crosses": []}}
+    answer = parse_answer(json.dumps({
+        "reply_md": "Invented band.",
+        "findings": [{"kind": "indicator", "label": "upper band", "present": True,
+                      "marks": [{"type": "hline", "price": 61_234.0}]}],
+    }), scene)
+    assert answer.findings[0].marks == [] and not answer.findings[0].grounded
+
+
+def test_the_prompt_names_the_new_indicators():
+    from agents.chart_fellow import SYSTEM_PROMPT
+
+    for word in ("stochastic", "Bollinger", "squeeze", "VWAP", "volume", "ATR"):
+        assert word.lower() in SYSTEM_PROMPT.lower(), word
