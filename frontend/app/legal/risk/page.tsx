@@ -103,6 +103,17 @@ export default function RiskPage() {
         outages, or your own behaviour on the day.
       </p>
       <p>
+        Costs are charged the way a decentralised exchange charges them: the
+        pool&apos;s fee tier on every swap, so twice per trade, plus price impact
+        on every fill and gas per swap. Gas is a cost in dollars, so the position
+        size you enter decides what share of the trade it is; a small position
+        pays a large share. Every report shows what the strategy earned before
+        costs, what costs took, and what was left — and those three numbers, not
+        the last one alone, are what tell you whether a losing result is a weak
+        signal or an expensive round trip. The tiers, the impact and the gas are
+        yours to set: we cannot know which pool you route through.
+      </p>
+      <p>
         Results on the <em>seen</em> period are selected: the platform searches
         many settings there and keeps the best, which flatters that number by
         construction. The <em>unseen</em> period is measured once, with that

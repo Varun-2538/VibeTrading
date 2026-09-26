@@ -7,7 +7,12 @@ of the period. Where a bar's range cannot say which came first, the worse
 outcome is assumed: a bar touching both stop and target is a stop. A bar that
 opens beyond the stop fills at that open, not at the stop - and one that opens
 beyond the target fills at the better open, because honesty runs both ways.
-Every fill pays slippage, every side pays fees.
+Every fill pays price impact, and every swap pays its pool fee and its gas.
+
+What the friction cost is kept per trade, in R, because that is the number
+that decides whether a real edge survives: a 1.5-ATR stop on an hourly major
+is around 0.6% of price, so a 0.3% round trip is half of what the strategy has
+to earn before it keeps anything.
 """
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -32,7 +37,13 @@ class Trade:
     notional: float
     ret: float
     r: float
+    cost_r: float
     equity_after: float
+
+    @property
+    def gross_r(self) -> float:
+        """What the trade would have made with no fees, gas or price impact."""
+        return self.r + self.cost_r
 
     @property
     def bars_held(self) -> int:
@@ -109,7 +120,7 @@ def simulate(
     highs = [float(c["high"]) for c in candles]
     lows = [float(c["low"]) for c in candles]
     closes = [float(c["close"]) for c in candles]
-    slip, fee, risk = plan.slippage_pct / 100, plan.fee_pct / 100, plan.risk_pct / 100
+    slip, swap, risk = plan.slippage_pct / 100, plan.swap_cost_pct / 100, plan.risk_pct / 100
 
     sim = Simulation(lo, hi)
     directed = [(s.index, signed(s.direction, neutral)) for s in signals if lo <= s.index < hi]
@@ -152,10 +163,16 @@ def simulate(
 
         exit_i, raw, reason = _exit(opens, highs, lows, closes, n, entry_i, hi, d, stop, target, plan.max_bars, opposite_at)
         fill = raw * (1 - d * slip)
-        ret = d * (fill - entry) / entry - fee * (1 + fill / entry)
+        ret = d * (fill - entry) / entry - swap * (1 + fill / entry)
+        # The same trade with no friction at all: in and out at the untouched
+        # prices. The difference is what the pool, the gas and the impact took.
+        mid = opens[entry_i]
+        cost = d * (raw - mid) / mid - ret
         notional = min(1.0, risk / (dist / entry))
         equity *= 1 + notional * ret
-        sim.trades.append(Trade(i, d, entry_i, entry, stop, target, exit_i, fill, reason, notional, ret, ret * entry / dist, equity))
+        per_r = entry / dist
+        sim.trades.append(Trade(i, d, entry_i, entry, stop, target, exit_i, fill, reason, notional, ret,
+                                ret * per_r, cost * per_r, equity))
         busy_until = exit_i
 
     sim.equity = _equity_path(sim.trades, closes, lo, hi)
