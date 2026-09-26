@@ -39,6 +39,8 @@ export interface BacktestReport {
     timeframe: string
     name: string
     neutral: Neutral
+    // Absent on reports measured before a venue's directions were a question.
+    sides?: Sides
     split: number
     bars: number
     warmup_bars: number
@@ -48,6 +50,8 @@ export interface BacktestReport {
     tape_cached: boolean
     replay_seconds: number
     exit?: ExitPlan
+    // Absent on reports measured before the trade maths were versioned.
+    parity_version?: number
   }
   signals: { fires: number; setups: number }
   study: { seen: PeriodStudy; unseen: PeriodStudy }
@@ -77,9 +81,23 @@ export interface BacktestRule {
   persist_bars?: number
 }
 
+/**
+ * Which directions a report measures. A spot pool cannot short - a position is
+ * the asset or it is stablecoins - so a report meant as evidence for on-chain
+ * execution has to be measured long-only, or it counted trades that pool could
+ * never have taken.
+ */
+export type Sides = "both" | "long" | "short"
+
+export const SIDES: { value: Sides; label: string }[] = [
+  { value: "both", label: "Both" },
+  { value: "long", label: "Long only" },
+  { value: "short", label: "Short only" },
+]
+
 export async function createBacktest(
   rule: BacktestRule,
-  options: { neutral: Neutral; split: number; exit: ExitPlan; tune: boolean; grid?: Grid },
+  options: { neutral: Neutral; sides: Sides; split: number; exit: ExitPlan; tune: boolean; grid?: Grid },
 ): Promise<{ id: string; status: BacktestStatus }> {
   const res = await fetch(`${API_BASE}/api/backtests`, {
     method: "POST",
@@ -94,6 +112,7 @@ export async function createBacktest(
         persist_bars: rule.persist_bars,
       },
       neutral: options.neutral,
+      sides: options.sides,
       split: options.split,
       exit: options.exit,
       tune: options.tune,
@@ -248,6 +267,7 @@ export interface TradePeriod {
   skipped_in_position: number
   skipped_neutral: number
   skipped_no_room: number
+  skipped_side?: number
   equity: [number, number][]
   trade_list: TradeRow[]
   trades_listed: number

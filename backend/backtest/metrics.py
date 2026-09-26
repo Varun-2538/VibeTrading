@@ -117,6 +117,7 @@ def period_metrics(candles: Sequence[Dict[str, Any]], sim: Simulation, timeframe
         "skipped_in_position": sim.skipped_in_position,
         "skipped_neutral": sim.skipped_neutral,
         "skipped_no_room": sim.skipped_no_room,
+        "skipped_side": sim.skipped_side,
         "equity": downsample(candles, sim.lo, sim.equity),
         "trade_list": [trade_row(candles, t) for t in listed],
         "trades_listed": len(listed),
@@ -132,5 +133,8 @@ def trade_period(
     plan: ExitPlan,
     neutral: str,
     timeframe_ms: int,
+    sides: str = "both",
 ) -> Dict[str, Any]:
-    return period_metrics(candles, simulate(candles, signals, lo, hi, plan, neutral), timeframe_ms)
+    return period_metrics(
+        candles, simulate(candles, signals, lo, hi, plan, neutral, sides), timeframe_ms
+    )

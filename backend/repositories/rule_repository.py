@@ -6,7 +6,7 @@ raising on a mismatch, so a caller cannot tell another owner's rule id from a
 non-existent one.
 """
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from models.database import db
 
@@ -200,17 +200,32 @@ class RuleEventRepository:
         return await db.fetchrow(query, dedup_key) is not None
 
     @staticmethod
-    async def set_action_result(
+    async def set_action_result_if(
         event_id: int,
+        expected: Sequence[str],
         status: str,
         result: Optional[Dict[str, Any]],
-    ) -> None:
-        query = """
-            UPDATE strategy_rule_events
-            SET action_status = $2, action_result = $3
-            WHERE id = $1
+    ) -> bool:
         """
-        await db.execute(query, event_id, status, result)
+        Move a fire's delivery status, but only from a status we expected.
+
+        An unconditional update is fine while one writer makes one attempt, which
+        is all an alert ever does. It is not fine once a second process can write
+        the same row minutes later: a stale attempt finishing late would overwrite
+        'failed' with 'sent', and nobody would know the trade had been abandoned.
+        False means the row had already moved on - the caller's signal to stop,
+        not to retry.
+        """
+        row = await db.fetchrow(
+            """
+            UPDATE strategy_rule_events
+            SET action_status = $3, action_result = $4
+            WHERE id = $1 AND action_status = ANY($2::text[])
+            RETURNING id
+            """,
+            event_id, list(expected), status, result,
+        )
+        return row is not None
 
     @staticmethod
     async def list_for_owner(

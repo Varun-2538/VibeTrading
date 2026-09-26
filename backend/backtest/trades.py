@@ -17,10 +17,19 @@ to earn before it keeps anything.
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from analysis.patterns import atr
 from backtest.signals import TapeSignal
-from backtest.study import ATR_BARS, signed
 from models.backtest_schemas import ExitPlan
+from services.trade_plan import (
+    bar_exit,
+    bracket,
+    exit_price,
+    frictionless_return,
+    in_r,
+    signed_direction,
+    time_exit_bar_index,
+    tradable,
+    trade_return,
+)
 
 
 @dataclass(frozen=True)
@@ -60,9 +69,21 @@ class Simulation:
     skipped_in_position: int = 0
     skipped_neutral: int = 0
     skipped_no_room: int = 0
+    # Signals in a direction this venue cannot take. Counted apart from
+    # skipped_neutral, because "no direction of its own" and "a short on a spot
+    # pool" are different reasons and only one of them is about the venue.
+    skipped_side: int = 0
 
 
 def _exit(opens, highs, lows, closes, n, entry_i, hi, d, stop, target, max_bars, opposite_at) -> Tuple[int, float, str]:
+    """
+    Walk the bars after entry until something ends the trade.
+
+    What each bar does is trade_plan.bar_exit - shared with the live monitor, so
+    the stop and the target mean one thing. What is left here is what genuinely
+    needs the whole array: the search for an opposing signal, the bar limit, and
+    the end of the period.
+    """
     def boundary() -> Tuple[int, float, str]:
         if hi < n:
             return hi, opens[hi], "end"
@@ -71,20 +92,15 @@ def _exit(opens, highs, lows, closes, n, entry_i, hi, d, stop, target, max_bars,
     def next_open(j: int, reason: str) -> Tuple[int, float, str]:
         return (j, opens[j], reason) if j < hi else boundary()
 
+    time_at = time_exit_bar_index(entry_i, max_bars)
     for j in range(entry_i, hi):
-        if j > entry_i:
-            o = opens[j]
-            if (d == 1 and o <= stop) or (d == -1 and o >= stop):
-                return j, o, "stop"
-            if target is not None and ((d == 1 and o >= target) or (d == -1 and o <= target)):
-                return j, o, "target"
-        if (d == 1 and lows[j] <= stop) or (d == -1 and highs[j] >= stop):
-            return j, stop, "stop"
-        if target is not None and ((d == 1 and highs[j] >= target) or (d == -1 and lows[j] <= target)):
-            return j, target, "target"
+        hit = bar_exit(opens[j], highs[j], lows[j], d, stop, target, first_bar=j == entry_i)
+        if hit is not None:
+            price, reason = hit
+            return j, price, reason
         if opposite_at is not None and j == opposite_at:
             return next_open(j + 1, "opposite")
-        if j - entry_i + 1 >= max_bars:
+        if j >= time_at - 1:
             return next_open(j + 1, "time")
     return boundary()
 
@@ -114,22 +130,27 @@ def simulate(
     hi: int,
     plan: ExitPlan,
     neutral: str,
+    sides: str = "both",
 ) -> Simulation:
     n = len(candles)
     opens = [float(c["open"]) for c in candles]
     highs = [float(c["high"]) for c in candles]
     lows = [float(c["low"]) for c in candles]
     closes = [float(c["close"]) for c in candles]
-    slip, swap, risk = plan.slippage_pct / 100, plan.swap_cost_pct / 100, plan.risk_pct / 100
-
     sim = Simulation(lo, hi)
-    directed = [(s.index, signed(s.direction, neutral)) for s in signals if lo <= s.index < hi]
+    # Mapped without the side filter, so an opposing signal this venue cannot
+    # trade can still close a position - on a long-only pool a bearish signal
+    # means "get out", which is exactly what exit_on_opposite is for.
+    directed = [(s.index, signed_direction(s.direction, neutral)) for s in signals if lo <= s.index < hi]
     equity = 1.0
     busy_until = -1  # the bar the last trade exited on
 
     for k, (i, d) in enumerate(directed):
         if d is None:
             sim.skipped_neutral += 1
+            continue
+        if not tradable(d, sides):
+            sim.skipped_side += 1
             continue
         if i < busy_until:
             sim.skipped_in_position += 1
@@ -139,40 +160,27 @@ def simulate(
             sim.skipped_no_room += 1
             continue
 
-        entry = opens[entry_i] * (1 + d * slip)
-        if plan.stop_pct is not None:
-            dist = entry * plan.stop_pct / 100
-        else:
-            unit = atr(candles[i + 1 - ATR_BARS: i + 1]) if i + 1 >= ATR_BARS else 0.0
-            dist = plan.stop_atr * unit
-        if dist <= 0:
+        plan_for_trade = bracket(plan, candles, i, opens[entry_i], d)
+        if plan_for_trade is None:
             sim.skipped_no_room += 1
             continue
-
-        stop = entry - d * dist
-        if plan.target_pct is not None:
-            target: Optional[float] = entry + d * entry * plan.target_pct / 100
-        elif plan.target_r is not None:
-            target = entry + d * plan.target_r * dist
-        else:
-            target = None
+        entry, dist = plan_for_trade.entry, plan_for_trade.dist
+        stop, target = plan_for_trade.stop, plan_for_trade.target
 
         opposite_at = None
         if plan.exit_on_opposite:
             opposite_at = next((j for j, dj in directed[k + 1:] if dj == -d and j >= entry_i), None)
 
         exit_i, raw, reason = _exit(opens, highs, lows, closes, n, entry_i, hi, d, stop, target, plan.max_bars, opposite_at)
-        fill = raw * (1 - d * slip)
-        ret = d * (fill - entry) / entry - swap * (1 + fill / entry)
+        fill = exit_price(raw, d, plan.slippage_pct)
+        ret = trade_return(entry, fill, d, plan.swap_cost_pct)
         # The same trade with no friction at all: in and out at the untouched
         # prices. The difference is what the pool, the gas and the impact took.
-        mid = opens[entry_i]
-        cost = d * (raw - mid) / mid - ret
-        notional = min(1.0, risk / (dist / entry))
+        cost = frictionless_return(opens[entry_i], raw, d) - ret
+        notional = plan_for_trade.notional
         equity *= 1 + notional * ret
-        per_r = entry / dist
         sim.trades.append(Trade(i, d, entry_i, entry, stop, target, exit_i, fill, reason, notional, ret,
-                                ret * per_r, cost * per_r, equity))
+                                in_r(ret, entry, dist), in_r(cost, entry, dist), equity))
         busy_until = exit_i
 
     sim.equity = _equity_path(sim.trades, closes, lo, hi)

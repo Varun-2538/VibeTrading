@@ -6,6 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from backtest import runner
+from services.trade_plan import PARITY_VERSION
 from walks import doji_series
 
 REQUEST = {
@@ -68,6 +69,12 @@ async def test_a_job_runs_to_a_report_with_rising_progress():
     assert replaying == sorted(replaying) and replaying[-1] == 1.0
     assert jobs.progress[-1][0] == "studying"
     assert report["meta"]["tape_cached"] is False and report["meta"]["warmup_bars"] == 58
+    # Which version of the shared trade maths measured this, so a rule cannot be
+    # armed for execution against a report from older exit semantics.
+    assert report["meta"]["parity_version"] == PARITY_VERSION
+    # Which directions this report measured. Evidence for a spot venue has to
+    # say "long", or it counted trades that pool could never have taken.
+    assert report["meta"]["sides"] == "both"
     assert report["signals"]["setups"] > 0
     assert set(report["study"]) == {"seen", "unseen"}
 

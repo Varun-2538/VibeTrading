@@ -18,6 +18,9 @@ import numpy as np
 
 from analysis.patterns import atr
 from backtest.signals import TapeSignal
+# One definition, shared with the live executor: a stop measured over a
+# different window than the one that was backtested is a different stop.
+from services.trade_plan import ATR_BARS, signed_direction as signed  # noqa: F401
 
 HORIZONS = (1, 5, 10, 20)
 HEADLINE_HORIZON = 10
@@ -25,7 +28,6 @@ EXCURSION_BARS = 20
 BOOTSTRAP_SAMPLES = 2000
 BOOTSTRAP_SEED = 7
 MIN_SIGNALS = 30
-ATR_BARS = 15  # ATR(14) needs 15 bars
 
 
 def _r(value: Optional[float], places: int = 4) -> Optional[float]:
@@ -33,14 +35,6 @@ def _r(value: Optional[float], places: int = 4) -> Optional[float]:
         return None
     value = float(value)
     return round(value, places) if math.isfinite(value) else None
-
-
-def signed(direction: str, neutral: str) -> Optional[int]:
-    if direction == "bullish":
-        return 1
-    if direction == "bearish":
-        return -1
-    return {"long": 1, "short": -1}.get(neutral)
 
 
 def bootstrap_ci(values: np.ndarray, baseline: float) -> Tuple[float, float]:
@@ -56,13 +50,14 @@ def period_study(
     lo: int,
     hi: int,
     neutral: str,
+    sides: str = "both",
 ) -> Dict[str, Any]:
     closes = np.array([float(c["close"]) for c in candles], dtype=float)
     highs = np.array([float(c["high"]) for c in candles], dtype=float)
     lows = np.array([float(c["low"]) for c in candles], dtype=float)
 
     in_period = [s for s in signals if lo <= s.index < hi]
-    directed = [(s.index, signed(s.direction, neutral)) for s in in_period]
+    directed = [(s.index, signed(s.direction, neutral, sides)) for s in in_period]
     usable = [(i, d) for i, d in directed if d is not None]
     skipped = len(directed) - len(usable)
     long_share = float(np.mean([d == 1 for _, d in usable])) if usable else 0.5
@@ -136,8 +131,9 @@ def study(
     split: int,
     end: int,
     neutral: str,
+    sides: str = "both",
 ) -> Dict[str, Any]:
     return {
-        "seen": period_study(candles, signals, start, split, neutral),
-        "unseen": period_study(candles, signals, split, end, neutral),
+        "seen": period_study(candles, signals, start, split, neutral, sides),
+        "unseen": period_study(candles, signals, split, end, neutral, sides),
     }

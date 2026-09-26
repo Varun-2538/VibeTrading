@@ -26,6 +26,7 @@ import {
   POOL_TIERS,
   roundTripPct,
   settingLabel,
+  SIDES,
   showTradesOnChart,
   tradeMarks,
   tradeVerdict,
@@ -35,6 +36,7 @@ import {
   type BacktestRule,
   type ExitPlan,
   type Neutral,
+  type Sides,
   type PeriodStudy,
   type TradePeriod,
   type TradeRow,
@@ -103,6 +105,7 @@ function StudyTable({ title, period }: { title: string; period: PeriodStudy }) {
         Moved for it {period.mfe_atr?.toFixed(2) ?? "—"} ATR, against it {period.mae_atr?.toFixed(2) ?? "—"} ATR
         within 20 bars
         {period.skipped_neutral > 0 && ` · ${period.skipped_neutral} directionless signals skipped`}
+        {(period.skipped_side ?? 0) > 0 && ` · ${period.skipped_side} in a direction this venue cannot take`}
         {period.flags.includes("too_few_signals") && " · too few signals to judge"}
       </p>
     </div>
@@ -301,6 +304,7 @@ export default function BacktestSheet({
   jobId?: string
 }) {
   const [neutral, setNeutral] = useState<Neutral>("skip")
+  const [sides, setSides] = useState<Sides>("both")
   const [split, setSplit] = useState(0.7)
   const [tune, setTune] = useState(true)
   const [exitPlan, setExitPlan] = useState<ExitPlan>(DEFAULT_EXIT)
@@ -360,7 +364,7 @@ export default function BacktestSheet({
     setStarting(true)
     setError(null)
     try {
-      const { id } = await createBacktest(rule, { neutral, split, exit: exitPlan, tune, grid: DEFAULT_GRID })
+      const { id } = await createBacktest(rule, { neutral, sides, split, exit: exitPlan, tune, grid: DEFAULT_GRID })
       setJob(await getBacktest(id))
     } catch (err) {
       setError(
@@ -431,6 +435,28 @@ export default function BacktestSheet({
                   </div>
                 </div>
               )}
+              <div className="space-y-1">
+                <span className="text-[11px] text-muted-foreground">Directions to trade</span>
+                <div className="flex gap-1.5">
+                  {SIDES.map((s) => (
+                    <Button
+                      key={s.value}
+                      size="sm"
+                      variant={sides === s.value ? "default" : "outline"}
+                      className="h-7 flex-1 text-xs"
+                      onClick={() => setSides(s.value)}
+                    >
+                      {s.label}
+                    </Button>
+                  ))}
+                </div>
+                {sides === "both" && (
+                  <p className="text-[10px] leading-relaxed text-muted-foreground">
+                    A spot pool cannot short: a position is the asset or it is stablecoins. Measure long only if this
+                    report is meant to justify trading it on-chain.
+                  </p>
+                )}
+              </div>
               <div className="space-y-1">
                 <span className="text-[11px] text-muted-foreground">Exit plan</span>
                 <div className="grid grid-cols-3 gap-2">
