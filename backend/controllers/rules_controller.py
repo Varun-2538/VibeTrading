@@ -202,6 +202,17 @@ async def test_rule(
     if rule is None:
         raise _not_found()
 
+    # This endpoint calls RuleEngine.fire directly, so for any action that can
+    # spend it would be a trade trigger reachable by an HTTP request, outside the
+    # sweep and with no rate limit. Testing the rule is still allowed; emitting
+    # is not.
+    if emit and (rule.get("action") or {}).get("kind", "alert") != "alert":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This rule's action can place a trade, so it cannot be emitted "
+                   "by hand. Test it without emit, or run it in shadow mode.",
+        )
+
     lookback = int((rule["params"] or {}).get("lookback", 500))
     try:
         candles = await CandleService.get_candles(

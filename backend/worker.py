@@ -104,8 +104,15 @@ async def job_loop(stop: asyncio.Event, *, jobs=None, run=None, poll: float = PO
 
 async def main() -> None:
     await db.connect()
-    await db.bootstrap_schema()
-    print("[worker] connected; schema up to date", flush=True)
+    try:
+        await db.bootstrap_schema()
+        print("[worker] connected; schema up to date", flush=True)
+    except Exception as exc:  # noqa: BLE001
+        # The API applies the same files at boot, under the same advisory lock,
+        # so the tables are almost certainly already there. Reported and carried
+        # on rather than crash-looping, which is what the API does too; a schema
+        # that really is missing shows up as a loud failure in the job loop.
+        print(f"[worker] schema bootstrap skipped: {exc}", flush=True)
 
     scheduler = build_scheduler(_topup, beat, evict=BacktestRepository.evict_tapes)
     scheduler.start()

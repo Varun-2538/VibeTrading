@@ -1,11 +1,19 @@
 import asyncpg
 import json
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from config import settings
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "db" / "migrations"
+
+# Every process applies the migrations at boot. CREATE TABLE IF NOT EXISTS is not
+# race-free - two of them can collide on pg_type and one gets a unique violation -
+# so they queue behind this advisory lock instead. A fixed integer rather than
+# hashtext(): hashtext is undocumented, and this only has to be the same number in
+# every process, forever.
+BOOTSTRAP_LOCK = 2_026_092_601
 
 
 async def _register_codecs(conn: asyncpg.Connection) -> None:
@@ -36,10 +44,25 @@ class Database:
             database=settings.timescale_db,
             user=settings.timescale_user,
             password=settings.timescale_password,
-            min_size=5,
-            max_size=20,
+            min_size=settings.db_pool_min,
+            max_size=settings.db_pool_max,
             init=_register_codecs
         )
+
+    @asynccontextmanager
+    async def transaction(self):
+        """
+        One connection, one transaction, for writes that must land together.
+
+        The plain execute/fetch helpers each take their own connection, so two
+        of them can no more be atomic than two separate requests could. Callers
+        here get the asyncpg connection itself and use conn.execute directly -
+        deliberately, because pretending a pooled helper is transactional is the
+        mistake this exists to prevent.
+        """
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                yield conn
 
     async def disconnect(self):
         """Close connection pool"""
@@ -53,13 +76,20 @@ class Database:
         init-db.sql only runs when the Postgres volume is empty, so it cannot
         deliver schema to a deployment that already has data. Every statement
         here is IF NOT EXISTS, which makes re-running on each boot a no-op.
+
+        All of it on one connection, under one advisory lock: several processes
+        boot at once and IF NOT EXISTS does not make concurrent creation safe.
         """
         if not MIGRATIONS_DIR.is_dir():
             return
 
-        for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
-            async with self.pool.acquire() as conn:
-                await conn.execute(path.read_text(encoding="utf-8"))
+        async with self.pool.acquire() as conn:
+            await conn.execute("SELECT pg_advisory_lock($1)", BOOTSTRAP_LOCK)
+            try:
+                for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
+                    await conn.execute(path.read_text(encoding="utf-8"))
+            finally:
+                await conn.execute("SELECT pg_advisory_unlock($1)", BOOTSTRAP_LOCK)
 
     async def execute(self, query: str, *args) -> str:
         """Execute a query"""

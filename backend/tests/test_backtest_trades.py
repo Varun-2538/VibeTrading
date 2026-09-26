@@ -184,3 +184,48 @@ def test_drawdown_and_an_account_that_never_traded():
     m = trade_period(bars(*[FLAT] * 10), [], 0, 10, plan(), "skip", H)
     assert m["trades"] == 0 and m["sharpe"] is None and m["expectancy_r"] is None
     assert m["profit_factor"] is None and m["equity"][-1][1] == 1.0
+
+
+def test_a_long_only_venue_refuses_a_short_and_says_so():
+    """
+    A Uniswap pool cannot short, so a report meant as evidence for spot has to
+    be measured long-only - otherwise it counts trades that could never happen.
+    """
+    candles = bars(FLAT, (100, 105, 99, 104), FLAT, FLAT)
+    both = one(candles, [sig(0, "bearish")], plan())
+    assert len(both.trades) == 1 and both.skipped_side == 0
+
+    long_only = simulate(candles, [sig(0, "bearish")], 0, len(candles), plan(), "skip", "long")
+    assert long_only.trades == [] and long_only.skipped_side == 1
+    # Not counted as neutral: "no direction of its own" and "a short on a spot
+    # pool" are different reasons, and only one of them is about the venue.
+    assert long_only.skipped_neutral == 0
+
+
+def test_short_only_is_the_mirror():
+    candles = bars(FLAT, (100, 105, 99, 104), FLAT, FLAT)
+    sim = simulate(candles, [sig(0, "bullish")], 0, len(candles), plan(), "skip", "short")
+    assert sim.trades == [] and sim.skipped_side == 1
+    assert len(simulate(candles, [sig(0, "bearish")], 0, len(candles), plan(), "skip", "short").trades) == 1
+
+
+def test_a_side_the_venue_cannot_trade_can_still_close_a_position():
+    """
+    The subtle one. On a long-only venue a bearish signal is not a trade, but it
+    is still a reason to be out - which is what exit_on_opposite means. Filtering
+    the direction before the opposite scan would silently hold the position.
+    """
+    candles = bars(FLAT, FLAT, FLAT, FLAT, FLAT, FLAT)
+    signals = [sig(0, "bullish"), sig(2, "bearish")]
+    sim = simulate(candles, signals, 0, len(candles),
+                   plan(max_bars=50, exit_on_opposite=True), "skip", "long")
+    assert len(sim.trades) == 1
+    trade = sim.trades[0]
+    assert trade.direction == 1 and trade.reason == "opposite" and trade.exit_index == 3
+    assert sim.skipped_side == 1  # the bearish signal was not traded, only used
+
+
+def test_a_neutral_signal_read_as_short_is_refused_by_a_long_only_venue():
+    candles = bars(FLAT, (100, 105, 99, 104), FLAT, FLAT)
+    sim = simulate(candles, [sig(0, "neutral")], 0, len(candles), plan(), "short", "long")
+    assert sim.trades == [] and sim.skipped_side == 1 and sim.skipped_neutral == 0
