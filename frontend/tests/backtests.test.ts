@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { canBeNeutral, equityLines, fmtPct, markable, overfit, settingLabel, tradeMarks, tradeVerdict, verdict, type BacktestReport, type PeriodStudy, type TradePeriod, type TradeRow, type TuningReport } from "@/lib/backtests"
+import { canBeNeutral, costNote, DEFAULT_EXIT, equityLines, fmtPct, gasPct, markable, overfit, POOL_TIERS, roundTripPct, settingLabel, stopPctForCostBudget, tradeMarks, tradeVerdict, verdict, type BacktestReport, type PeriodStudy, type TradePeriod, type TradeRow, type TuningReport } from "@/lib/backtests"
 
 function period(over: Partial<PeriodStudy> = {}, edge = 0.4, ci: [number, number] | null = [0.1, 0.7]): PeriodStudy {
   return {
@@ -61,6 +61,7 @@ describe("fmtPct", () => {
 function tp(over: Partial<TradePeriod> = {}): TradePeriod {
   return {
     from: 0, to: 1, bars: 100, trades: 40, win_rate: 0.45, avg_win_r: 2, avg_loss_r: -1, expectancy_r: 0.35,
+    gross_expectancy_r: 0.5, cost_r: 0.15,
     profit_factor: 1.6, total_return_pct: 12.5, max_drawdown_pct: -6.2, sharpe: 1.1, exposure_pct: 30,
     longest_losing_streak: 5, buy_hold_pct: 20, skipped_in_position: 0, skipped_neutral: 0, skipped_no_room: 0,
     equity: [], trade_list: [], trades_listed: 0, flags: [],
@@ -69,7 +70,7 @@ function tp(over: Partial<TradePeriod> = {}): TradePeriod {
 }
 
 describe("trades", () => {
-  const trade: TradeRow = { entry_time: 10_000, entry: 100, exit_time: 20_000, exit: 104, direction: "long", reason: "target", r: 2, pct: 4, bars: 3 }
+  const trade: TradeRow = { entry_time: 10_000, entry: 100, exit_time: 20_000, exit: 104, direction: "long", reason: "target", r: 2, cost_r: 0.2, pct: 4, bars: 3 }
 
   it("marks an entry and an exit", () => {
     expect(tradeMarks(trade)).toEqual([
@@ -95,12 +96,42 @@ describe("trades", () => {
   it("sums up the unseen trades, or says there are too few", () => {
     const base = report(period())
     expect(tradeVerdict({ ...base, trades: { seen: tp({ expectancy_r: 0.5 }), unseen: tp() } })).toBe(
-      "Trading it on unseen data: +0.35R per trade over 40 unseen trades, +12.50% total, worst drawdown -6.20% (seen: +0.50R per trade).",
+      "Trading it on unseen data: +0.35R per trade over 40 unseen trades, +12.50% total, worst drawdown -6.20% (seen: +0.50R per trade). Costs took -0.15R per trade: +0.50R before them, +0.35R after.",
     )
     expect(tradeVerdict({ ...base, trades: { seen: tp(), unseen: tp({ trades: 7, flags: ["too_few_trades"] }) } })).toBe(
       "Only 7 unseen trades — too few to judge this exit plan.",
     )
     expect(tradeVerdict(base)).toBeNull()
+  })
+
+  it("separates a strategy with no edge from one whose edge went to the pool", () => {
+    // A 0.3% pool, twice, against a tight stop: the signals won, the account did not.
+    expect(costNote(tp({ expectancy_r: -0.1, gross_expectancy_r: 0.25, cost_r: 0.35 }))).toBe(
+      " Costs took -0.35R per trade: +0.25R before them, -0.10R after. The signals earned an edge and the pool kept it.",
+    )
+    // Nothing to explain away: it lost before costs too.
+    expect(costNote(tp({ expectancy_r: -0.4, gross_expectancy_r: -0.1, cost_r: 0.3 }))).toBe(
+      " Costs took -0.30R per trade: -0.10R before them, -0.40R after.",
+    )
+    expect(costNote(tp({ expectancy_r: 0.2, gross_expectancy_r: 0.2, cost_r: 0 }))).toBe("")
+  })
+
+  it("prices a round trip the way the pool does", () => {
+    const free = { ...DEFAULT_EXIT, fee_pct: 0, slippage_pct: 0 }
+    expect(roundTripPct(free)).toBe(0)
+    // The 0.3% pool with $2 of gas on a $500 position: 0.3 + 0.4 per swap, twice.
+    expect(roundTripPct({ ...free, fee_pct: 0.3, gas_usd: 2, trade_usd: 500 })).toBeCloseTo(1.4, 6)
+    expect(gasPct({ ...free, gas_usd: 0.5, trade_usd: 1000 })).toBeCloseTo(0.05, 6)
+    expect(POOL_TIERS.map((t) => t.pct)).toEqual([0.01, 0.05, 0.1, 0.3, 1])
+    expect(POOL_TIERS.some((t) => t.pct === DEFAULT_EXIT.fee_pct)).toBe(true)
+  })
+
+  it("says how wide a stop the round trip needs", () => {
+    // 0.3% pool, no gas, no impact: 0.6% a round trip, so 0.2R of cost wants a 3% stop.
+    const pool = { ...DEFAULT_EXIT, fee_pct: 0.3, slippage_pct: 0, gas_usd: 0 }
+    expect(stopPctForCostBudget(pool, 0.2)).toBeCloseTo(3, 6)
+    expect(stopPctForCostBudget(pool, 0.6)).toBeCloseTo(1, 6)
+    expect(stopPctForCostBudget({ ...pool, fee_pct: 0.01 }, 0.2)).toBeCloseTo(0.1, 6)
   })
 })
 
@@ -130,7 +161,7 @@ describe("tuning", () => {
     const base = report(period())
     const tuned = { ...base, tuning: tuning(), flags: ["tuned", "likely_overfit"], trades: { seen: tp({ expectancy_r: 0.9 }), unseen: tp() } }
     expect(tradeVerdict(tuned)).toBe(
-      "Selected from 27 settings: +0.35R per trade over 40 unseen trades, +12.50% total, worst drawdown -6.20% (seen: +0.90R per trade) — far below seen, so likely fitted to the seen data.",
+      "Selected from 27 settings: +0.35R per trade over 40 unseen trades, +12.50% total, worst drawdown -6.20% (seen: +0.90R per trade) — far below seen, so likely fitted to the seen data. Costs took -0.15R per trade: +0.50R before them, +0.35R after.",
     )
     expect(overfit(tuned)).toBe(true)
     expect(overfit({ ...base, trades: { seen: tp(), unseen: tp() } })).toBe(false)

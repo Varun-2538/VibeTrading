@@ -10,7 +10,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from models.backtest_schemas import (
     BACKTEST_TIMEFRAMES,
     MIN_EVALUATED_BARS,
+    POOL_FEE_TIERS,
     BacktestCreate,
+    ExitPlan,
     required_bars,
     window_size,
 )
@@ -51,8 +53,12 @@ def test_an_invalid_rule_is_rejected_by_the_rule_schema():
 
 def test_exit_plan_defaults_and_needs_a_stop():
     body = BacktestCreate(rule=RULE)
-    assert (body.exit.stop_atr, body.exit.target_r, body.exit.max_bars, body.exit.fee_pct) == (1.5, 2.0, 20, 0.1)
+    assert (body.exit.stop_atr, body.exit.target_r, body.exit.max_bars, body.exit.fee_pct) == (1.5, 2.0, 20, 0.05)
     assert (body.exit.slippage_pct, body.exit.risk_pct, body.exit.exit_on_opposite) == (0.02, 1.0, False)
+    # The default pool is the majors' 0.05% tier, and gas is nobody's to guess.
+    assert body.exit.fee_pct in POOL_FEE_TIERS
+    assert (body.exit.gas_usd, body.exit.trade_usd, body.exit.gas_pct) == (0.0, 1000.0, 0.0)
+    assert ExitPlan(fee_pct=0.3, gas_usd=1, trade_usd=500).swap_cost_pct == pytest.approx(0.5)
     with pytest.raises(ValidationError, match="needs a stop"):
         BacktestCreate(rule=RULE, exit={"stop_atr": None})
 

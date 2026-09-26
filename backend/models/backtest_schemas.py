@@ -27,10 +27,22 @@ def required_bars(lookback: int) -> int:
     return window_size(lookback) + MIN_EVALUATED_BARS
 
 
+# Uniswap-style pool tiers, as a percent. A swap pays the tier of the pool it
+# routes through, so a round trip pays it twice. The tier belongs to the pool,
+# not to the trade: 0.01% for stable pairs, 0.05% for majors, 0.1% and 0.3% for
+# most volatile pairs, 1% for thin ones.
+POOL_FEE_TIERS: Tuple[float, ...] = (0.01, 0.05, 0.1, 0.3, 1.0)
+DEFAULT_POOL_FEE_PCT = 0.05
+
+
 class ExitPlan(BaseModel):
     """
     How a signal becomes a trade and how the trade ends. The defaults are a
     starting point for the report, not advice.
+
+    Costs are modelled the way a DEX charges them: the pool's fee tier on every
+    swap, price impact on every fill, and gas per swap - a cost in dollars,
+    which only a position size can turn into a percent.
     """
 
     stop_atr: Optional[float] = Field(default=1.5, gt=0, le=20)
@@ -39,9 +51,25 @@ class ExitPlan(BaseModel):
     target_pct: Optional[float] = Field(default=None, gt=0, le=200)
     max_bars: int = Field(default=20, ge=1, le=500)
     exit_on_opposite: bool = False
-    fee_pct: float = Field(default=0.1, ge=0, le=1)
+    fee_pct: float = Field(default=DEFAULT_POOL_FEE_PCT, ge=0, le=1)
     slippage_pct: float = Field(default=0.02, ge=0, le=1)
+    gas_usd: float = Field(default=0.0, ge=0, le=1000)
+    trade_usd: float = Field(default=1000.0, gt=0, le=10_000_000)
     risk_pct: float = Field(default=1.0, gt=0, le=10)
+
+    @property
+    def gas_pct(self) -> float:
+        """
+        Gas as a share of the position, so a fixed cost can be priced like a
+        fee. A small position pays a larger share of it, which is the thing
+        about trading on-chain that a percent-only cost model hides.
+        """
+        return self.gas_usd / self.trade_usd * 100
+
+    @property
+    def swap_cost_pct(self) -> float:
+        """What one swap costs before price impact."""
+        return self.fee_pct + self.gas_pct
 
     @model_validator(mode="after")
     def _has_a_stop(self) -> "ExitPlan":
