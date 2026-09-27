@@ -15,7 +15,7 @@ from models.database import db
 ACTIVE_STATUSES = ("queued", "replaying", "studying", "tuning")
 
 JOB_COLUMNS = """
-    id, owner_key, created_at, started_at, finished_at, status, progress,
+    id, owner_key, rule_id, created_at, started_at, finished_at, status, progress,
     request, report, error
 """
 SUMMARY_COLUMNS = """
@@ -33,12 +33,15 @@ def decode_tape(blob: bytes) -> List[Any]:
 
 class BacktestRepository:
     @staticmethod
-    async def create(owner_key: str, request: Dict[str, Any]) -> Dict[str, Any]:
+    async def create(
+        owner_key: str, request: Dict[str, Any], rule_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         return await db.fetchrow(
-            "INSERT INTO backtest_jobs (owner_key, request) VALUES ($1, $2) "
+            "INSERT INTO backtest_jobs (owner_key, request, rule_id) VALUES ($1, $2, $3) "
             "RETURNING id, status, created_at",
             owner_key,
             request,
+            rule_id,
         )
 
     @staticmethod

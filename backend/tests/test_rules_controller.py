@@ -9,6 +9,7 @@ anything else.
 """
 import sys
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -39,6 +40,12 @@ def rule(action=None):
         "agent": "sequence",
         "params": {"agent": "sequence", "steps": [{"type": "candle", "shape": "doji"}], "lookback": 300},
         "action": action if action is not None else {"kind": "alert"},
+        "enabled": True,
+        "cooldown_secs": 900,
+        "persist_bars": 0,
+        "last_fired_at": None,
+        "fire_count": 0,
+        "created_at": datetime(2026, 9, 1, tzinfo=timezone.utc),
     }
 
 
@@ -114,3 +121,35 @@ def test_an_empty_action_is_read_as_an_alert(monkeypatch):
     api, engine = client(monkeypatch, row=rule({}))
     assert api.post(f"/api/rules/{RULE_ID}/test?emit=true").status_code == 200
     assert len(engine.fired) == 1
+
+
+def test_changing_a_rules_settings_disarms_it(monkeypatch):
+    """
+    The rule that passed its backtest no longer exists, so its permission to trade
+    does not either. Disarmed here rather than left for the executor to notice,
+    because the gap between the two is a rule trading on evidence about something
+    else.
+    """
+    disarmed = []
+
+    class Policies:
+        async def disarm(self, rule_id, reason, owner=None):
+            disarmed.append((rule_id, reason, owner))
+            return True
+
+    class Updating(Rules):
+        async def update(self, rule_id, owner, fields):
+            return {**self.row, **fields}
+
+    api, _ = client(monkeypatch)
+    monkeypatch.setattr(rc, "RuleRepository", Updating(rule()))
+    monkeypatch.setattr(rc, "ExecutionPolicyRepository", Policies())
+
+    res = api.patch(f"/api/rules/{RULE_ID}", json={"name": "renamed"})
+    assert res.status_code == 200 and disarmed == []  # a rename is not a new rule
+
+    res = api.patch(f"/api/rules/{RULE_ID}", json={
+        "params": {"agent": "sequence", "steps": [{"type": "candle", "shape": "doji"}]}
+    })
+    assert res.status_code == 200
+    assert disarmed == [(RULE_ID, "rule settings changed", OWNER)]

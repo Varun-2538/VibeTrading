@@ -7,6 +7,7 @@ import uvicorn
 from controllers import (
     auth_router,
     backtest_router,
+    execution_router,
     history_router,
     strategy_router,
     ohlc_router,
@@ -151,6 +152,7 @@ app.include_router(rules_router)
 app.include_router(auth_router)
 app.include_router(history_router)
 app.include_router(backtest_router)
+app.include_router(execution_router)
 
 
 @app.get("/")

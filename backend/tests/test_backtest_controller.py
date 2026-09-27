@@ -20,13 +20,14 @@ JOB_ID = str(uuid.uuid4())
 
 class Jobs:
     def __init__(self, active=0):
-        self.active, self.created = active, None
+        self.active, self.created, self.rule_id = active, None, None
 
     async def count_active(self, owner):
         return self.active
 
-    async def create(self, owner, request):
+    async def create(self, owner, request, rule_id=None):
         self.created = (owner, request)
+        self.rule_id = rule_id
         return {"id": uuid.UUID(JOB_ID), "status": "queued", "created_at": datetime.now(timezone.utc)}
 
     async def get_for_owner(self, job_id, owner):
@@ -63,6 +64,24 @@ def test_create_queues_a_job_for_the_owner(monkeypatch):
     assert res.status_code == 201 and res.json() == {"id": JOB_ID, "status": "queued"}
     owner, request = jobs.created
     assert owner == "0xabc" and request["rule"]["params"]["lookback"] == 300 and request["split"] == 0.7
+
+
+def test_a_job_can_name_the_rule_it_is_evidence_for(monkeypatch):
+    """
+    The arming gate matches a report to a rule by id. Without this the match would
+    be a JSON comparison that happens to work while key order is stable.
+    """
+    jobs = Jobs()
+    rule_id = str(uuid.uuid4())
+    res = client(monkeypatch, jobs).post("/api/backtests", json={**BODY, "rule_id": rule_id})
+    assert res.status_code == 201 and jobs.rule_id == rule_id
+
+
+def test_a_job_without_a_rule_id_is_still_allowed(monkeypatch):
+    """Backtesting a draft nobody armed is a perfectly ordinary thing to do."""
+    jobs = Jobs()
+    assert client(monkeypatch, jobs).post("/api/backtests", json=BODY).status_code == 201
+    assert jobs.rule_id is None
 
 
 def test_a_second_active_job_is_429(monkeypatch):
