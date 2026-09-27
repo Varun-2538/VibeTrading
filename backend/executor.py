@@ -51,7 +51,7 @@ from repositories.execution_repository import (
 from services.candle_service import CandleService, close_http
 from services.execution.monitor import PositionMonitor
 from services.execution.reconcile import Reconciler
-from services.execution.registry import venue_for
+from services.execution.registry import close_chain, venue_for
 from services.execution.runner import IntentRunner
 from services.execution.promote import promote_queued_events
 
@@ -231,6 +231,7 @@ async def main() -> None:
         task.cancel()
 
     scheduler.shutdown(wait=False)
+    await close_chain()
     await close_http()
     await db.disconnect()
     print("[executor] stopped", flush=True)

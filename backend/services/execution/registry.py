@@ -1,25 +1,64 @@
 """
 Which venue an intent trades on.
 
-One dict, hand-maintained, for the same reason `services/actions/__init__.py` is one
-dict: auditability matters more than extensibility once an entry can spend money.
+Shadow and live are the same code path with a different venue behind it, which is the
+point: there is no live-only branch that shadow has never exercised.
 
-Today there is one entry and it spends nothing. `uniswap_v3_arbitrum` is *registered*
-so a policy can be armed for it and so the shape is exercised, but it resolves to the
-shadow wrapper until the vault adapter lands. An account in live mode with no adapter
-gets a refusal rather than a silent downgrade to shadow - pretending to trade is
-worse than admitting we cannot.
+Live needs three things to exist - a signing key, a factory address, and a vault the
+owner actually deployed - and the absence of any of them is a **refusal**, never a
+quiet downgrade to shadow. Pretending to trade is worse than admitting we cannot, and
+an account that believed it was live while nothing was sent would find out from its
+equity curve rather than from us.
 """
 from typing import Any, Dict, Optional
 
+from services.execution.chain import Chain
+from services.execution.markets import asset_for
 from services.execution.shadow import ShadowVenue
+from services.execution.signer import Signer, signer_from_settings
+from services.execution.vault_venue import VaultVenue
 from services.execution.venue import Venue, VenueRejected
 
 KNOWN_VENUES = ("uniswap_v3_arbitrum",)
 
+_chain: Optional[Chain] = None
+_signer: Optional[Signer] = None
+_signer_loaded = False
+
 
 class NoAdapter(VenueRejected):
-    """Live mode was asked for on a venue we cannot yet reach."""
+    """Live mode was asked for with something it needs still missing."""
+
+
+def chain() -> Chain:
+    """One client for the process: a fresh TLS handshake per call is not free."""
+    global _chain
+    if _chain is None:
+        from config import settings
+
+        _chain = Chain(settings.arbitrum_rpc_url, settings.arbitrum_chain_id)
+    return _chain
+
+
+def signer() -> Optional[Signer]:
+    """
+    The executor's signer, or None.
+
+    None is a normal state: shadow needs no key, and an executor without one should
+    idle rather than refuse to start.
+    """
+    global _signer, _signer_loaded
+    if not _signer_loaded:
+        _signer = signer_from_settings()
+        _signer_loaded = True
+    return _signer
+
+
+async def close_chain() -> None:
+    global _chain
+    if _chain is not None:
+        await _chain.close()
+        _chain = None
 
 
 def venue_for(
@@ -48,9 +87,25 @@ def venue_for(
     plan = source.get("plan") or {}
 
     if mode == "live":
-        raise NoAdapter(
-            "live execution has no venue adapter yet; the vault adapter lands with the "
-            "next slice"
+        from config import settings
+
+        key = signer()
+        if key is None:
+            raise NoAdapter("live execution needs a signing key; none is configured")
+        if not settings.vault_factory_address:
+            raise NoAdapter("live execution needs the vault factory address")
+        market = source.get("market") or (position or {}).get("market") or ""
+        asset = asset_for(market)
+        if asset is None:
+            raise NoAdapter(f"no on-chain asset for market {market!r}")
+        return VaultVenue(
+            chain=chain(),
+            signer=key,
+            market=market,
+            owner=(account or {}).get("owner_key"),
+            asset=asset,
+            factory=settings.vault_factory_address,
+            eth_usd_feed=settings.eth_usd_feed or None,
         )
 
     kwargs: Dict[str, Any] = {
