@@ -1,0 +1,18 @@
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+libs = []
+solc = "0.8.24"
+optimizer = true
+optimizer_runs = 200
+[lint]
+# Every time comparison in the vault is measured in hours or days - a 45-day
+# position deadline, a daily trade counter, a 26-hour oracle staleness window -
+# and the drift a validator can introduce is seconds. Warning about each of them
+# individually would train us to ignore the linter, which is worse.
+exclude_lints = ["block-timestamp"]
+
+# No dependencies on purpose. This vault holds someone's money and is meant to be
+# read end to end in one sitting; every interface it needs is four lines long and
+# is in src/interfaces.

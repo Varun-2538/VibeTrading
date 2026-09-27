@@ -19,6 +19,7 @@ CONTROLLERS = [
     "controllers.analysis_controller",
     "controllers.auth_controller",
     "controllers.chat_controller",
+    "controllers.execution_controller",
     "controllers.history_controller",
     "controllers.ohlc_controller",
     "controllers.rules_controller",
