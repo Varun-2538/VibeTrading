@@ -12,11 +12,17 @@ from typing import Dict
 
 from services.actions.base import Action, ActionResult
 from services.actions.alert import AlertAction
+from services.actions.dex_trade import DexTradeAction
 
-# Phase 1 ships alerts only. Deliberately not a plugin loader - one dict is
-# easier to audit, and auditability matters once an entry can spend money.
+# Deliberately not a plugin loader - one dict is easier to audit, and auditability
+# matters now that an entry here can spend money.
+#
+# dex_trade queues; it does not trade. Nothing it queues is claimed unless the
+# global switch is on and the owner's account is out of 'off', both of which ship
+# false, and unless the rule has an armed policy backed by a passing backtest.
 ACTIONS: Dict[str, Action] = {
     "alert": AlertAction(),
+    "dex_trade": DexTradeAction(),
 }
 
-__all__ = ["ACTIONS", "Action", "ActionResult", "AlertAction"]
+__all__ = ["ACTIONS", "Action", "ActionResult", "AlertAction", "DexTradeAction"]

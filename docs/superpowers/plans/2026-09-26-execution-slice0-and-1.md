@@ -371,3 +371,108 @@ would now disagree with the site about what its owner agreed to.
 The vault UI — deploy, fund, set the grant, revoke, withdraw. The client library is
 here and tested; the panel lands with slice 5, because a vault with no executor has
 nothing to do yet.
+
+---
+
+# Slice 5 — the executor
+
+First slice where anything runs. It still cannot spend: `execution_settings.enabled`
+is `FALSE`, every account is `off`, `EXECUTION_ENABLED` defaults to false, and the
+only registered venue is the shadow wrapper — an account in live mode gets a refusal
+rather than a silent downgrade, because pretending to trade is worse than admitting
+we cannot.
+
+## Where it runs, and why not anywhere else
+
+A sixth container. Not the API: the alert sweep lives there and `fire()` awaits the
+action inline, so one slow RPC would delay every other wallet's alerts — and with
+`coalesce=True` a multi-minute stall does not arrive late, it silently drops the bars
+that closed during it, because `set_pending` has already moved `last_candle_time` and
+no dedup key is ever minted. Those fires are gone. The API also restarts on every
+deploy.
+
+Not the backtest worker either: `cpu_shares: 256`, `mem_limit: 512m`, and a replay
+that saturates a core for up to an hour. An exit cannot queue behind that, and being
+OOM-killed mid-trade by our own replay would be the worst coupling in the system. The
+executor gets `cpu_shares: 1024` and `mem_limit: 256m` — latency-sensitive and
+near-idle, the opposite of a replay — and a 90-second heartbeat window rather than
+180, because a dead executor holding open positions must be noticed inside a bar.
+
+## The pipeline, and where each guarantee lives
+
+| Step | Where | What makes it safe |
+|---|---|---|
+| fire → queued | `actions/dex_trade.py`, in the sweep | no network, no new row: it returns `queued` and `fire()` writes that into the event it is already committing |
+| queued → intent | `execution/promote.py` | `UNIQUE (event_id)` — safe to re-run, safe to run twice at once, safe to interrupt |
+| intent → claimed | `CLAIM_SQL` | every cap in one statement, `FOR UPDATE OF c SKIP LOCKED`, exits ahead of entries |
+| claimed → sent | `execution/runner.py` | the order row, with its `client_order_id`, is inserted **before** the venue call |
+| sent → booked | same | `UNIQUE (venue, venue_fill_id)`, and one live position per rule |
+
+`models/database.py` has no transaction spanning two statements, and this design does
+not need one: there is never a moment where a dedup key has been burnt but no work
+exists, because the event row *is* the queue until the executor promotes it.
+
+## The distinction the whole thing rests on
+
+`VenueRejected` is a promise about state — it definitely did not happen, so a retry
+is safe. `VenueUnknown` is an admission — we do not know, so it may **never** be
+retried; it becomes `needs_reconcile` and waits to be told what is true. An adapter
+that cannot tell them apart must raise the second. `tests/fake_venue.py` has
+`landed_but_lost_the_response()` for exactly the case where the swap goes through and
+the answer does not, and the test asserts one order row, one venue position, nothing
+in our books — the state reconciliation exists to resolve.
+
+## What the vault removed from this design
+
+The plan had a "place the trigger orders after the entry fills" step, and called the
+window between an open position and a protected one the highest-priority repair. With
+a vault there is no such window: the stop, the target and the deadline are written in
+the same transaction as the swap. `triggers_placed` is true by construction, and the
+monitor's job shrinks to being *first* rather than being the only one who can act.
+
+## The monitor
+
+`decide()` is pure, so the table is tested without a clock or a database. Order: a
+halt beats everything including a printing target; then the deadline, from the clock
+alone, so a data outage cannot leave a position unmanaged; then the stop against the
+**live price**; then closed bars through `trade_plan.bar_exit`.
+
+The stop on the live price is a deliberate departure from the report, which models it
+filling *at* the stop when a bar's low reaches it. Waiting for the close would leave
+the position exposed for the rest of the bar. Capital protection wins, the trigger is
+recorded on the position (`quote` or `bar`), and the target stays close-based —
+being slow to take profit costs opportunity, firing a target on a wick costs parity.
+
+## Reconciliation, which is deliberately unlike the backtest worker
+
+`requeue_running()` blindly resets every running job at boot, which is safe because a
+replay has no side effects. An intent's side effect is a trade. So the venue is the
+authority, in-doubt writes are matched against it, and **anything unexplained halts
+the account and never flattens** — a reconciliation bug that flattened would turn a
+display error into a realised loss. A position with no fill to read is abandoned
+rather than given invented numbers.
+
+Exits keep running while an account is halted. A halt is about not opening.
+
+## Found by the tests
+
+The action mapped a signal's direction *with* the long-only filter, so a bearish
+signal became `None` and `exit_on_opposite` never saw it — the position would have
+been held through the exact signal the owner asked to exit on. The same mistake slice
+2 avoided in `simulate`, made again two files later. The mapping is now unfiltered and
+the side is refused separately, as it is there.
+
+## Shadow mode
+
+A wrapper, not a branch: reads go to the market so sizing and triggers see live
+prices, and the same code path runs that live runs. Costs come from the plan, so a
+shadow run reproduces the report's cost model exactly — and the gap that shows up in
+live is then the gap between the model and the chain, which is what the preflight's
+cost check is looking for.
+
+Backend 704 tests (was 618). Frontend and contracts unchanged.
+
+## Next
+
+The vault UI — deploy, fund, grant, revoke, withdraw — and the vault venue adapter,
+which is the last thing between shadow and live. Then a week in shadow before either.
