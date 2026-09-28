@@ -652,3 +652,62 @@ until today.
 Deploying the factory to Sepolia and running the fork test; an executor key and its
 published address; a week in shadow; the Play answer actually changed in the console;
 a KMS signer before mainnet.
+
+---
+
+# Slice 7 — deployed, and a way to arm it
+
+## Deployed
+
+The VM went from `21bdac1` to `801e97e`: six containers now, the executor among them.
+Verified rather than assumed:
+
+| | |
+|---|---|
+| `/api/execution/account` | **401** where it was 404 the hour before — the routes exist |
+| Migration 006 | eight tables created |
+| `execution_settings.enabled` | `false` — it ships off, as designed |
+| Executor | healthy, log reads *"EXECUTION_ENABLED is not set; idling"* |
+| Memory | **61 MiB of its 256 MiB cap**, 801 MiB still free on the machine |
+
+That last row settles something I raised in the design and got wrong: I flagged that
+the executor's numpy import might force an `e2-medium`. Measured, it does not come
+close.
+
+The deploy also closed a papercut I had created myself. The frontend deploys from
+`main` automatically and the backend does not, so the Vault button had been live for
+several commits against a backend with no `/api/execution` at all — a 404 the moment
+anyone clicked it.
+
+## A way to arm a rule
+
+Until now arming was API-only, so the feature was unreachable from the product. The
+Armed tab gains a **Trade** button per rule, which becomes **Trading** once armed.
+
+The shape of that sheet is an argument, not a layout. **You cannot type an exit plan
+in it.** The plan is read out of the backtest you pick, because the point of the gate
+is that what trades is what was measured, and a field that let you arm a different
+stop than the report tested would quietly undo the whole thing. What you do set is the
+bar the report must clear and how much money a trade may use.
+
+Three refusals it makes before the server has to:
+
+- **A rule on a pair with no pool and no feed cannot be armed at all.** Seven of the
+  nine pairs the app charts are in that position, and the sheet says so in those
+  words rather than letting the server refuse it later with less context.
+- **Only this rule's finished backtests are offered.** A report about something else
+  is not evidence, and the gate would reject it with a worse message.
+- **Arm stays disabled until the check passes**, and a refusal renders *every* reason
+  the gate gave, in a list. That is the only screen that will ever explain why a
+  strategy may not spend.
+
+The copy under *Arm rule* also changed: "Alerts only; nothing here places a trade" was
+true of that button and is no longer true of the tab it sits in.
+
+Backend 762, frontend 105, contracts 28.
+
+## Still not done before a live trade
+
+The factory on Sepolia with the fork test green; an executor key and its published
+address; a week in shadow; the Play answer actually changed in the console; a KMS
+signer before mainnet.

@@ -437,6 +437,8 @@ export function costNote(unseen: TradePeriod): string {
 
 export interface BacktestSummary {
   id: string
+  /** The saved rule this was run for, when it was run for one. */
+  rule_id?: string | null
   status: BacktestStatus
   progress: number
   created_at: string | null
