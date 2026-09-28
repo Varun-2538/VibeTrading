@@ -12,7 +12,8 @@ export default function TermsPage() {
     <>
       <h1>Terms of use</h1>
       <p className="lede">
-        Plain terms for a free analysis tool. By using VibeTrading you accept
+        Plain terms for a free tool that analyses markets and, if you tell it to,
+        trades them for you. By using VibeTrading you accept
         them.
       </p>
       <p className="meta">Last updated 12 August 2026.</p>
@@ -29,11 +30,36 @@ export default function TermsPage() {
 
       <h2>What the service is</h2>
       <p>
-        A free, informational tool that computes technical analysis over public
-        market data and draws it on a chart. It is provided for research and
-        education. See the{" "}
-        <a href="/legal/risk">risk disclosure</a> for what that does and does
-        not mean — those statements are part of these terms.
+        A free tool that computes technical analysis over public market data and
+        draws it on a chart, watches for conditions you define, and — if you
+        set that up yourself — sends the trades those conditions call for into
+        a contract you own. It is provided for research and education. See the{" "}
+        <a href="/legal/risk">risk disclosure</a> for what that does and does not
+        mean — those statements are part of these terms.
+      </p>
+
+      <h2>If you use execution</h2>
+      <p>
+        Execution is off unless you switch it on, and switching it on takes three
+        things you do yourself: deploying a vault contract, granting it permission
+        to trade on your behalf, and passing a backtest of the rule you want
+        traded. We are not a broker, a dealer, an exchange or a portfolio manager,
+        and none of those things changes because a rule you wrote fires and a
+        contract you own acts on it.
+      </p>
+      <p>
+        Your funds stay in your contract. We never hold them, and the permission
+        you grant cannot withdraw from it — it can only open and close
+        positions, within caps you set, and it expires. You can revoke it in one
+        transaction without our cooperation, and you should if anything here
+        worries you.
+      </p>
+      <p>
+        You are responsible for the strategy, the sizing and the limits, for
+        checking that they are what you meant, and for the money at stake. The
+        trades are yours. We supply the software that sends them, and we make no
+        representation that any strategy — including one that passed its
+        backtest — will be profitable.
       </p>
 
       <h2>Your responsibility</h2>

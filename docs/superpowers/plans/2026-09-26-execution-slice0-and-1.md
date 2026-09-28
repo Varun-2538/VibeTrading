@@ -574,3 +574,81 @@ Backend 762 tests, up from 708.
 4. The legal rewrite and the Play re-declaration, which are slice 6's other half and
    are not optional.
 5. A KMS signer before mainnet.
+
+---
+
+# Slice 6b — the copy
+
+Not decoration. The terms incorporate the risk page by reference, the Play
+declaration repeats it, and the disclosure a vault owner signs is hashed into their
+contract forever. So this is the slice where the product stops describing something
+it no longer is.
+
+## What was false, and is now gone
+
+`"We do not execute trades. The app has no order placement of any kind."` ·
+`"Alerts only: nothing here places a trade."` · `"it places no trades, holds no
+funds"` · `"we cannot move anything, and signing in authorises no transaction"` ·
+`"A free, informational tool"`.
+
+## What replaced it, and why in that order
+
+The risk page leads with the thing people most need to believe and can check:
+**your money stays in your contract**, and the permission we hold cannot withdraw
+from it — *there is no function in that contract by which we could, whatever we
+wanted or were asked to do*. That is a claim about code, not about intentions, which
+is the only kind worth making.
+
+Then, in the order someone would be hurt by not knowing:
+
+| | |
+|---|---|
+| Your stop does not depend on us | it is in the contract, anyone can trigger it, and the contract pays them for it |
+| A stop is not a fill price | the contract permits an exit at the level; the pool decides what you get |
+| Three prices disagree | signals from a centralised exchange, stops from Chainlink, fills from a pool — and we show the gap in bps |
+| Costs can exceed the edge | 0.03R a trade on 1d, over 2R on 5m; the gate refuses what does not clear its own costs |
+| A backtest is required and still not a forecast | it stops the obvious mistakes and nothing more |
+| Start in shadow | a week costs nothing and is the most expensive thing to skip |
+| The contract is unaudited | with a cap we cannot raise either |
+| Entries depend on us, exits do not | read twice before relying on either |
+
+Two sentences were kept deliberately rather than softened: *"We do not choose what
+to trade"* and *"not investment advice"*. Execution does not make us an adviser, and
+the copy should not drift toward implying it might.
+
+## The Play declaration
+
+The one part that is not ours to phrase freely, and the note now says the thing that
+is easy to miss: the TWA is a wrapper around `app.vibetrading.club`, so **the Android
+app gains execution the moment the web app does** — no new build, no store review.
+The declaration therefore has to change *before the feature is enabled for anyone*,
+not before the next release. Enabling it with the old answer standing is a false
+declaration. What the answer needs to become is written out; whether Play also wants
+its crypto-exchange or financial-services declarations is left as a policy reading to
+do at the time rather than guessed at here.
+
+## The test
+
+`frontend/tests/legal.test.ts` asserts in both directions: the claims that stopped
+being true are gone from all four pages, and the ones that are still true and
+load-bearing are still there in the words the contract enforces.
+
+Two cross-checks beyond that, and they are the interesting ones:
+
+- **the site may not contradict the text a vault owner signed.** The disclosure's
+  hash lives in their contract forever, so if the risk page said something looser
+  than what they accepted, the accepted text would be the one that counted and we
+  would be the ones out of step.
+- **the architecture page counts what is actually deployed.** It parses
+  `docker-compose.prod.yml` and compares the service count to the number word on the
+  page, which is how "five containers" stopped being true without anyone noticing
+  the first time.
+
+893 tests across the three suites, counted rather than estimated — the page said 425
+until today.
+
+## Still not done before a live trade
+
+Deploying the factory to Sepolia and running the fork test; an executor key and its
+published address; a week in shadow; the Play answer actually changed in the console;
+a KMS signer before mainnet.
