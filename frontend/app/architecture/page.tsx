@@ -4,7 +4,7 @@ import DocShell from "@/components/doc-shell"
 export const metadata: Metadata = {
   title: "Architecture — VibeTrading",
   description:
-    "How VibeTrading is built: Next.js on Vercel, FastAPI and TimescaleDB on Google Compute Engine, and a deterministic analysis layer that uses no machine learning.",
+    "How VibeTrading is built: Next.js on Vercel, FastAPI and TimescaleDB on Google Compute Engine, a deterministic analysis layer that uses no machine learning, and an execution layer that cannot touch your funds.",
 }
 
 /* Palette matched to the site so the diagram reads as part of the page. */
@@ -211,8 +211,9 @@ export default function ArchitecturePage() {
     <DocShell wide>
       <h1>Architecture</h1>
       <p className="lede">
-        A small, boring, legible stack. One virtual machine, five containers, a
-        static frontend, and an analysis layer with no machine learning in it.
+        A small, boring, legible stack. One virtual machine, six containers, a
+        static frontend, an analysis layer with no machine learning in it, and a
+        vault contract that holds the only thing worth stealing.
       </p>
 
       <Diagram />
@@ -227,10 +228,53 @@ export default function ArchitecturePage() {
       <p>
         Everything else runs in Docker Compose on a single Google Compute Engine{" "}
         <code>e2-small</code> in <code>asia-south1-a</code>: Caddy terminating
-        TLS, a FastAPI service, TimescaleDB, Redis, and a worker that keeps candle
-        history current and runs backtests. One machine is genuinely
-        enough at this stage, and pretending otherwise would mean paying for
-        idle capacity.
+        TLS, a FastAPI service, TimescaleDB, Redis, a worker that keeps candle
+        history current and runs backtests, and an executor that turns fired rules
+        into trades. One machine is genuinely enough at this stage, and pretending
+        otherwise would mean paying for idle capacity.
+      </p>
+
+      <h2>Three processes, because they fail differently</h2>
+      <p>
+        The alert sweep runs inside the API, once a minute, and it must not wait for
+        anything. Backtests run in their own container at a quarter of the API's CPU
+        weight, so a replay can never delay a live alert. Execution runs in a third,
+        and not in either of the others: a slow RPC inside the sweep would delay
+        every other wallet's alerts, and an exit that has to land within seconds of a
+        bar close cannot queue behind an hour-long replay.
+      </p>
+      <p>
+        What the sweep does when an armed rule fires is therefore almost nothing —
+        it writes one row and returns. The executor reads that row on its own clock,
+        turns it into an intent, and sends exactly one transaction. Every step of that
+        is idempotent through a unique index rather than a lock: one intent per fire,
+        one live position per rule, one order per client id, one fill per chain id. Two
+        executors running at once could not double a position if they tried.
+      </p>
+
+      <h2>Where the money is, and what we can do with it</h2>
+      <p>
+        Nowhere near us. If you use execution, your stablecoins sit in a contract you
+        deployed and own. We hold a permission on it that can open a position and
+        close one, and there is no code path by which it can withdraw, approve anyone
+        else, re-route a trade or raise a cap. You revoke it in one transaction
+        without our cooperation.
+      </p>
+      <p>
+        The stop, the target and the deadline are written into that contract in the
+        same transaction that opens the position, and nothing can change them
+        afterwards — which removes the state an executor is most dangerous in, a
+        position that exists without a stop. It also means the exits do not depend on
+        us: the three closing functions are permissionless and pay a small bounty from
+        the vault, so if our server is down a stranger has a reason to close your
+        position. Entries depend on our uptime; exits do not, and that asymmetry is
+        the whole design.
+      </p>
+      <p>
+        Live and shadow are the same code path with a different venue behind it, so
+        there is no live-only branch that shadow has never run. Shadow reads real
+        prices and writes nothing, which is what makes a week of it a real measurement
+        of what a strategy costs rather than a rehearsal.
       </p>
 
       <h2>Why TimescaleDB</h2>
@@ -356,7 +400,8 @@ export default function ArchitecturePage() {
 
       <h2>Testing</h2>
       <p>
-        425 tests. Pattern fixtures are built from line segments so the geometry
+        893 tests across the backend, the frontend and the vault contract. Pattern
+        fixtures are built from line segments so the geometry
         is known exactly and assertions can be made on prices rather than on
         "something was found". A good number of those tests exist because a real
         chart disagreed with the detector and the disagreement turned out to be

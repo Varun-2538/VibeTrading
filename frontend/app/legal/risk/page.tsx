@@ -4,7 +4,7 @@ import { CONTACT_EMAIL } from "@/lib/contact"
 export const metadata: Metadata = {
   title: "Risk disclosure — VibeTrading",
   description:
-    "VibeTrading performs technical analysis on public market data and can alert you when conditions you set are met. It is not investment advice, it executes no trades, and it never touches your exchange account.",
+    "VibeTrading performs technical analysis on public market data and can alert you when conditions you set are met. It can also trade those conditions inside a contract you own, if you switch that on. It is not investment advice, it never holds your funds, and it never touches your exchange account.",
 }
 
 export default function RiskPage() {
@@ -13,9 +13,12 @@ export default function RiskPage() {
       <h1>Risk disclosure</h1>
       <p className="lede">
         VibeTrading is an analysis tool. It can watch for conditions you define
-        and tell you when they occur, but it is not a broker, not an adviser,
-        and it decides nothing for you. Read this page before you act on
-        anything the app shows you.
+        and tell you when they occur, and &mdash; if you set that up &mdash; it
+        can trade them inside a contract you own and control. It is not a broker,
+        not an adviser, and it chooses nothing for you: the strategy, the size
+        and the limits are yours. Read this page before you act on anything the
+        app shows you, and read the section on execution twice before you turn it
+        on.
       </p>
 
       <h2>This is not financial advice</h2>
@@ -78,10 +81,14 @@ export default function RiskPage() {
       </p>
       <p>
         Rules are private to the wallet address that created them. Connecting a
-        wallet and signing a message is how we establish that address, and it is
-        all it does: there is no transaction, no token approval, and no ability
-        for us to move anything you hold. If you lose access to that address, you
-        lose access to the rules under it.
+        wallet and signing a message is how we establish that address, and for
+        alerts that is all it does: no transaction, no token approval, and no
+        ability for us to move anything you hold. Execution is a separate,
+        explicit step — a contract you deploy and a permission you grant in
+        their own transactions, which you can revoke at any time. Signing in has
+        never authorised spending and still does not. If you lose access to that
+        address, you lose access to the rules under it, and to any vault you
+        deployed from it.
       </p>
 
       <h2>Chart patterns are not predictions</h2>
@@ -138,23 +145,26 @@ export default function RiskPage() {
       <h2>What we never do</h2>
       <ul>
         <li>
-          <strong>We do not execute trades.</strong> The app has no order
-          placement of any kind.
+          <strong>We do not hold your funds.</strong> There is no deposit to us
+          and no balance with us. If you use execution, your money sits in a
+          contract you deployed and own, and the permission you give us cannot
+          withdraw from it — there is no function in that contract by which we
+          could, whatever we wanted or were asked to do.
         </li>
         <li>
-          <strong>We never ask for exchange API keys.</strong> There is nowhere
-          to enter them, and no feature that would use them. If anything ever
-          asks you for keys in our name, it is not us.
+          <strong>We never ask for exchange API keys, seed phrases or private
+          keys.</strong> There is nowhere to enter them and no feature that would
+          use them. If anything ever asks you for them in our name, it is not us.
         </li>
         <li>
-          <strong>We do not hold funds or custody assets.</strong> There is no
-          deposit and no withdrawal. You can connect a wallet, but only to sign a
-          message proving an address is yours — we never request an approval or a
-          transaction, and we could not spend from it if we tried.
+          <strong>We cannot move a stop once it is set.</strong> Your stop, your
+          target and your deadline are written into the contract when a position
+          opens, and nothing changes them afterwards — not us, and not you.
         </li>
         <li>
-          <strong>We do not manage money</strong> or accept discretionary
-          authority over anyone's account.
+          <strong>We do not choose what to trade.</strong> Every rule, every
+          limit and every size is yours. We do not recommend strategies and we do
+          not accept discretion to invent one.
         </li>
         <li>
           <strong>We do not sell signals, promise returns, or publish track
@@ -162,6 +172,81 @@ export default function RiskPage() {
           VibeTrading is fraudulent.
         </li>
       </ul>
+
+      <h2>If you switch execution on</h2>
+      <p>
+        Execution is off. It is off for everyone, on our side as well as yours,
+        and turning it on takes three separate things: a contract you deploy
+        yourself, a permission you grant on-chain, and a backtest that passes.
+        Arming a rule for alerts does none of them. What follows describes what
+        happens once you have done all three.
+      </p>
+      <p>
+        <strong>Your money stays in your contract.</strong> You deploy a vault,
+        you fund it, you own it. We hold a permission that can do exactly two
+        things inside it: open a position and close one. It cannot transfer, it
+        cannot approve anyone else, it cannot change where a trade routes, and it
+        expires by itself. You can revoke it in one transaction, without our
+        cooperation and without telling us.
+      </p>
+      <p>
+        <strong>Your stop does not depend on us.</strong> It is stored in the
+        contract and checked against a Chainlink price. Anyone at all can send the
+        transaction that closes a stopped position, and the contract pays them a
+        small fee from the vault for doing it — so if our servers are down, a
+        stranger has a reason to close your position for you. That is deliberate,
+        and it is why a stop here is not best-effort in the way an alert is.
+      </p>
+      <p>
+        <strong>A stop is not a fill price.</strong> A stop at $100 means the
+        contract will allow an exit once the price is at or below $100. It does
+        not mean you get $100. If the market gaps you get whatever the pool pays
+        when the transaction lands, which can be much worse. Our backtests model
+        the same thing, so a report and a real trade speak the same language —
+        but neither is a promise.
+      </p>
+      <p>
+        <strong>Three different prices are involved, and they disagree.</strong>{" "}
+        Your rule fires on candles from a centralised exchange. Your stop is
+        authorised by a Chainlink feed. Your trade fills at whatever a Uniswap
+        pool quotes at that moment. We record the gap on every fill, in basis
+        points, and show it to you — because it is real, and you should see it
+        rather than discover it.
+      </p>
+      <p>
+        <strong>Costs can exceed the edge.</strong> A swap pays the pool's fee
+        going in and coming out, plus gas. Measured against a 1.5-ATR stop, that
+        is roughly 0.03R a trade on a daily chart and more than 2R on a
+        five-minute one. That is why the app refuses to arm a strategy whose own
+        backtest does not clear its costs, and why intraday trading on a
+        decentralised exchange is arithmetic rather than opinion.
+      </p>
+      <p>
+        <strong>A backtest is required, and it is still not a forecast.</strong>{" "}
+        A rule cannot be armed for execution unless a backtest of that exact rule,
+        on data the tuning never saw, clears a bar you set yourself. That check
+        exists to stop the obvious mistakes. It cannot tell you the future, and a
+        strategy that passed it can lose money immediately and continuously.
+      </p>
+      <p>
+        <strong>Start in shadow mode.</strong> Shadow records every trade the rule
+        would have made and sends none of them. A week of it costs nothing and
+        tells you what your strategy really pays in fees, gas and slippage against
+        what the backtest assumed. Skipping it is the most expensive mistake
+        available here.
+      </p>
+      <p>
+        <strong>The contract is new and unaudited.</strong> It carries a hard cap
+        of a few hundred dollars per vault, written into the code so that we
+        cannot raise it either, and it will not hold more until someone who is not
+        us has audited it. Smart contracts lose money to bugs. This one could.
+      </p>
+      <p>
+        <strong>Software fails, and this software is young.</strong> Our executor
+        can be down, slow or wrong. It can miss an entry entirely — which costs
+        you an opportunity rather than capital, because entries depend on us and
+        exits do not. Read that sentence again before you rely on either.
+      </p>
 
       <h2>The data may be wrong or late</h2>
       <p>

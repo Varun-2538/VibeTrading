@@ -20,7 +20,7 @@ Optionally, connect a wallet to build strategy rules that alert you when a patte
 
 No signup. Free to use.
 
-VibeTrading is not financial advice. It places no trades and holds no funds. A pattern is evidence of a shape, not evidence of an edge.
+VibeTrading is not financial advice. It holds no funds: if you switch execution on, your money stays in a contract you deploy and own, and the permission you grant can only open and close positions there - never withdraw - and is revocable by you at any time. A pattern is evidence of a shape, not evidence of an edge.
 
 **Category:** Finance
 **Tags:** Cryptocurrency, Technical analysis
