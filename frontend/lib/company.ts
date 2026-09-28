@@ -71,8 +71,8 @@ export const ROADMAP: readonly RoadmapItem[] = [
     body: "Rule signals delivered to the phone rather than only to an open tab.",
   },
   {
-    when: "Planned",
+    when: "Built, switched off",
     title: "Rules that act, not only alert",
-    body: "Phase two of the strategy engine. Today a rule can only raise an alert; nothing places a trade.",
+    body: "A rule can trade itself, inside a vault contract you deploy and own: we can open and close positions there, never withdraw, and you revoke us on-chain whenever you like. The stop lives in the contract, so it does not depend on our uptime. Off for everyone while the contract goes to a testnet and an audit.",
   },
 ]

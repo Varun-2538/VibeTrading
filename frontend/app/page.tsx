@@ -25,7 +25,7 @@ const FEATURES = [
   },
   {
     title: "Strategy alerts",
-    body: "Set a condition on a pattern or a level. It runs on the server and fires with the browser closed. Alerts by default; execution only if you deploy a vault and switch it on.",
+    body: "Set a condition on a pattern or a level. It runs on the server and fires with the browser closed, and it can be backtested on data the tuning never saw before you trust it.",
   },
   {
     title: "Plain-English assistant",
