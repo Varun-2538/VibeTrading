@@ -3,14 +3,17 @@
 import type React from "react"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import PriceChart from "@/components/price-chart"
+import PriceChart, { type PanelSlots } from "@/components/price-chart"
 import ChatPanel from "@/components/chat-panel"
 import AnalysisPanel from "@/components/analysis-panel"
+import AppHeader from "@/components/app-header"
+import Watchlist, { WATCHLIST } from "@/components/watchlist"
 import { Button } from "@/components/ui/button"
-import { BarChart3, CandlestickChart, MessageSquare, Sparkles } from "lucide-react"
+import { BarChart3, CandlestickChart, Cpu, MessageSquare, Sparkles } from "lucide-react"
 import type { LiquidityData, Timeframe } from "@/lib/api"
 import type { Mark, PatternSettings, Viewport } from "@/lib/marks"
 import { TRADE_MARKS_EVENT, type TradeMarksDetail } from "@/lib/backtests"
+import { subscribeTickers, type Ticker } from "@/lib/binance"
 
 /*
  * Two layouts, one tree.
@@ -37,6 +40,35 @@ const REGIONS: { id: CompactRegion; label: string; Icon: typeof CandlestickChart
 ]
 
 const NO_MARKS: Mark[] = []
+
+const TIMEFRAME_MS: Record<Timeframe, number> = {
+  "1m": 60_000,
+  "5m": 300_000,
+  "15m": 900_000,
+  "1h": 3_600_000,
+  "4h": 14_400_000,
+  "1d": 86_400_000,
+}
+
+/*
+ * The side rail only earns its width at xl. Between lg and xl the chart keeps
+ * its level rail and pattern settings inline, as it always has, so the slots
+ * are handed over only when the rail is actually on screen.
+ */
+const WIDE = "(min-width: 1280px)"
+const DESKTOP = "(min-width: 1024px)"
+
+function useMedia(query: string) {
+  const [matches, setMatches] = useState(false)
+  useEffect(() => {
+    const mql = window.matchMedia(query)
+    const onChange = () => setMatches(mql.matches)
+    onChange()
+    mql.addEventListener("change", onChange)
+    return () => mql.removeEventListener("change", onChange)
+  }, [query])
+  return matches
+}
 
 export default function TradingDashboard() {
   const [isChatOpen, setIsChatOpen] = useState(true)
@@ -66,6 +98,31 @@ export default function TradingDashboard() {
   // Trades a backtest report asked to draw, tied to the pair and timeframe
   // they happened on: drawn only while the chart shows that series.
   const [tradeMarks, setTradeMarks] = useState<TradeMarksDetail | null>(null)
+  // One 24h ticker stream for all nine pairs: the watchlist and the top bar.
+  const [tickers, setTickers] = useState<Record<string, Ticker>>({})
+  useEffect(
+    () => subscribeTickers(WATCHLIST, (t) => setTickers((prev) => ({ ...prev, [t.symbol]: t }))),
+    [],
+  )
+
+  const desktop = useMedia(DESKTOP)
+  const wide = useMedia(WIDE)
+  const [toolbarEl, setToolbarEl] = useState<HTMLDivElement | null>(null)
+  const [detectionEl, setDetectionEl] = useState<HTMLDivElement | null>(null)
+  const [railEl, setRailEl] = useState<HTMLDivElement | null>(null)
+  const slots = useMemo<PanelSlots>(
+    () => ({
+      toolbar: desktop ? toolbarEl : null,
+      detection: wide ? detectionEl : null,
+      rail: wide ? railEl : null,
+    }),
+    [desktop, wide, toolbarEl, detectionEl, railEl],
+  )
+  const candlesInView = viewport
+    ? Math.max(0, Math.round((viewport.to - viewport.from) / TIMEFRAME_MS[timeframe]) + 1)
+    : null
+  const ticker = tickers[currentSymbol]
+
   const clearMarks = useCallback(() => {
     setMarks([])
     setTradeMarks(null)
@@ -149,21 +206,38 @@ export default function TradingDashboard() {
     // pushes the bottom bar off the screen until you scroll - and this page
     // never scrolls. overscroll-none stops a downward drag on the chart from
     // triggering pull-to-refresh.
-    <div className="flex h-[100dvh] w-full flex-col overflow-hidden overscroll-none bg-background">
+    <div className="vt vt-panel flex h-[100dvh] w-full flex-col overflow-hidden overscroll-none bg-background">
+      <AppHeader onNavigate={() => setRegion("analysis")} />
+
       {!isChatOpen && (
         <Button
           onClick={() => setIsChatOpen(true)}
           size="icon"
-          className="fixed top-4 right-4 z-50 hidden bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 lg:inline-flex"
+          className="fixed bottom-5 right-5 z-50 hidden bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 lg:inline-flex"
         >
           <MessageSquare className="h-5 w-5" />
           <span className="sr-only">Open the assistant</span>
         </Button>
       )}
 
+      {/* Desktop top bar. The chart renders its toolbar into it. */}
+      <div className="hidden shrink-0 px-2 pt-2 lg:block">
+        <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-3 py-2">
+          <div ref={setToolbarEl} className="min-w-0 flex-1" />
+          {candlesInView !== null && (
+            <span className="hidden shrink-0 items-center gap-1.5 rounded bg-muted px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.06em] text-muted-foreground xl:flex">
+              <Cpu className="h-3.5 w-3.5 text-primary/80" />
+              {candlesInView} candles in view
+            </span>
+          )}
+        </div>
+      </div>
+
       <div
-        className={`relative min-h-0 flex-1 lg:grid lg:gap-0 lg:grid-rows-[1fr_var(--analysis-h)] ${
-          isChatOpen ? "lg:grid-cols-[1fr_var(--chat-w)]" : "lg:grid-cols-1"
+        className={`relative min-h-0 flex-1 lg:grid lg:gap-2 lg:p-2 lg:grid-rows-[minmax(0,1fr)_var(--analysis-h)] ${
+          isChatOpen
+            ? "lg:grid-cols-[minmax(0,1fr)_var(--chat-w)] xl:grid-cols-[240px_minmax(0,1fr)_var(--chat-w)]"
+            : "lg:grid-cols-1 xl:grid-cols-[240px_minmax(0,1fr)]"
         }`}
         style={
           {
@@ -172,9 +246,24 @@ export default function TradingDashboard() {
           } as React.CSSProperties
         }
       >
+        {/* Side rail, xl only: the watchlist, and the chart's pattern
+            settings and level rail rendered here through portals. */}
+        <aside className="hidden min-h-0 flex-col gap-2 overflow-y-auto xl:col-start-1 xl:row-span-2 xl:row-start-1 xl:flex">
+          <Watchlist tickers={tickers} selected={currentSymbol} onSelect={setCurrentSymbol} />
+          <section className="shrink-0 rounded-xl border border-border bg-card p-3">
+            <h2 className="mb-3 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-primary/80">
+              Detection parameters
+            </h2>
+            <div ref={setDetectionEl} />
+          </section>
+          <section className="shrink-0 rounded-xl border border-border bg-card p-3">
+            <div ref={setRailEl} />
+          </section>
+        </aside>
+
         {/* Chart. Never hidden, at any width: a chart taken out of the flow
             loses its size and has to re-measure when it comes back. */}
-        <div className="absolute inset-0 lg:relative lg:inset-auto lg:col-start-1 lg:row-start-1 lg:border-r lg:border-b lg:border-border">
+        <div className="absolute inset-0 lg:relative lg:inset-auto lg:col-start-1 lg:row-start-1 lg:overflow-hidden lg:rounded-xl lg:border lg:border-border xl:col-start-2">
           <PriceChart
             symbol={currentSymbol}
             onSymbolChange={setCurrentSymbol}
@@ -186,12 +275,15 @@ export default function TradingDashboard() {
             onPatternSettingsChange={setPatternSettings}
             marks={chartMarks}
             onClearMarks={clearMarks}
+            slots={slots}
+            changePct={ticker?.changePct}
+            quoteVolume={ticker?.quoteVolume}
           />
         </div>
 
-        {/* Analysis: a row under the chart at lg, a full-screen region below it. */}
+        {/* Analysis: a card under the chart at lg, a full-screen region below it. */}
         <div
-          className={`absolute inset-0 z-20 bg-card lg:relative lg:inset-auto lg:z-auto lg:col-start-1 lg:row-start-2 lg:block lg:border-t lg:border-border ${
+          className={`absolute inset-0 z-20 bg-card lg:relative lg:inset-auto lg:z-auto lg:col-start-1 lg:row-start-2 lg:block lg:overflow-hidden lg:rounded-xl lg:border lg:border-border xl:col-start-2 ${
             region === "analysis" ? "" : "hidden"
           }`}
         >
@@ -208,9 +300,9 @@ export default function TradingDashboard() {
           <AnalysisPanel symbol={currentSymbol} timeframe={timeframe} />
         </div>
 
-        {/* Chat: a resizable column at lg, a full-screen region below it. */}
+        {/* Chat: a resizable card at lg, a full-screen region below it. */}
         <div
-          className={`absolute inset-0 z-30 bg-card lg:relative lg:inset-auto lg:z-auto lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:border-l lg:border-border ${
+          className={`absolute inset-0 z-30 bg-card lg:relative lg:inset-auto lg:z-auto lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:overflow-hidden lg:rounded-xl lg:border lg:border-border xl:col-start-3 ${
             region === "chat" ? "" : "hidden"
           } ${isChatOpen ? "lg:block" : "lg:hidden"}`}
         >
@@ -253,12 +345,12 @@ export default function TradingDashboard() {
                 if (id === "chat") setIsChatOpen(true)
               }}
               className={`relative flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] transition-colors ${
-                active ? "text-foreground" : "text-muted-foreground"
+                active ? "text-primary" : "text-muted-foreground"
               }`}
             >
               <span
                 aria-hidden
-                className={`absolute inset-x-0 top-0 h-px ${active ? "bg-foreground" : "bg-transparent"}`}
+                className={`absolute inset-x-0 top-0 h-px ${active ? "bg-primary" : "bg-transparent"}`}
               />
               <Icon className="h-4 w-4" />
               {label}

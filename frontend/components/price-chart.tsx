@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 import {
   CandlestickSeries,
   ColorType,
@@ -23,7 +24,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { Layers, SlidersHorizontal } from "lucide-react"
+import { Layers, SlidersHorizontal, Sparkles } from "lucide-react"
 import MarkOverlay from "@/components/mark-overlay"
 import PatternOverlay from "@/components/pattern-overlay"
 import type { Mark, PatternSettings, Viewport } from "@/lib/marks"
@@ -48,17 +49,19 @@ import {
 } from "@/lib/api"
 
 /*
- * Candles carry no hue - direction is hollow (up) vs filled (down), which
- * stays readable under every form of colour blindness and frees the only two
- * hues on the canvas for the levels. Blue/orange is validated against this
- * surface: CVD dE 26.8, normal-vision dE 31.8.
+ * Brand mint for support and up, coral for resistance and down. Direction is
+ * still hollow (up) vs filled (down), so it never rests on hue alone.
+ *
+ * The coral is deliberately deeper than the design's salmon (#ffb4ab): mint
+ * against salmon collapses to dE 15.9 under deuteranopia and 13.4 under
+ * protanopia, where #ff7a59 holds 46.1 and 37.1 (normal vision 98.7).
  */
-const SUPPORT = "#3987e5"
-const RESISTANCE = "#d95926"
-const INK = "#c3c2b7"
-const INK_MUTED = "#898781"
-const GRID = "rgba(255,255,255,0.06)"
-const SURFACE = "#17181e"
+const SUPPORT = "#7af0ce"
+const RESISTANCE = "#ff7a59"
+const INK = "#d8e5e1"
+const INK_MUTED = "#86948e"
+const GRID = "rgba(122,240,206,0.06)"
+const SURFACE = "#05100e"
 
 const CANDLE_LIMIT = 1000
 
@@ -128,6 +131,29 @@ interface PriceChartProps {
   /** What the chat fellow asked to draw. Already checked against the detectors. */
   marks?: Mark[]
   onClearMarks?: () => void
+  /**
+   * Desktop-only mount points elsewhere on the page. When given, the toolbar,
+   * the pattern settings and the level rail render there through portals
+   * instead of inside the chart card. State stays here either way, and the
+   * compact layout never uses them.
+   */
+  slots?: PanelSlots
+  /** 24h change and quote volume for the selected pair, from the ticker feed. */
+  changePct?: number
+  quoteVolume?: number
+}
+
+export interface PanelSlots {
+  toolbar?: HTMLElement | null
+  detection?: HTMLElement | null
+  rail?: HTMLElement | null
+}
+
+interface Ohlc {
+  open: number
+  high: number
+  low: number
+  close: number
 }
 
 export default function PriceChart({
@@ -141,6 +167,9 @@ export default function PriceChart({
   onPatternSettingsChange,
   marks = [],
   onClearMarks,
+  slots,
+  changePct,
+  quoteVolume,
 }: PriceChartProps) {
   const selected = symbol || "BTCUSDT"
   const setTimeframe = onTimeframeChange
@@ -160,6 +189,9 @@ export default function PriceChart({
   const [scale, setScale] = useState<PatternScale>("swing")
   const [patterns, setPatterns] = useState<Pattern[]>([])
   const [patternTotal, setPatternTotal] = useState(0)
+  // The candle under the crosshair, or the latest one when nothing is hovered.
+  const [hovered, setHovered] = useState<Ohlc | null>(null)
+  const [latest, setLatest] = useState<Ohlc | null>(null)
 
   /*
    * Below the desktop breakpoint the toolbar's controls and the level rail
@@ -232,17 +264,17 @@ export default function PriceChart({
         ? chart.addSeries(CandlestickSeries, {
             // Hollow up, filled down.
             upColor: "rgba(0,0,0,0)",
-            downColor: INK,
-            borderUpColor: INK,
-            borderDownColor: INK,
-            wickUpColor: INK,
-            wickDownColor: INK,
+            downColor: RESISTANCE,
+            borderUpColor: SUPPORT,
+            borderDownColor: RESISTANCE,
+            wickUpColor: SUPPORT,
+            wickDownColor: RESISTANCE,
             priceLineVisible: true,
             priceLineColor: INK_MUTED,
             priceLineStyle: LineStyle.Dashed,
           })
         : chart.addSeries(LineSeries, {
-            color: INK,
+            color: SUPPORT,
             lineWidth: 2,
             priceLineVisible: true,
             priceLineColor: INK_MUTED,
@@ -285,6 +317,7 @@ export default function PriceChart({
         applyCandles(seriesRef.current, candles, chartStyle)
         chartRef.current?.timeScale().fitContent()
         setSpot(candles.at(-1)?.close)
+        setLatest(candles.at(-1) ?? null)
         setLoading(false)
       })
       .catch((e) => {
@@ -343,6 +376,7 @@ export default function PriceChart({
             : { time, value: Number(k.c) }) as never,
         )
         setSpot(Number(k.c))
+        setLatest({ open: Number(k.o), high: Number(k.h), low: Number(k.l), close: Number(k.c) })
       }
 
       // Close this socket, not whichever one `socket` currently holds.
@@ -366,6 +400,24 @@ export default function PriceChart({
       setLive(false)
     }
   }, [selected, timeframe, loading, error, chartStyle])
+
+  /* ------------------------------------------------------------ crosshair */
+
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    const onMove = (param: Parameters<Parameters<IChartApi["subscribeCrosshairMove"]>[0]>[0]) => {
+      const series = seriesRef.current
+      const bar = series && param.time ? (param.seriesData.get(series) as Partial<Ohlc> | undefined) : undefined
+      setHovered(
+        bar && bar.open !== undefined && bar.high !== undefined && bar.low !== undefined && bar.close !== undefined
+          ? { open: bar.open, high: bar.high, low: bar.low, close: bar.close }
+          : null,
+      )
+    }
+    chart.subscribeCrosshairMove(onMove)
+    return () => chart.unsubscribeCrosshairMove(onMove)
+  }, [])
 
   /* ------------------------------------------------- viewport -> analysis */
 
@@ -569,7 +621,7 @@ export default function PriceChart({
    * settings sheet below it. Descriptors rather than a duplicated block, so
    * the two renderings cannot drift apart.
    */
-  const controlGroups: { key: string; label: string; node: ReactNode }[] = [
+  const controlGroups: { key: string; label: string; node: ReactNode; detection?: boolean }[] = [
     {
       key: "style",
       label: "Draw as",
@@ -638,6 +690,7 @@ export default function PriceChart({
       {
         key: "scale",
         label: "Pattern size",
+        detection: true,
         node: (
           <Segmented
             ariaLabel="Pattern scale"
@@ -657,6 +710,7 @@ export default function PriceChart({
       {
         key: "source",
         label: "Measured on",
+        detection: true,
         node: (
           <Segmented
             ariaLabel="Price source"
@@ -674,6 +728,7 @@ export default function PriceChart({
       {
         key: "strictness",
         label: "Strictness",
+        detection: true,
         node: (
           <Segmented
             ariaLabel="Strictness"
@@ -838,6 +893,97 @@ export default function PriceChart({
     </>
   )
 
+  /* The desktop top bar, when the page gives it a slot: identity, price and
+     every chart control except the pattern settings, which have a card. */
+  const pairName = CRYPTO_PAIRS.find((c) => c.symbol === selected)?.name
+  const desktopToolbar = (
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <Select value={selected} onValueChange={(v) => onSymbolChange?.(v)}>
+          <SelectTrigger aria-label="Cryptocurrency" className="h-10 w-[200px] border-border bg-secondary">
+            <span className="flex min-w-0 items-baseline gap-2">
+              <span className="text-lg font-semibold tracking-tight">{selected}</span>
+              <span className="truncate text-xs text-muted-foreground">{pairName}</span>
+            </span>
+          </SelectTrigger>
+          <SelectContent>
+            {CRYPTO_PAIRS.map((c) => (
+              <SelectItem key={c.symbol} value={c.symbol}>
+                <div className="flex w-full items-center justify-between">
+                  <span className="font-semibold">{c.symbol}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">{c.name}</span>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <div className="flex items-baseline gap-2 font-mono">
+          {spot !== undefined && (
+            <span className="text-xl font-semibold tabular-nums tracking-tight text-primary">
+              ${formatPrice(spot)}
+            </span>
+          )}
+          <span
+            className="inline-flex items-center gap-1.5 rounded bg-muted px-1.5 py-0.5 text-[11px]"
+            title={live ? "Streaming live from Binance" : "Not connected to the live feed"}
+          >
+            <span
+              className={`inline-block h-1.5 w-1.5 rounded-full ${live ? "animate-pulse bg-primary" : "bg-muted-foreground/40"}`}
+            />
+            {changePct !== undefined && (
+              <span style={{ color: changePct >= 0 ? SUPPORT : RESISTANCE }}>
+                {changePct >= 0 ? "+" : ""}
+                {changePct.toFixed(2)}%
+              </span>
+            )}
+            <span className="text-muted-foreground">{live ? "live" : "offline"}</span>
+          </span>
+          {quoteVolume ? (
+            <span className="hidden text-[11px] text-muted-foreground xl:inline">
+              24h vol <span className="text-foreground">{compactUsd(quoteVolume)} USDT</span>
+            </span>
+          ) : null}
+        </div>
+
+        {timeframeControl}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {controlGroups
+          .filter((g) => !(slots?.detection && g.detection))
+          .map((g) => (
+            <div key={g.key} className="contents">
+              {g.node}
+            </div>
+          ))}
+      </div>
+    </div>
+  )
+
+  /* Pattern settings, as a card of their own at desktop width. */
+  const detectionContent = showPatterns ? (
+    <div className="flex flex-col gap-3">
+      {controlGroups
+        .filter((g) => g.detection)
+        .map((g) => (
+          <div key={g.key} className="flex flex-col gap-1.5">
+            <span className="text-[11px] text-muted-foreground">{g.label}</span>
+            {g.node}
+          </div>
+        ))}
+    </div>
+  ) : (
+    <div className="flex flex-col items-start gap-2">
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Pattern size, price source and strictness apply once W / M detection is on.
+      </p>
+      <Button variant="secondary" size="sm" className="h-7 text-xs" onClick={() => setShowPatterns(true)}>
+        Turn patterns on
+      </Button>
+    </div>
+  )
+
   // What the compact toolbar's rail button has to report.
   const railCount = railLevels.length + (showPatterns ? patterns.length : 0)
 
@@ -848,7 +994,11 @@ export default function PriceChart({
         the timeframes take a row each and everything else moves to a sheet,
         because eight control groups will not sit beside each other on a phone.
       */}
-      <div className="flex flex-col gap-2 border-b border-border px-3 py-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 lg:justify-between lg:px-4 lg:py-3">
+      <div
+        className={`flex flex-col gap-2 border-b border-border px-3 py-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 lg:justify-between lg:px-4 lg:py-3 ${
+          slots?.toolbar ? "lg:hidden" : ""
+        }`}
+      >
         <div className="flex min-w-0 items-center gap-2 lg:gap-3">
           <Select value={selected} onValueChange={(v) => onSymbolChange?.(v)}>
             {/* The trigger is written out rather than left to SelectValue, so
@@ -937,10 +1087,46 @@ export default function PriceChart({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1">
+      {slots?.toolbar && (
+        <div className="hidden flex-wrap items-center justify-between gap-2 px-4 pb-2 pt-3 lg:flex">
+          <div className="flex items-baseline gap-3">
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">
+              {selected.replace(/USDT$/, "")} / USDT
+            </h2>
+            <span className="font-mono text-[11px] text-muted-foreground">
+              {timeframe} · Binance spot reference
+            </span>
+          </div>
+          {showPatterns && patterns[0] && (
+            <span className="inline-flex items-center gap-1.5 rounded border border-primary/25 bg-primary/10 px-2.5 py-1 font-mono text-[11px] text-primary">
+              <Sparkles className="h-3.5 w-3.5" />
+              {patterns[0].kind}-pattern {patterns[0].state} · neck ${formatPrice(patterns[0].neckline)}
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className={`flex min-h-0 flex-1 ${slots?.toolbar ? "lg:mx-3 lg:overflow-hidden lg:rounded-lg" : ""}`}>
         {/* Chart */}
         <div className="relative min-w-0 flex-1">
           <div ref={containerRef} className="absolute inset-0" />
+          {chartStyle === "candle" && (hovered ?? latest) && (
+            <div className="pointer-events-none absolute left-2 top-2 z-10 hidden items-center gap-3 rounded bg-background/85 px-2 py-1 font-mono text-[11px] text-muted-foreground backdrop-blur lg:flex">
+              {(["open", "high", "low", "close"] as const).map((k) => (
+                <span key={k}>
+                  {k[0].toUpperCase()}:{" "}
+                  <strong
+                    className="font-semibold"
+                    style={{
+                      color: k === "high" ? SUPPORT : k === "low" ? RESISTANCE : k === "close" ? INK : undefined,
+                    }}
+                  >
+                    {formatPrice((hovered ?? latest)![k])}
+                  </strong>
+                </span>
+              ))}
+            </div>
+          )}
           {showPatterns && (
             <PatternOverlay
               chart={chartRef.current}
@@ -963,27 +1149,33 @@ export default function PriceChart({
           )}
         </div>
 
-        {/* Level rail */}
-        <div className="hidden w-[190px] shrink-0 overflow-y-auto border-l border-border px-3 py-3 lg:block">
-          {railContent}
-        </div>
+        {/* Level rail - beside the chart, unless the page gave it a slot. */}
+        {!slots?.rail && (
+          <div className="hidden w-[190px] shrink-0 overflow-y-auto border-l border-border px-3 py-3 lg:block">
+            {railContent}
+          </div>
+        )}
       </div>
 
       {/* Legend - identity is never colour alone. The written keys below are
           desktop-only: on a phone they cost a line of chart each, and the
           strength of every level is spelled out in words in the sheet. */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-border px-3 py-2 text-[11px] text-muted-foreground lg:px-4">
+      <div
+        className={`flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-border px-3 py-2 text-[11px] text-muted-foreground lg:px-4 ${
+          slots?.toolbar ? "lg:border-t-0 lg:py-3" : ""
+        }`}
+      >
         {chartStyle === "candle" && (
           <>
             <span className="flex shrink-0 items-center gap-1.5">
               <svg width="9" height="13" aria-hidden>
-                <rect x="0.5" y="0.5" width="8" height="12" fill={SURFACE} stroke={INK} />
+                <rect x="0.5" y="0.5" width="8" height="12" fill={SURFACE} stroke={SUPPORT} />
               </svg>
               up (hollow)
             </span>
             <span className="flex shrink-0 items-center gap-1.5">
               <svg width="9" height="13" aria-hidden>
-                <rect x="0.5" y="0.5" width="8" height="12" fill={INK} stroke={INK} />
+                <rect x="0.5" y="0.5" width="8" height="12" fill={RESISTANCE} stroke={RESISTANCE} />
               </svg>
               down (filled)
             </span>
@@ -1019,6 +1211,10 @@ export default function PriceChart({
           solid = strong · dashed = medium · dotted = weak · scroll to zoom, drag to pan
         </span>
       </div>
+
+      {slots?.toolbar && createPortal(desktopToolbar, slots.toolbar)}
+      {slots?.detection && createPortal(detectionContent, slots.detection)}
+      {slots?.rail && createPortal(railContent, slots.rail)}
 
       {/* Compact-width sheets. Neither is reachable at lg, where the same
           content is already on screen. */}
@@ -1111,4 +1307,9 @@ function Segmented<T extends string>({
       ))}
     </div>
   )
+}
+
+/** 1,840,000,000 -> "1.84B". */
+function compactUsd(value: number): string {
+  return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(value)
 }

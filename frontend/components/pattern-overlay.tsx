@@ -26,8 +26,8 @@ const NECK_INDICES: Partial<Record<PatternKind, Set<number>>> = {
   IHS: new Set([1, 3]),
 }
 
-const BULL_COLOUR = "#3987e5" // same blue as support: resolves upward
-const BEAR_COLOUR = "#d95926" // same orange as resistance: resolves downward
+const BULL_COLOUR = "#7af0ce" // same mint as support: resolves upward
+const BEAR_COLOUR = "#ff7a59" // same coral as resistance: resolves downward
 
 /**
  * How firmly each state is drawn.
