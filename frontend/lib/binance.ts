@@ -20,6 +20,8 @@ export interface Ticker {
   symbol: string
   price: number
   changePct: number
+  /** 24h traded volume in the quote asset (USDT). */
+  quoteVolume: number
 }
 
 export async function fetchKlines(
@@ -114,6 +116,7 @@ export function subscribeTickers(
       symbol: d.s,
       price,
       changePct: open ? ((price - open) / open) * 100 : 0,
+      quoteVolume: Number(d.q) || 0,
     })
   })
 }
