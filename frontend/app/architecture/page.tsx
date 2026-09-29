@@ -400,7 +400,7 @@ export default function ArchitecturePage() {
 
       <h2>Testing</h2>
       <p>
-        893 tests across the backend, the frontend and the vault contract. Pattern
+        895 tests across the backend, the frontend and the vault contract. Pattern
         fixtures are built from line segments so the geometry
         is known exactly and assertions can be made on prices rather than on
         "something was found". A good number of those tests exist because a real
