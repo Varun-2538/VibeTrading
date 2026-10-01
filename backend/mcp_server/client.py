@@ -2,6 +2,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from typing import Any, Dict, Optional, List
 import json
+import os
 
 
 class MCPClient:
@@ -15,10 +16,14 @@ class MCPClient:
 
     async def connect(self):
         """Connect to MCP server"""
+        # env=None would hand the subprocess a minimal environment, stripping
+        # CEREBRAS_API_KEY and the database settings - the server then fails its
+        # config validation and exits, surfacing here as "Connection closed".
+        # Inherit our own environment so it is configured the same way we are.
         server_params = StdioServerParameters(
             command="python",
             args=["mcp_server/server_simple.py"],
-            env=None
+            env=os.environ.copy()
         )
 
         self.context = stdio_client(server_params)

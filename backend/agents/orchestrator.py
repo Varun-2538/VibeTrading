@@ -19,7 +19,7 @@ class OrchestratorAgent:
     def __init__(self):
         self.llm = ChatCerebras(
             api_key=settings.cerebras_api_key,
-            model="llama3.1-70b",  # Larger model for orchestration
+            model="gemma-4-31b",  # Model for orchestration
             temperature=0.7,  # More creative for strategy synthesis
             max_tokens=2500
         )

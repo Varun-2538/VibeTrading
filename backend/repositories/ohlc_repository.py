@@ -211,27 +211,45 @@ class OHLCRepository:
 
         highs = price_data['highs']
         lows = price_data['lows']
+        closes = price_data['closes']
 
-        # Find resistance levels (clustered highs)
-        resistance_levels = await OHLCRepository._find_price_clusters(
-            highs, sensitivity
-        )
+        if not closes:
+            return {'support': [], 'resistance': [], 'sample_size': 0}
 
-        # Find support levels (clustered lows)
-        support_levels = await OHLCRepository._find_price_clusters(
-            lows, sensitivity
-        )
+        # get_price_levels orders by time DESC, so the first close is the latest
+        current_price = float(closes[0])
+
+        # Cluster highs and lows separately so each keeps its own granularity -
+        # pooling them makes the 2% tolerance swallow distinct levels into one
+        # wide band.
+        levels = await OHLCRepository._find_price_clusters(highs, sensitivity)
+        levels += await OHLCRepository._find_price_clusters(lows, sensitivity)
+
+        # A level's role is decided by where it sits relative to the current
+        # price, not by whether it came from a high or a low. An old high that
+        # price has fallen through is now support.
+
+        support = [lvl for lvl in levels if lvl['price'] < current_price]
+        resistance = [lvl for lvl in levels if lvl['price'] >= current_price]
+
+        # Keep the levels nearest the current price - those are the ones price
+        # will actually interact with next.
+        support.sort(key=lambda lvl: current_price - lvl['price'])
+        resistance.sort(key=lambda lvl: lvl['price'] - current_price)
 
         return {
-            'support': sorted(support_levels)[:5],  # Top 5 support levels
-            'resistance': sorted(resistance_levels, reverse=True)[:5]  # Top 5 resistance
+            'support': support[:5],
+            'resistance': resistance[:5],
+            # How many candles were actually analysed - strength is a share of
+            # this, not a raw count, so it means the same thing at any lookback.
+            'sample_size': len(closes)
         }
 
     @staticmethod
     async def _find_price_clusters(
         prices: List[float],
         sensitivity: float
-    ) -> List[float]:
+    ) -> List[Dict[str, Any]]:
         """
         Find price clusters (areas where price frequently tested)
 
@@ -240,7 +258,8 @@ class OHLCRepository:
             sensitivity: Clustering tolerance
 
         Returns:
-            List of clustered price levels
+            List of dicts with 'price' (cluster average) and 'test_count'
+            (how many times price visited the cluster)
         """
         if not prices:
             return []
@@ -259,12 +278,16 @@ class OHLCRepository:
             if not found_cluster:
                 clusters[price] = [price]
 
-        # Calculate average price for each cluster and weight by frequency
+        # Calculate average price for each cluster and keep the hit count -
+        # that count is what makes a level significant.
         weighted_levels = []
         for prices_in_cluster in clusters.values():
             if len(prices_in_cluster) >= 2:  # Only significant clusters
                 avg_price = sum(prices_in_cluster) / len(prices_in_cluster)
-                weighted_levels.append(avg_price)
+                weighted_levels.append({
+                    'price': float(avg_price),
+                    'test_count': len(prices_in_cluster)
+                })
 
         return weighted_levels
 

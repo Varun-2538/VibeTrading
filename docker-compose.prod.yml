@@ -1,0 +1,102 @@
+# TradeSmart.AI - backend stack for a single GCP VM.
+# The frontend is deployed separately on Vercel and calls this over HTTPS.
+# Only Caddy is published; everything else stays on the internal network.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Requires a .env alongside this file (see .env.prod.example).
+
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: tradesmart-timescaledb
+    environment:
+      POSTGRES_DB: tradesmart
+      POSTGRES_USER: ${TIMESCALE_USER:-tradesmart}
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:?set TIMESCALE_PASSWORD in .env}
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - tradesmart-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TIMESCALE_USER:-tradesmart}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: tradesmart-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - tradesmart-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tradesmart-backend
+    environment:
+      CEREBRAS_API_KEY: ${CEREBRAS_API_KEY:?set CEREBRAS_API_KEY in .env}
+      DATABASE_URL: postgresql://${TIMESCALE_USER:-tradesmart}:${TIMESCALE_PASSWORD}@timescaledb:5432/tradesmart
+      TIMESCALE_HOST: timescaledb
+      TIMESCALE_PORT: 5432
+      TIMESCALE_DB: tradesmart
+      TIMESCALE_USER: ${TIMESCALE_USER:-tradesmart}
+      TIMESCALE_PASSWORD: ${TIMESCALE_PASSWORD}
+      REDIS_URL: redis://redis:6379
+      FRONTEND_URL: ${FRONTEND_URL:-https://vibetrading.club}
+      BACKEND_PORT: 8000
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - tradesmart-network
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: tradesmart-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Caddy provisions a Let's Encrypt cert for this name on first boot.
+      # The A record must already resolve to this VM or issuance fails.
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in .env}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+    networks:
+      - tradesmart-network
+    restart: unless-stopped
+
+networks:
+  tradesmart-network:
+    driver: bridge
+    name: tradesmart-network
+
+volumes:
+  timescale_data:
+    name: tradesmart-timescale-data
+  redis_data:
+    name: tradesmart-redis-data
+  caddy_data:
+    name: tradesmart-caddy-data
+  caddy_config:
+    name: tradesmart-caddy-config

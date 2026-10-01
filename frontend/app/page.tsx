@@ -3,11 +3,12 @@
 import type React from "react"
 
 import { useState } from "react"
-import TradingViewChart from "@/components/trading-view-chart"
+import PriceChart from "@/components/price-chart"
 import ChatPanel from "@/components/chat-panel"
 import AnalysisPanel from "@/components/analysis-panel"
 import { Button } from "@/components/ui/button"
 import { MessageSquare } from "lucide-react"
+import type { LiquidityData } from "@/lib/api"
 
 export default function TradingDashboard() {
   const [isChatOpen, setIsChatOpen] = useState(true)
@@ -16,6 +17,10 @@ export default function TradingDashboard() {
   const [isDraggingChat, setIsDraggingChat] = useState(false)
   const [isDraggingAnalysis, setIsDraggingAnalysis] = useState(false)
   const [currentSymbol, setCurrentSymbol] = useState("BTCUSDT")
+  const [markedLevels, setMarkedLevels] = useState<{
+    symbol: string
+    liquidityData: LiquidityData
+  } | null>(null)
 
   const handleChatResize = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -82,9 +87,14 @@ export default function TradingDashboard() {
           gridTemplateRows: `1fr ${analysisHeight}px`,
         }}
       >
-        {/* Top Left: TradingView Chart */}
+        {/* Top Left: Price chart with liquidity levels */}
         <div className="border-r border-b border-border relative">
-          <TradingViewChart symbol={currentSymbol} onSymbolChange={setCurrentSymbol} />
+          <PriceChart
+            symbol={currentSymbol}
+            onSymbolChange={setCurrentSymbol}
+            liquidityData={markedLevels}
+            onClearLevels={() => setMarkedLevels(null)}
+          />
         </div>
 
         {isChatOpen && (
@@ -103,6 +113,7 @@ export default function TradingDashboard() {
                 onClose={() => setIsChatOpen(false)}
                 currentSymbol={currentSymbol}
                 onSymbolChange={setCurrentSymbol}
+                onMarkLevels={setMarkedLevels}
               />
             </div>
           </>

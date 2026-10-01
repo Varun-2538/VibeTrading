@@ -5,10 +5,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Send, Sparkles, X, Loader2, Check, XIcon } from "lucide-react"
+import { API_BASE } from "@/lib/api"
 
 interface LiquidityLevel {
   price: number
   strength: string
+  test_count?: number
+  distance_pct?: number
 }
 
 interface LiquidityData {
@@ -61,7 +64,7 @@ export default function ChatPanel({ onClose, currentSymbol, onSymbolChange, onMa
 
     try {
       // Call backend chat API
-      const response = await fetch("http://localhost:8000/api/chat/ask", {
+      const response = await fetch(`${API_BASE}/api/chat/ask`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

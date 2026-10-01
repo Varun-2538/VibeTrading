@@ -1,0 +1,11 @@
+{$API_DOMAIN} {
+	encode gzip
+
+	# Strategy generation calls an LLM; don't cut it off early.
+	reverse_proxy backend:8000 {
+		transport http {
+			read_timeout 300s
+			write_timeout 300s
+		}
+	}
+}

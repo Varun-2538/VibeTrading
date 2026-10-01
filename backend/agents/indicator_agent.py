@@ -16,7 +16,7 @@ class IndicatorAgent:
     def __init__(self):
         self.llm = ChatCerebras(
             api_key=settings.cerebras_api_key,
-            model="llama3.1-8b",  # Fast model for specialized task
+            model="gemma-4-31b",  # Fast model for specialized task
             temperature=0.3,  # More deterministic for technical analysis
             max_tokens=1500
         )

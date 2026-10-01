@@ -13,7 +13,9 @@ langchain-cerebras
 langchain-core
 
 # MCP
-mcp
+# 2.0 removed the Server.list_tools()/call_tool() decorators that
+# mcp_server/server_simple.py is built on - stay on the 1.x API.
+mcp>=1.12.4,<2.0.0
 
 # Data & API
 httpx

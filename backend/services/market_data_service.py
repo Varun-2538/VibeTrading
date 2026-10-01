@@ -243,28 +243,34 @@ class MarketDataService:
         current_price = await MarketDataService.get_latest_price(symbol, timeframe)
         current_price = float(current_price) if current_price else 0.0
 
-        # Categorize levels by strength (based on proximity to current price)
-        support_levels = []
-        for price in levels.get('support', []):
-            price_float = float(price)
-            distance_pct = abs(current_price - price_float) / current_price * 100
-            strength = "strong" if distance_pct < 2 else "medium" if distance_pct < 5 else "weak"
-            support_levels.append({
-                'price': price_float,
-                'strength': strength,
-                'distance_pct': round(distance_pct, 2)
-            })
+        # Categorize levels by strength. Strength reflects how often price
+        # tested the level, as a share of the candles analysed - a raw count
+        # would mean different things at different lookbacks. Proximity is
+        # reported separately as distance_pct.
+        sample_size = max(int(levels.get('sample_size', 0)), 1)
 
-        resistance_levels = []
-        for price in levels.get('resistance', []):
-            price_float = float(price)
+        def describe(level: Dict[str, Any]) -> Dict[str, Any]:
+            price_float = float(level['price'])
+            test_count = int(level.get('test_count', 0))
             distance_pct = abs(current_price - price_float) / current_price * 100
-            strength = "strong" if distance_pct < 2 else "medium" if distance_pct < 5 else "weak"
-            resistance_levels.append({
+            share = test_count / sample_size
+
+            if share >= 0.40:
+                strength = "strong"
+            elif share >= 0.15:
+                strength = "medium"
+            else:
+                strength = "weak"
+
+            return {
                 'price': price_float,
                 'strength': strength,
+                'test_count': test_count,
                 'distance_pct': round(distance_pct, 2)
-            })
+            }
+
+        support_levels = [describe(lvl) for lvl in levels.get('support', [])]
+        resistance_levels = [describe(lvl) for lvl in levels.get('resistance', [])]
 
         result = {
             'support_levels': support_levels,
