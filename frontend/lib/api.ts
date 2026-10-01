@@ -72,6 +72,65 @@ export async function fetchCandles(
   return res.json()
 }
 
+export const STRICTNESS = ["strict", "balanced", "loose"] as const
+export type Strictness = (typeof STRICTNESS)[number]
+
+/** Where a pattern is in its life, judged against the latest close. */
+export type PatternState = "forming" | "approaching" | "confirmed"
+
+export interface PatternPoint {
+  time: number
+  price: number
+  index: number
+}
+
+export interface Pattern {
+  kind: "W" | "M"
+  state: PatternState
+  confidence: number
+  components: { similarity: number; depth: number; symmetry: number }
+  /** Keyed low1/peak/low2 for a W, high1/trough/high2 for an M. */
+  points: Record<string, PatternPoint>
+  neckline: number
+  target: number
+}
+
+export interface PatternResponse {
+  symbol: string
+  timeframe: string
+  strictness: Strictness
+  sample_size: number
+  total_found: number
+  patterns: Pattern[]
+}
+
+/** The three points of a pattern in chronological order, whatever its kind. */
+export function patternPoints(pattern: Pattern): PatternPoint[] {
+  return Object.values(pattern.points).sort((a, b) => a.index - b.index)
+}
+
+export async function analysePatterns(
+  params: {
+    symbol: string
+    timeframe: Timeframe
+    from?: number
+    to?: number
+    strictness?: Strictness
+  },
+  signal?: AbortSignal,
+): Promise<PatternResponse> {
+  const res = await fetch(`${API_BASE}/api/analysis/patterns`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+    signal,
+  })
+  if (!res.ok) {
+    throw new Error(await readError(res, "Could not detect patterns in this range"))
+  }
+  return res.json()
+}
+
 /** Levels computed from only the candles inside the visible window. */
 export async function analyseLevels(
   params: { symbol: string; timeframe: Timeframe; from?: number; to?: number },

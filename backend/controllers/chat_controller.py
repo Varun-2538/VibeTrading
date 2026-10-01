@@ -8,6 +8,8 @@ from agents.orchestrator import OrchestratorAgent
 from agents.liquidation_agent import LiquidationAgent
 from agents.indicator_agent import IndicatorAgent
 from services.market_data_service import MarketDataService
+from services.candle_service import CandleService
+from analysis.patterns import detect_double_patterns
 from repositories.ohlc_repository import OHLCRepository
 from decimal import Decimal
 import re
@@ -78,11 +80,27 @@ def extract_symbol_from_message(message: str) -> Optional[str]:
     return None
 
 
+# Phrasings that mean "is there a chart pattern here". This has to be
+# enumerated by hand because routing is substring matching rather than asking
+# the model, so anything not listed falls through to another intent. Replacing
+# this matcher with real tool-calling is tracked as its own piece of work.
+PATTERN_PHRASES = (
+    'pattern', 'double bottom', 'double top', 'w formation', 'w pattern',
+    'm formation', 'm pattern', 'neckline', 'bottoming', 'topping',
+    'reversal', 'head and shoulders',
+)
+
+
 def detect_query_intent(message: str) -> str:
     """Detect what the user is asking about"""
     message_lower = message.lower()
 
-    if any(word in message_lower for word in ['support', 'resistance', 'liquidity', 'level']):
+    # Checked before liquidity: "is a double bottom forming at that support?"
+    # is a question about the pattern, and the levels branch would otherwise
+    # claim it on the word "support".
+    if any(phrase in message_lower for phrase in PATTERN_PHRASES):
+        return 'chart_patterns'
+    elif any(word in message_lower for word in ['support', 'resistance', 'liquidity', 'level']):
         return 'liquidity_levels'
     elif any(word in message_lower for word in ['indicator', 'rsi', 'macd', 'ema']):
         return 'technical_indicators'
@@ -119,6 +137,62 @@ async def ask_question(request: ChatRequest):
 
         # Detect query intent
         intent = detect_query_intent(message)
+
+        # Patterns are answered before the database is touched. Everything this
+        # branch needs is in the candles, and the price lookup below reads the
+        # ohlc_data table, so routing through it would make pattern questions
+        # fail whenever the database is unavailable for no reason at all.
+        if intent == 'chart_patterns':
+            candles = await CandleService.get_candles(symbol, request.timeframe, 1000)
+            if not candles:
+                raise HTTPException(status_code=404, detail=f"No data found for {symbol}")
+
+            current_price = float(candles[-1]['close'])
+            patterns = detect_double_patterns(candles, strictness="balanced")
+
+            response_text = f"**{symbol} chart patterns ({request.timeframe})**\n\n"
+            response_text += f"Current Price: ${current_price:,.2f}\n\n"
+
+            if not patterns:
+                response_text += (
+                    "No double bottoms or double tops on this timeframe right now. "
+                    "Try a longer timeframe, or loosen the strictness on the chart."
+                )
+            else:
+                live = [p for p in patterns if p['state'] != 'confirmed']
+                if live:
+                    response_text += "**Still developing**\n"
+                    for p in live:
+                        shape = "double bottom" if p['kind'] == 'W' else "double top"
+                        response_text += (
+                            f"- A {shape} is **{p['state']}** "
+                            f"({p['confidence']:.0f}% confidence). "
+                            f"It completes if price {'closes above' if p['kind'] == 'W' else 'closes below'} "
+                            f"${p['neckline']:,.2f}.\n"
+                        )
+                    response_text += "\n"
+
+                done = [p for p in patterns if p['state'] == 'confirmed']
+                if done:
+                    response_text += "**Already completed**\n"
+                    for p in done[:3]:
+                        shape = "double bottom" if p['kind'] == 'W' else "double top"
+                        response_text += (
+                            f"- A {shape} broke its ${p['neckline']:,.2f} neckline "
+                            f"({p['confidence']:.0f}% confidence), "
+                            f"projecting ${p['target']:,.2f}.\n"
+                        )
+
+                response_text += (
+                    "\nTurn on **Patterns** on the chart to see these drawn, "
+                    "and note that only what is in view gets analysed."
+                )
+
+            return ChatResponse(
+                response=response_text,
+                symbol=symbol,
+                data={"patterns": patterns, "current_price": current_price},
+            )
 
         # Get current price
         ohlc_data = await OHLCRepository.get_ohlc_data(symbol, request.timeframe, limit=1)

@@ -14,14 +14,20 @@ import {
 } from "lightweight-charts"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
+import PatternOverlay from "@/components/pattern-overlay"
 import {
+  STRICTNESS,
   TIMEFRAMES,
   analyseLevels,
+  analysePatterns,
   fetchCandles,
   formatPrice,
+  patternPoints,
   type LiquidityData,
   type LiquidityLevel,
   type MsCandle,
+  type Pattern,
+  type Strictness,
   type Timeframe,
 } from "@/lib/api"
 
@@ -88,6 +94,11 @@ export default function PriceChart({
   const [autoLevels, setAutoLevels] = useState(false)
   const [analysing, setAnalysing] = useState(false)
 
+  const [showPatterns, setShowPatterns] = useState(false)
+  const [strictness, setStrictness] = useState<Strictness>("balanced")
+  const [patterns, setPatterns] = useState<Pattern[]>([])
+  const [patternTotal, setPatternTotal] = useState(0)
+
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null)
@@ -96,6 +107,8 @@ export default function PriceChart({
   const priceLinesRef = useRef<IPriceLine[]>([])
   const rangeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const analysisAbort = useRef<AbortController | null>(null)
+  const patternTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const patternAbort = useRef<AbortController | null>(null)
 
   /* ---------------------------------------------------------------- chart */
 
@@ -241,22 +254,31 @@ export default function PriceChart({
 
   /* ------------------------------------------------- viewport -> analysis */
 
-  const analyseVisible = useCallback(async () => {
+  /**
+   * The timestamps bounding what is currently on screen.
+   *
+   * getVisibleRange() returns null whenever the view extends past the data,
+   * which is most of the time after fitContent(). The logical range is always
+   * available, so take indices and map them onto our own candle timestamps.
+   */
+  const visibleWindow = useCallback((): { from: number; to: number } | null => {
     const chart = chartRef.current
     const candles = candlesRef.current
-    if (!chart || candles.length === 0) return
+    if (!chart || candles.length === 0) return null
 
-    // getVisibleRange() returns null whenever the view extends past the data,
-    // which is most of the time after fitContent(). The logical range is always
-    // available, so take indices and map them onto our own candle timestamps.
     const logical = chart.timeScale().getVisibleLogicalRange()
-    if (!logical) return
+    if (!logical) return null
 
     const firstIndex = Math.max(0, Math.ceil(logical.from))
     const lastIndex = Math.min(candles.length - 1, Math.floor(logical.to))
+    if (firstIndex > lastIndex) return null // scrolled entirely off the data
 
-    // Scrolled entirely off the data.
-    if (firstIndex > lastIndex) {
+    return { from: candles[firstIndex].time, to: candles[lastIndex].time }
+  }, [])
+
+  const analyseVisible = useCallback(async () => {
+    const window = visibleWindow()
+    if (!window) {
       setLevels([])
       return
     }
@@ -268,12 +290,7 @@ export default function PriceChart({
 
     try {
       const data = await analyseLevels(
-        {
-          symbol: selected,
-          timeframe,
-          from: candles[firstIndex].time,
-          to: candles[lastIndex].time,
-        },
+        { symbol: selected, timeframe, from: window.from, to: window.to },
         controller.signal,
       )
       if (controller.signal.aborted) return
@@ -288,7 +305,33 @@ export default function PriceChart({
       // on would strand the button reading "Analysing..." forever.
       if (analysisAbort.current === controller) setAnalysing(false)
     }
-  }, [selected, timeframe])
+  }, [selected, timeframe, visibleWindow])
+
+  const detectPatterns = useCallback(async () => {
+    const window = visibleWindow()
+    if (!window) {
+      setPatterns([])
+      setPatternTotal(0)
+      return
+    }
+
+    patternAbort.current?.abort()
+    const controller = new AbortController()
+    patternAbort.current = controller
+
+    try {
+      const data = await analysePatterns(
+        { symbol: selected, timeframe, from: window.from, to: window.to, strictness },
+        controller.signal,
+      )
+      if (controller.signal.aborted) return
+      setPatterns(data.patterns ?? [])
+      setPatternTotal(data.total_found ?? 0)
+    } catch (e: any) {
+      // Keep the last drawing rather than blanking the chart mid-pan.
+      if (e?.name !== "AbortError") setError(e?.message ?? "Pattern detection failed")
+    }
+  }, [selected, timeframe, strictness, visibleWindow])
 
   // Re-analyse as the view moves, but only once the pan settles.
   useEffect(() => {
@@ -310,6 +353,26 @@ export default function PriceChart({
     }
   }, [autoLevels, analyseVisible])
 
+  // Patterns follow the view the same way levels do.
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart || !showPatterns) return
+
+    const onRangeChange = () => {
+      if (patternTimer.current) clearTimeout(patternTimer.current)
+      patternTimer.current = setTimeout(detectPatterns, 250)
+    }
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange)
+    onRangeChange()
+
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRangeChange)
+      if (patternTimer.current) clearTimeout(patternTimer.current)
+      patternAbort.current?.abort()
+    }
+  }, [showPatterns, detectPatterns])
+
   // Levels pushed from chat replace whatever is on the chart.
   useEffect(() => {
     if (!liquidityData || liquidityData.symbol !== selected) return
@@ -321,9 +384,11 @@ export default function PriceChart({
     ])
   }, [liquidityData, selected])
 
-  // Clear levels when the underlying series changes out from under them.
+  // Clear drawings when the underlying series changes out from under them.
   useEffect(() => {
     setLevels([])
+    setPatterns([])
+    setPatternTotal(0)
   }, [selected, timeframe])
 
   /* -------------------------------------------------------- draw the lines */
@@ -421,6 +486,49 @@ export default function PriceChart({
             {analysing ? "Analysing…" : autoLevels ? "Levels: on" : "Levels: off"}
           </Button>
 
+          <Button
+            variant={showPatterns ? "secondary" : "ghost"}
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => {
+              if (showPatterns) {
+                setShowPatterns(false)
+                setPatterns([])
+                setPatternTotal(0)
+              } else {
+                setShowPatterns(true)
+              }
+            }}
+          >
+            {showPatterns ? "Patterns: on" : "Patterns: off"}
+          </Button>
+
+          {showPatterns && (
+            <div className="flex overflow-hidden rounded-md border border-border">
+              {STRICTNESS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setStrictness(s)}
+                  aria-pressed={s === strictness}
+                  title={
+                    s === "strict"
+                      ? "Only unambiguous patterns"
+                      : s === "loose"
+                        ? "Catches rough and asymmetric shapes too"
+                        : "Textbook patterns, shallow wobbles ignored"
+                  }
+                  className={`px-2 py-1 text-xs capitalize transition-colors ${
+                    s === strictness
+                      ? "bg-secondary text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+
           {levels.length > 0 && !autoLevels && (
             <Button
               variant="ghost"
@@ -441,6 +549,13 @@ export default function PriceChart({
         {/* Chart */}
         <div className="relative min-w-0 flex-1">
           <div ref={containerRef} className="absolute inset-0" />
+          {showPatterns && (
+            <PatternOverlay
+              chart={chartRef.current}
+              series={seriesRef.current}
+              patterns={patterns}
+            />
+          )}
           {loading && (
             <div className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-muted-foreground">
               Loading {selected} {timeframe}…
@@ -455,6 +570,54 @@ export default function PriceChart({
 
         {/* Level rail */}
         <div className="w-[190px] shrink-0 overflow-y-auto border-l border-border px-3 py-3">
+          {showPatterns && (
+            <div className="mb-4">
+              <div className="mb-2 flex items-baseline justify-between">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Patterns
+                </span>
+                {patternTotal > patterns.length && (
+                  <span
+                    className="text-[10px] text-muted-foreground/70"
+                    title={`${patternTotal} found in view, showing the ${patterns.length} most actionable`}
+                  >
+                    {patterns.length}/{patternTotal}
+                  </span>
+                )}
+              </div>
+
+              {patterns.length === 0 ? (
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  None in view. Try a looser setting, or pan to more price action.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {patterns.map((p, i) => {
+                    const colour = p.kind === "W" ? SUPPORT : RESISTANCE
+                    const pts = patternPoints(p)
+                    return (
+                      <li key={`${p.kind}-${pts[0].time}-${i}`} className="text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold" style={{ color: colour }}>
+                            {p.kind}
+                          </span>
+                          <span className="text-foreground">{p.state}</span>
+                          <span className="ml-auto tabular-nums text-muted-foreground">
+                            {Math.round(p.confidence)}%
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          neck ${formatPrice(p.neckline)}
+                          {p.state === "confirmed" && ` → $${formatPrice(p.target)}`}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
+
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             Liquidity levels
           </div>
