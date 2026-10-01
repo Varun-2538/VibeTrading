@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button"
 import PatternOverlay from "@/components/pattern-overlay"
 import {
+  PATTERN_SCALES,
   SOURCES,
   STRICTNESS,
   TIMEFRAMES,
@@ -30,6 +31,7 @@ import {
   type LiquidityLevel,
   type MsCandle,
   type Pattern,
+  type PatternScale,
   type PatternSource,
   type Strictness,
   type Timeframe,
@@ -126,6 +128,7 @@ export default function PriceChart({
   const [showPatterns, setShowPatterns] = useState(false)
   const [strictness, setStrictness] = useState<Strictness>("balanced")
   const [source, setSource] = useState<PatternSource>("wick")
+  const [scale, setScale] = useState<PatternScale>("swing")
   const [patterns, setPatterns] = useState<Pattern[]>([])
   const [patternTotal, setPatternTotal] = useState(0)
 
@@ -394,6 +397,7 @@ export default function PriceChart({
           to: window.to,
           strictness,
           source,
+          scale,
         },
         controller.signal,
       )
@@ -404,7 +408,7 @@ export default function PriceChart({
       // Keep the last drawing rather than blanking the chart mid-pan.
       if (e?.name !== "AbortError") setError(e?.message ?? "Pattern detection failed")
     }
-  }, [selected, timeframe, strictness, source, visibleWindow])
+  }, [selected, timeframe, strictness, source, scale, visibleWindow])
 
   // Re-analyse as the view moves, but only once the pan settles.
   useEffect(() => {
@@ -599,6 +603,34 @@ export default function PriceChart({
           >
             {showPatterns ? "Patterns: on" : "Patterns: off"}
           </Button>
+
+          {/* Scale is what size of structure to hunt for; strictness below is
+              the quality bar within it. Two separate questions. */}
+          {showPatterns && (
+            <div className="flex overflow-hidden rounded-md border border-border">
+              {PATTERN_SCALES.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setScale(s)}
+                  aria-pressed={s === scale}
+                  title={
+                    s === "swing"
+                      ? "Multi-bar swing patterns only"
+                      : s === "scalp"
+                        ? "Tight patterns inside a range — more of them, and more chop"
+                        : "Both sizes at once"
+                  }
+                  className={`px-2 py-1 text-xs capitalize transition-colors ${
+                    s === scale
+                      ? "bg-secondary text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
 
           {showPatterns && (
             <div className="flex overflow-hidden rounded-md border border-border">

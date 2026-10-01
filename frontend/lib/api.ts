@@ -75,6 +75,10 @@ export async function fetchCandles(
 export const STRICTNESS = ["strict", "balanced", "loose"] as const
 export type Strictness = (typeof STRICTNESS)[number]
 
+/** Which size of structure to hunt for. Independent of strictness. */
+export const PATTERN_SCALES = ["swing", "scalp", "both"] as const
+export type PatternScale = (typeof PATTERN_SCALES)[number]
+
 /** Which prices pattern geometry is measured on. Breaks are always closes. */
 export const SOURCES = ["wick", "close"] as const
 export type PatternSource = (typeof SOURCES)[number]
@@ -121,6 +125,7 @@ export async function analysePatterns(
     to?: number
     strictness?: Strictness
     source?: PatternSource
+    scale?: PatternScale
   },
   signal?: AbortSignal,
 ): Promise<PatternResponse> {

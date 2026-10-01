@@ -11,9 +11,11 @@ from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
 
 from analysis.patterns import (
+    DEFAULT_SCALE,
     KINDS,
     MAX_PATTERNS,
     PRESETS,
+    SCALES,
     SOURCES,
     detect_double_patterns,
 )
@@ -70,6 +72,7 @@ class PatternRequest(WindowRequest):
     kinds: List[str] = list(KINDS)
     strictness: str = "balanced"
     source: str = "wick"
+    scale: str = DEFAULT_SCALE
     max_results: int = Field(default=MAX_PATTERNS, ge=1, le=50)
 
 
@@ -95,6 +98,7 @@ async def analyse_patterns(request: PatternRequest) -> Dict[str, Any]:
             strictness=request.strictness,
             kinds=tuple(request.kinds),
             source=request.source,
+            scale=request.scale,
             max_results=None,
         )
         patterns = all_found[: request.max_results]
@@ -111,6 +115,7 @@ async def analyse_patterns(request: PatternRequest) -> Dict[str, Any]:
         "timeframe": request.timeframe,
         "strictness": request.strictness,
         "source": request.source,
+        "scale": request.scale,
         "sample_size": len(visible),
         "total_found": len(all_found),
         "patterns": patterns,
@@ -120,7 +125,12 @@ async def analyse_patterns(request: PatternRequest) -> Dict[str, Any]:
 @router.get("/analysis/strictness")
 async def list_strictness() -> Dict[str, List[str]]:
     """The strictness presets this deployment offers."""
-    return {"strictness": list(PRESETS), "kinds": list(KINDS), "sources": list(SOURCES)}
+    return {
+        "strictness": list(PRESETS),
+        "kinds": list(KINDS),
+        "sources": list(SOURCES),
+        "scales": list(SCALES),
+    }
 
 
 @router.post("/analysis/levels")

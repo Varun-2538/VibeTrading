@@ -40,14 +40,10 @@ class Strictness:
     depth      how far the neckline must sit from them, in ATR
     near_frac  how close to the neckline counts as the final approach, as a
                fraction of the pattern's own height
-    scales     half-widths of the swing-pivot window to search at
 
-    Scales is a list because one pivot window cannot see both kinds of pattern
-    a trader cares about. A wide window finds clean multi-day swings and is
-    blind to the tight double bottoms that form inside a range - the second low
-    of one simply is not the lowest bar for four bars either side. Searching
-    several widths and merging finds both, and the scale guard in dedupe stops
-    the large ones from swallowing the small.
+    Strictness is only about quality. Which size of structure to look for is a
+    separate question, answered by SCALES - see there for why the two must not
+    be bundled.
 
     tol and depth are in ATR because both ask whether a move is meaningful
     against the prevailing noise. Proximity to the neckline is not that kind of
@@ -58,35 +54,41 @@ class Strictness:
     ever being seen to approach.
     """
 
-    def __init__(self, tol, depth, near_frac, min_bars, max_bars, scales):
+    def __init__(self, tol, depth, near_frac, max_bars):
         self.tol = tol
         self.depth = depth
         self.near_frac = near_frac
-        self.min_bars = min_bars
         self.max_bars = max_bars
-        self.scales = scales
-
-    @property
-    def k(self) -> int:
-        """The widest scale, for callers that want a single representative."""
-        return max(self.scales)
 
 
 PRESETS: Dict[str, Strictness] = {
-    "strict": Strictness(
-        tol=0.5, depth=2.0, near_frac=0.15, min_bars=8, max_bars=120, scales=(4,)
-    ),
-    "balanced": Strictness(
-        tol=1.0, depth=1.2, near_frac=0.25, min_bars=5, max_bars=120, scales=(4,)
-    ),
-    # The only preset that searches the narrow pivot window, and so the
-    # only one that sees tight double bottoms inside a range. That scale
-    # finds real scalping setups but also matches chop - a pure random
-    # walk yields dozens - so it is opt-in rather than the default.
-    "loose": Strictness(
-        tol=2.0, depth=0.8, near_frac=0.40, min_bars=3, max_bars=150, scales=(2, 4)
-    ),
+    "strict": Strictness(tol=0.5, depth=2.0, near_frac=0.15, max_bars=120),
+    "balanced": Strictness(tol=1.0, depth=1.0, near_frac=0.25, max_bars=120),
+    "loose": Strictness(tol=2.0, depth=0.7, near_frac=0.40, max_bars=150),
 }
+
+# Half-widths of the swing-pivot window to search.
+#
+# This is a separate axis from strictness, because one pivot window cannot see
+# both kinds of pattern a trader cares about. A wide window finds clean
+# multi-day swings and is structurally blind to the tight double bottoms that
+# form inside a range: the second low of one is simply not the lowest bar for
+# four bars either side.
+#
+# Bundling scale into strictness meant "look for smaller structures" and
+# "accept worse examples" could only be asked for together, so the one
+# combination a scalper actually wants - small but precise - was inexpressible.
+# Kept apart, scalp+strict is a real setting.
+#
+# Scalp is not in the default because it was measured: on 300 bars of pure
+# random walk the narrow window returns dozens of patterns, so it has to be
+# asked for deliberately.
+SCALES: Dict[str, Tuple[int, ...]] = {
+    "swing": (4, 6),
+    "scalp": (2,),
+    "both": (2, 4, 6),
+}
+DEFAULT_SCALE = "swing"
 
 # Pattern width, in bars, at which the full shoulder tolerance applies.
 # Narrower patterns get a proportionally tighter one - see the check in
@@ -223,6 +225,10 @@ def _detect_one_kind(
     if len(shoulders) < 2 or not necks:
         return []
 
+    # Two pivots found with a half-width of k must be at least k+1 apart to
+    # be distinct swings rather than the same turn counted twice.
+    min_bars = k + 1
+
     lows, highs = pivot_series(candles, source)
     shoulder_prices = lows if is_w else highs
     neck_prices = highs if is_w else lows
@@ -234,7 +240,7 @@ def _detect_one_kind(
     for a_pos, first in enumerate(shoulders):
         for second in shoulders[a_pos + 1 :]:
             separation = second - first
-            if separation < preset.min_bars:
+            if separation < min_bars:
                 continue
             if separation > preset.max_bars:
                 break  # shoulders are ordered, so everything later is further
@@ -437,6 +443,7 @@ def detect_double_patterns(
     max_results: Optional[int] = MAX_PATTERNS,
     min_confidence: float = MIN_CONFIDENCE,
     source: str = "wick",
+    scale: str = DEFAULT_SCALE,
 ) -> List[Dict[str, Any]]:
     """
     Double bottoms and double tops in a window, most actionable first.
@@ -460,9 +467,14 @@ def detect_double_patterns(
         raise ValueError(
             f"Unknown source '{source}'. Expected one of: {', '.join(SOURCES)}"
         )
+    if scale not in SCALES:
+        raise ValueError(
+            f"Unknown scale '{scale}'. Expected one of: {', '.join(SCALES)}"
+        )
 
     preset = PRESETS[strictness]
-    if len(candles) < max(2 * min(preset.scales) + 1, ATR_PERIOD):
+    scales = SCALES[scale]
+    if len(candles) < max(2 * min(scales) + 1, ATR_PERIOD):
         return []
 
     unit = atr(candles)
@@ -473,7 +485,7 @@ def detect_double_patterns(
 
     found: List[Dict[str, Any]] = []
     for kind in kinds:
-        for k in preset.scales:
+        for k in scales:
             found += _detect_one_kind(candles, kind, preset, unit, k, source)
 
     found = [p for p in found if p["confidence"] >= min_confidence]
