@@ -135,6 +135,7 @@ export default function PriceChart({
   const [candles, setCandles] = useState<Candle[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [live, setLive] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -156,6 +157,86 @@ export default function PriceChart({
       cancelled = true
     }
   }, [selected])
+
+  /*
+   * Live ticks. The backend only refreshes from Binance every 5 minutes, so
+   * polling it would step rather than move. Subscribing to Binance's kline
+   * stream directly updates the open candle roughly once a second: close
+   * moves, high/low extend, and the body flips hollow/filled as it crosses
+   * its open. History and the liquidity levels still come from our own API.
+   */
+  useEffect(() => {
+    if (loading || error) return
+
+    let socket: WebSocket | null = null
+    let retry: ReturnType<typeof setTimeout> | undefined
+    let attempts = 0
+    let disposed = false
+
+    const connect = () => {
+      if (disposed) return
+      socket = new WebSocket(
+        `wss://stream.binance.com:9443/ws/${selected.toLowerCase()}@kline_1h`,
+      )
+
+      socket.onopen = () => {
+        attempts = 0
+        setLive(true)
+      }
+
+      socket.onmessage = (event) => {
+        let k: any
+        try {
+          k = JSON.parse(event.data)?.k
+        } catch {
+          return
+        }
+        if (!k) return
+
+        const tick: Candle = {
+          time: new Date(k.t).toISOString(),
+          open: Number(k.o),
+          high: Number(k.h),
+          low: Number(k.l),
+          close: Number(k.c),
+          volume: Number(k.v),
+        }
+
+        setCandles((prev) => {
+          if (!prev.length) return prev
+          const lastStart = new Date(prev[prev.length - 1].time).getTime()
+
+          // Same candle still open - replace it in place.
+          if (k.t === lastStart) {
+            const next = prev.slice()
+            next[next.length - 1] = tick
+            return next
+          }
+          // A new hour opened - roll the window forward.
+          if (k.t > lastStart) return [...prev.slice(1), tick]
+          return prev
+        })
+      }
+
+      socket.onerror = () => socket?.close()
+
+      socket.onclose = () => {
+        setLive(false)
+        if (disposed) return
+        attempts += 1
+        retry = setTimeout(connect, Math.min(30000, 1000 * 2 ** attempts))
+      }
+    }
+
+    connect()
+
+    return () => {
+      disposed = true
+      if (retry) clearTimeout(retry)
+      socket?.close()
+      setLive(false)
+    }
+  }, [selected, loading, error])
 
   const rows: CandleRow[] = useMemo(
     () =>
@@ -225,6 +306,17 @@ export default function PriceChart({
           <Badge variant="outline" className="border-orange-500/20 bg-orange-500/10 text-xs text-orange-500">
             1h
           </Badge>
+          <span
+            className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+            title={live ? "Streaming live from Binance" : "Not connected to the live feed"}
+          >
+            <span
+              className={`inline-block h-1.5 w-1.5 rounded-full ${
+                live ? "animate-pulse bg-emerald-500" : "bg-muted-foreground/40"
+              }`}
+            />
+            {live ? "live" : "offline"}
+          </span>
         </div>
 
         {levels.length > 0 && (
