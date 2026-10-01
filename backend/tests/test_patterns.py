@@ -298,6 +298,53 @@ class TestRanking:
         assert len(every) >= len(capped)
 
 
+class TestOverlapHandling:
+    """
+    Regression: dedupe originally dropped any pattern sharing a single pivot
+    with one already kept. Pivots are reused constantly - one low pairs with
+    many later ones - so every kept pattern silently killed a swathe of good
+    ones. On 390 bars of real BTC 1h it cut roughly two dozen genuine double
+    bottoms to three, including one whose two lows were four dollars apart.
+    """
+
+    def test_back_to_back_patterns_both_survive(self):
+        # Two W's in sequence sharing no bars: both must be reported.
+        leg = 14
+        prices = [104.0]
+        prices += ramp(prices[-1], 90, leg)
+        prices += ramp(90, 100, leg)
+        prices += ramp(100, 90, leg)
+        prices += ramp(90, 103, leg)  # first W completes
+        prices += ramp(103, 80, leg)
+        prices += ramp(80, 92, leg)
+        prices += ramp(92, 80, leg)
+        prices += ramp(80, 94, leg)  # second W completes
+        found = detect_double_patterns(to_candles(prices), kinds=("W",), max_results=None)
+
+        assert len(found) >= 2, (
+            f"expected both sequential patterns, got {len(found)}"
+        )
+
+    def test_a_fan_from_one_pivot_is_collapsed(self):
+        # One low pairing with several nearby lows should not produce a fan of
+        # near-identical patterns over the same price action.
+        found = detect_double_patterns(
+            w_series(tail=12), kinds=("W",), max_results=None
+        )
+        spans = [
+            (
+                min(p["index"] for p in f["points"].values()),
+                max(p["index"] for p in f["points"].values()),
+            )
+            for f in found
+        ]
+        for i, a in enumerate(spans):
+            for b in spans[i + 1 :]:
+                overlap = min(a[1], b[1]) - max(a[0], b[0])
+                shortest = min(a[1] - a[0], b[1] - b[0])
+                assert overlap <= 0 or overlap / shortest <= 0.85
+
+
 class TestConfidenceFloor:
     def test_nothing_survives_an_impossible_floor(self):
         series = w_series(low2_offset=0.15, tail=12)

@@ -217,6 +217,18 @@ export default function PriceChart({
     }
   }, [chartStyle])
 
+  /*
+   * Keep the price source in step with what is actually drawn.
+   *
+   * A line chart plots closes, so detecting on wicks there marks shoulders at
+   * prices the line never shows and the dots float off the curve. Switching
+   * view therefore switches source to match; the source toggle stays live
+   * afterwards, so an intentional mismatch is still one click away.
+   */
+  useEffect(() => {
+    setSource(chartStyle === "line" ? "close" : "wick")
+  }, [chartStyle])
+
   /* --------------------------------------------------------------- history */
 
   useEffect(() => {

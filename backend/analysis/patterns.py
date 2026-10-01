@@ -61,9 +61,9 @@ class Strictness:
 
 
 PRESETS: Dict[str, Strictness] = {
-    "strict": Strictness(tol=0.25, depth=2.5, near_frac=0.15, min_bars=12, max_bars=120, k=5),
-    "balanced": Strictness(tol=0.5, depth=1.5, near_frac=0.25, min_bars=8, max_bars=120, k=4),
-    "loose": Strictness(tol=1.0, depth=1.0, near_frac=0.40, min_bars=5, max_bars=150, k=3),
+    "strict": Strictness(tol=0.5, depth=2.5, near_frac=0.15, min_bars=12, max_bars=120, k=5),
+    "balanced": Strictness(tol=1.0, depth=1.5, near_frac=0.25, min_bars=8, max_bars=120, k=4),
+    "loose": Strictness(tol=2.0, depth=1.0, near_frac=0.40, min_bars=5, max_bars=150, k=3),
 }
 
 KINDS = ("W", "M")
@@ -305,20 +305,63 @@ def _rank(pattern: Dict[str, Any]) -> Tuple[int, int, float]:
     )
 
 
+# How much two patterns may cover the same bars before the later-ranked one is
+# treated as a duplicate, as a fraction of the shorter pattern.
+MAX_SPAN_OVERLAP = 0.85
+
+
+def _span(pattern: Dict[str, Any]) -> Tuple[int, int]:
+    indices = [p["index"] for p in pattern["points"].values()]
+    return min(indices), max(indices)
+
+
+def _overlap_ratio(a: Dict[str, Any], b: Dict[str, Any]) -> float:
+    """How much of the shorter pattern is covered by the other."""
+    a_start, a_end = _span(a)
+    b_start, b_end = _span(b)
+    overlap = min(a_end, b_end) - max(a_start, b_start)
+    if overlap <= 0:
+        return 0.0
+    shortest = min(a_end - a_start, b_end - b_start)
+    return overlap / shortest if shortest else 1.0
+
+
 def _drop_overlaps(patterns: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Collapse detections that share a pivot, keeping the best ranked.
+    Collapse detections covering the same price action, keeping the best ranked.
 
-    Without this a single low pairs with several later ones and the chart shows
-    a fan of near-identical patterns over the same price action.
+    A single low pairs with many later ones, so without this the chart shows a
+    fan of near-identical patterns fanning out from one pivot.
+
+    The test is how much the two patterns overlap in time, not whether they
+    share a pivot. Sharing was the first instinct and it was far too harsh:
+    pivots are reused constantly, so every pattern kept silently killed a
+    swathe of good ones. On a 390-bar window of BTC 1h it cut roughly two dozen
+    genuine double bottoms down to three, including one whose lows were four
+    dollars apart. Two patterns that merely touch - one ending where the next
+    begins - are different patterns and both survive.
     """
+    def survival_order(pattern: Dict[str, Any]) -> Tuple[int, int, float]:
+        """
+        Which of two overlapping patterns to keep: the tighter one.
+
+        Ranked by state first, as everywhere else, but then by span rather than
+        recency. Preferring the longer pattern let a sprawling one absorb every
+        compact pattern inside it, and because looser settings build longer
+        patterns, loose ended up reporting fewer than balanced - a control that
+        visibly did the opposite of what it said.
+        """
+        start, end = _span(pattern)
+        return (STATE_RANK[pattern["state"]], end - start, -pattern["confidence"])
+
     kept: List[Dict[str, Any]] = []
-    for pattern in sorted(patterns, key=_rank):
-        indices = {p["index"] for p in pattern["points"].values()}
-        if any(indices & {p["index"] for p in k["points"].values()} for k in kept):
+    for pattern in sorted(patterns, key=survival_order):
+        if any(_overlap_ratio(pattern, k) > MAX_SPAN_OVERLAP for k in kept):
             continue
         kept.append(pattern)
-    return kept
+
+    # Presentation order is still state, then recency, then confidence.
+    return sorted(kept, key=_rank)
 
 
 def detect_double_patterns(
