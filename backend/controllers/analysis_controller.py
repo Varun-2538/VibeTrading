@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
 
+from analysis.patterns import KINDS, MAX_PATTERNS, PRESETS, detect_double_patterns
 from services.candle_service import (
     CandleService,
     CandleFetchError,
@@ -57,6 +58,60 @@ async def get_candles(
 async def list_timeframes() -> Dict[str, List[str]]:
     """The timeframes this deployment serves."""
     return {"timeframes": CandleService.timeframes()}
+
+
+class PatternRequest(WindowRequest):
+    kinds: List[str] = list(KINDS)
+    strictness: str = "balanced"
+    max_results: int = Field(default=MAX_PATTERNS, ge=1, le=50)
+
+
+@router.post("/analysis/patterns")
+async def analyse_patterns(request: PatternRequest) -> Dict[str, Any]:
+    """
+    Double bottoms and tops among the candles in the window.
+
+    Each pattern carries its state - forming, approaching or confirmed - so the
+    chart can show a setup developing rather than only reporting completed
+    ones.
+    """
+    try:
+        candles = await CandleService.get_candles(
+            request.symbol, request.timeframe, request.limit
+        )
+        visible = CandleService.window(candles, request.frm, request.to)
+        # Detect everything, then show the top slice. Reporting both counts is
+        # what makes the strictness control legible: on a long window the cap
+        # can otherwise mask a real difference between the presets.
+        all_found = detect_double_patterns(
+            visible,
+            strictness=request.strictness,
+            kinds=tuple(request.kinds),
+            max_results=None,
+        )
+        patterns = all_found[: request.max_results]
+    except UnknownTimeframe as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except ValueError as exc:
+        # Unknown strictness or pattern kind.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except CandleFetchError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+    return {
+        "symbol": request.symbol.upper(),
+        "timeframe": request.timeframe,
+        "strictness": request.strictness,
+        "sample_size": len(visible),
+        "total_found": len(all_found),
+        "patterns": patterns,
+    }
+
+
+@router.get("/analysis/strictness")
+async def list_strictness() -> Dict[str, List[str]]:
+    """The strictness presets this deployment offers."""
+    return {"strictness": list(PRESETS), "kinds": list(KINDS)}
 
 
 @router.post("/analysis/levels")
