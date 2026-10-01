@@ -139,3 +139,99 @@
     @apply bg-background text-foreground;
   }
 }
+
+/*
+ * Legal pages. Long-form prose needs a measure and a rhythm the marketing
+ * page does not - readers of a risk disclosure are actually reading it.
+ */
+.legal-prose h1 {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  font-size: 2rem;
+  line-height: 1.15;
+  color: var(--vt-ink);
+  margin-bottom: 1rem;
+}
+
+.legal-prose h2 {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  font-size: 1.125rem;
+  color: var(--vt-ink);
+  margin-top: 2.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.legal-prose h3 {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--vt-ink);
+  margin-top: 1.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.legal-prose p,
+.legal-prose li {
+  font-size: 0.95rem;
+  line-height: 1.75;
+  max-width: 68ch;
+}
+
+.legal-prose p {
+  margin-bottom: 1rem;
+}
+
+.legal-prose .lede {
+  font-size: 1.05rem;
+  color: var(--vt-ink);
+  border-left: 2px solid var(--vt-mint);
+  padding-left: 1rem;
+}
+
+.legal-prose .meta {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--vt-ink-faint);
+}
+
+.legal-prose ul {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.legal-prose li {
+  position: relative;
+  padding-left: 1.15rem;
+  margin-bottom: 0.55rem;
+}
+
+/* A candle-ish tick rather than a bullet, echoing the wordmark. */
+.legal-prose li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.7em;
+  width: 7px;
+  height: 1px;
+  background: var(--vt-mint);
+}
+
+.legal-prose strong {
+  color: var(--vt-ink);
+  font-weight: 600;
+}
+
+.legal-prose a {
+  color: var(--vt-mint);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.legal-prose a:hover {
+  opacity: 0.8;
+}

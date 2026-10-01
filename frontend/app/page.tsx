@@ -2,34 +2,10 @@ import Link from "next/link"
 import HeroCandles from "@/components/landing/hero-candles"
 import TickerTape from "@/components/landing/ticker-tape"
 import HeroPrice from "@/components/landing/hero-price"
+import Wordmark from "@/components/wordmark"
+import { CONTACT_EMAIL } from "@/lib/contact"
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "/app"
-
-function Wordmark({ className = "" }: { className?: string }) {
-  return (
-    <span className={`inline-flex items-baseline gap-2 ${className}`}>
-      {/* The mark is a candle body with its wick - the smallest unit of the subject */}
-      <svg width="11" height="18" viewBox="0 0 11 18" aria-hidden className="translate-y-[2px]">
-        <line x1="5.5" y1="0" x2="5.5" y2="18" stroke="var(--vt-mint)" strokeWidth="1.25" />
-        <rect
-          x="0.75"
-          y="4.5"
-          width="9.5"
-          height="9"
-          fill="var(--vt-void)"
-          stroke="var(--vt-mint)"
-          strokeWidth="1.25"
-        />
-      </svg>
-      <span
-        className="font-display text-[17px] font-extrabold tracking-[-0.02em]"
-        style={{ color: "var(--vt-ink)" }}
-      >
-        vibetrading
-      </span>
-    </span>
-  )
-}
 
 /* Real output from the app, not invented marketing numbers. */
 const LEVELS = [
@@ -237,10 +213,55 @@ export default function Landing() {
       </section>
 
       <footer className="border-t" style={{ borderColor: "var(--vt-line)" }}>
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-9 sm:flex-row sm:items-center sm:justify-between">
-          <Wordmark />
-          <p className="font-mono text-[11px]" style={{ color: "var(--vt-ink-faint)" }}>
-            Analysis, not advice. Markets can lose you money.
+        <div className="mx-auto max-w-6xl px-6 py-9">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-col gap-2">
+              <Wordmark />
+              <a
+                href={`mailto:${CONTACT_EMAIL}`}
+                className="font-mono text-[11px] transition-colors hover:opacity-80"
+                style={{ color: "var(--vt-mint)" }}
+              >
+                {CONTACT_EMAIL}
+              </a>
+            </div>
+
+            <nav className="flex flex-wrap gap-x-5 gap-y-2">
+              {[
+                { href: "/legal/risk", label: "Risk disclosure" },
+                { href: "/legal/terms", label: "Terms" },
+                { href: "/legal/privacy", label: "Privacy" },
+              ].map((l) => (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  className="font-mono text-[11px] transition-colors hover:opacity-80"
+                  style={{ color: "var(--vt-ink-dim)" }}
+                >
+                  {l.label}
+                </Link>
+              ))}
+            </nav>
+          </div>
+
+          {/* Stated plainly rather than buried: what this is, and what it is not. */}
+          <p
+            className="mt-7 max-w-3xl text-[11px] leading-relaxed"
+            style={{ color: "var(--vt-ink-faint)" }}
+          >
+            Analysis, not advice. VibeTrading is an independent project, not a
+            broker or investment adviser. It computes technical analysis on
+            public market data — it places no trades, holds no funds, and never
+            asks for exchange API keys. Trading cryptocurrency can lose you
+            money, up to everything you put in. Read the{" "}
+            <Link
+              href="/legal/risk"
+              className="underline underline-offset-2"
+              style={{ color: "var(--vt-ink-dim)" }}
+            >
+              risk disclosure
+            </Link>
+            .
           </p>
         </div>
       </footer>

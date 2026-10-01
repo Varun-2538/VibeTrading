@@ -229,6 +229,20 @@ export default function ChatPanel({ onClose, currentSymbol, onSymbolChange, onMa
         <p className="mt-2 text-xs text-muted-foreground">
           Powered by Cerebras AI • Try: "Show me liquidity levels for Bitcoin"
         </p>
+        {/* The assistant writes in the register of advice, so the disclaimer
+            belongs here rather than only in the footer of another page. */}
+        <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground/70">
+          Analysis, not financial advice — and the assistant can be wrong.
+          Decisions are yours.{" "}
+          <a
+            href="/legal/risk"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-2 hover:text-muted-foreground"
+          >
+            Risk disclosure
+          </a>
+        </p>
       </div>
     </div>
   )
