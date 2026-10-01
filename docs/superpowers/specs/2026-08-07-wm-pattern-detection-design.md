@@ -34,6 +34,31 @@ chart, because a thousand one-minute candles span less than the tolerance. Every
 threshold here is expressed in ATR so the same detector behaves sensibly on 1m
 and 1d.
 
+**No preceding-trend requirement.** Several published implementations only
+accept a double bottom if a downtrend preceded it, on the textbook grounds that
+it is a reversal pattern. We deliberately do not. Small W's and M's that form
+inside a range are real setups that scalpers trade, and a prior-trend filter
+would delete exactly those by definition. This also rules out ZigZag pivot
+filtering, which most references use: its minimum-retracement threshold
+suppresses small turns, which is what intra-range patterns are made of.
+
+ATR thresholds are what make this workable - a quiet range has a small ATR, so
+a shallow pattern inside it still clears the depth requirement, and the loose
+preset is effectively the scalping setting.
+
+**Geometry on wicks, breaks on closes.** Pivots are measured on highs and lows
+by default, matching classic technical analysis and most published
+implementations, with a toggle for closes because crypto stop hunts routinely
+print equal wick lows that mean nothing. A break is always a close beyond the
+neckline whichever source is selected: a wick through it is not a break.
+
+**Threshold units, validated against published scripts.** The widely copied
+Pine defaults are percentages - 2% shoulder tolerance, 5% depth. On BTC those
+work out to 0.9 and 2.2 ATR on a daily chart, close to our 0.5 and 1.5, but to
+65 and 164 ATR on a 1m chart. Those scripts are calibrated for daily charts and
+break intraday in both directions at once: any two lows match, and no pattern
+is ever deep enough. This is the same failure the level clustering had.
+
 **Chat gets a keyword branch, not tool-calling.** detect_query_intent in
 chat_controller routes by substring matching, not by asking the model. Patterns
 get another branch, which works but requires enumerating phrasings by hand.

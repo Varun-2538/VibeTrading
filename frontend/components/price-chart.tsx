@@ -5,17 +5,20 @@ import {
   CandlestickSeries,
   ColorType,
   CrosshairMode,
+  LineSeries,
   LineStyle,
   createChart,
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
+  type SeriesType,
   type UTCTimestamp,
 } from "lightweight-charts"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import PatternOverlay from "@/components/pattern-overlay"
 import {
+  SOURCES,
   STRICTNESS,
   TIMEFRAMES,
   analyseLevels,
@@ -27,6 +30,7 @@ import {
   type LiquidityLevel,
   type MsCandle,
   type Pattern,
+  type PatternSource,
   type Strictness,
   type Timeframe,
 } from "@/lib/api"
@@ -69,6 +73,30 @@ interface MarkedLevel extends LiquidityLevel {
   kind: "support" | "resistance"
 }
 
+type ChartStyle = "candle" | "line"
+
+/** A candlestick series wants OHLC; a line series wants a single value. */
+function applyCandles(
+  series: ISeriesApi<SeriesType>,
+  candles: MsCandle[],
+  style: ChartStyle,
+) {
+  const data =
+    style === "candle"
+      ? candles.map((c) => ({
+          time: (c.time / 1000) as UTCTimestamp,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+        }))
+      : candles.map((c) => ({
+          time: (c.time / 1000) as UTCTimestamp,
+          value: c.close,
+        }))
+  series.setData(data as never)
+}
+
 interface PriceChartProps {
   symbol?: string
   onSymbolChange?: (symbol: string) => void
@@ -94,14 +122,16 @@ export default function PriceChart({
   const [autoLevels, setAutoLevels] = useState(false)
   const [analysing, setAnalysing] = useState(false)
 
+  const [chartStyle, setChartStyle] = useState<"candle" | "line">("candle")
   const [showPatterns, setShowPatterns] = useState(false)
   const [strictness, setStrictness] = useState<Strictness>("balanced")
+  const [source, setSource] = useState<PatternSource>("wick")
   const [patterns, setPatterns] = useState<Pattern[]>([])
   const [patternTotal, setPatternTotal] = useState(0)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
-  const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null)
+  const seriesRef = useRef<ISeriesApi<SeriesType> | null>(null)
   // Kept so the visible logical range can be mapped back to real timestamps.
   const candlesRef = useRef<MsCandle[]>([])
   const priceLinesRef = useRef<IPriceLine[]>([])
@@ -136,21 +166,7 @@ export default function PriceChart({
       autoSize: true,
     })
 
-    const series = chart.addSeries(CandlestickSeries, {
-      // Hollow up, filled down.
-      upColor: "rgba(0,0,0,0)",
-      downColor: INK,
-      borderUpColor: INK,
-      borderDownColor: INK,
-      wickUpColor: INK,
-      wickDownColor: INK,
-      priceLineVisible: true,
-      priceLineColor: INK_MUTED,
-      priceLineStyle: LineStyle.Dashed,
-    })
-
     chartRef.current = chart
-    seriesRef.current = series
 
     return () => {
       chart.remove()
@@ -159,6 +175,47 @@ export default function PriceChart({
       priceLinesRef.current = []
     }
   }, [])
+
+  /*
+   * The series is separate from the chart so switching between candles and a
+   * line does not tear down the view. Data already fetched is re-applied
+   * straight away, so the swap costs no request and keeps the same window.
+   */
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart) return
+
+    const series =
+      chartStyle === "candle"
+        ? chart.addSeries(CandlestickSeries, {
+            // Hollow up, filled down.
+            upColor: "rgba(0,0,0,0)",
+            downColor: INK,
+            borderUpColor: INK,
+            borderDownColor: INK,
+            wickUpColor: INK,
+            wickDownColor: INK,
+            priceLineVisible: true,
+            priceLineColor: INK_MUTED,
+            priceLineStyle: LineStyle.Dashed,
+          })
+        : chart.addSeries(LineSeries, {
+            color: INK,
+            lineWidth: 2,
+            priceLineVisible: true,
+            priceLineColor: INK_MUTED,
+            priceLineStyle: LineStyle.Dashed,
+          })
+
+    seriesRef.current = series
+    priceLinesRef.current = [] // belonged to the series just replaced
+    if (candlesRef.current.length) applyCandles(series, candlesRef.current, chartStyle)
+
+    return () => {
+      chart.removeSeries(series)
+      if (seriesRef.current === series) seriesRef.current = null
+    }
+  }, [chartStyle])
 
   /* --------------------------------------------------------------- history */
 
@@ -171,15 +228,7 @@ export default function PriceChart({
       .then((candles) => {
         if (controller.signal.aborted || !seriesRef.current) return
         candlesRef.current = candles
-        seriesRef.current.setData(
-          candles.map((c) => ({
-            time: (c.time / 1000) as UTCTimestamp,
-            open: c.open,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-          })),
-        )
+        applyCandles(seriesRef.current, candles, chartStyle)
         chartRef.current?.timeScale().fitContent()
         setSpot(candles.at(-1)?.close)
         setLoading(false)
@@ -224,13 +273,18 @@ export default function PriceChart({
         if (!k || !seriesRef.current) return
 
         // update() replaces the bar at this time, or appends a new one.
-        seriesRef.current.update({
-          time: (k.t / 1000) as UTCTimestamp,
-          open: Number(k.o),
-          high: Number(k.h),
-          low: Number(k.l),
-          close: Number(k.c),
-        })
+        const time = (k.t / 1000) as UTCTimestamp
+        seriesRef.current.update(
+          (chartStyle === "candle"
+            ? {
+                time,
+                open: Number(k.o),
+                high: Number(k.h),
+                low: Number(k.l),
+                close: Number(k.c),
+              }
+            : { time, value: Number(k.c) }) as never,
+        )
         setSpot(Number(k.c))
       }
 
@@ -250,7 +304,7 @@ export default function PriceChart({
       socket?.close()
       setLive(false)
     }
-  }, [selected, timeframe, loading, error])
+  }, [selected, timeframe, loading, error, chartStyle])
 
   /* ------------------------------------------------- viewport -> analysis */
 
@@ -321,7 +375,14 @@ export default function PriceChart({
 
     try {
       const data = await analysePatterns(
-        { symbol: selected, timeframe, from: window.from, to: window.to, strictness },
+        {
+          symbol: selected,
+          timeframe,
+          from: window.from,
+          to: window.to,
+          strictness,
+          source,
+        },
         controller.signal,
       )
       if (controller.signal.aborted) return
@@ -331,7 +392,7 @@ export default function PriceChart({
       // Keep the last drawing rather than blanking the chart mid-pan.
       if (e?.name !== "AbortError") setError(e?.message ?? "Pattern detection failed")
     }
-  }, [selected, timeframe, strictness, visibleWindow])
+  }, [selected, timeframe, strictness, source, visibleWindow])
 
   // Re-analyse as the view moves, but only once the pan settles.
   useEffect(() => {
@@ -470,6 +531,30 @@ export default function PriceChart({
             ))}
           </div>
 
+          {/* Candles or line. A line is the shape the detector reads when the
+              source below is set to closes. */}
+          <div className="flex overflow-hidden rounded-md border border-border">
+            {(["candle", "line"] as const).map((style) => (
+              <button
+                key={style}
+                onClick={() => setChartStyle(style)}
+                aria-pressed={style === chartStyle}
+                title={
+                  style === "candle"
+                    ? "Candles, with wick detail"
+                    : "Closing prices only, less noise"
+                }
+                className={`px-2 py-1 text-xs capitalize transition-colors ${
+                  style === chartStyle
+                    ? "bg-secondary text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {style}
+              </button>
+            ))}
+          </div>
+
           <Button
             variant={autoLevels ? "secondary" : "ghost"}
             size="sm"
@@ -502,6 +587,30 @@ export default function PriceChart({
           >
             {showPatterns ? "Patterns: on" : "Patterns: off"}
           </Button>
+
+          {showPatterns && (
+            <div className="flex overflow-hidden rounded-md border border-border">
+              {SOURCES.map((src) => (
+                <button
+                  key={src}
+                  onClick={() => setSource(src)}
+                  aria-pressed={src === source}
+                  title={
+                    src === "wick"
+                      ? "Measure patterns on highs and lows, the classic definition"
+                      : "Measure on closing prices, ignoring wick spikes and stop hunts"
+                  }
+                  className={`px-2 py-1 text-xs capitalize transition-colors ${
+                    src === source
+                      ? "bg-secondary text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {src}
+                </button>
+              ))}
+            </div>
+          )}
 
           {showPatterns && (
             <div className="flex overflow-hidden rounded-md border border-border">
@@ -666,18 +775,36 @@ export default function PriceChart({
 
       {/* Legend - identity is never colour alone */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
-        <span className="flex items-center gap-1.5">
-          <svg width="9" height="13" aria-hidden>
-            <rect x="0.5" y="0.5" width="8" height="12" fill={SURFACE} stroke={INK} />
-          </svg>
-          up (hollow)
-        </span>
-        <span className="flex items-center gap-1.5">
-          <svg width="9" height="13" aria-hidden>
-            <rect x="0.5" y="0.5" width="8" height="12" fill={INK} stroke={INK} />
-          </svg>
-          down (filled)
-        </span>
+        {chartStyle === "candle" && (
+          <>
+            <span className="flex items-center gap-1.5">
+              <svg width="9" height="13" aria-hidden>
+                <rect x="0.5" y="0.5" width="8" height="12" fill={SURFACE} stroke={INK} />
+              </svg>
+              up (hollow)
+            </span>
+            <span className="flex items-center gap-1.5">
+              <svg width="9" height="13" aria-hidden>
+                <rect x="0.5" y="0.5" width="8" height="12" fill={INK} stroke={INK} />
+              </svg>
+              down (filled)
+            </span>
+          </>
+        )}
+
+        {showPatterns && (
+          <span className="flex items-center gap-1.5">
+            <svg width="18" height="9" aria-hidden>
+              <polyline
+                points="1,1 5,7 9,3 13,7 17,1"
+                fill="none"
+                stroke={SUPPORT}
+                strokeWidth="1.5"
+              />
+            </svg>
+            W / M {source === "wick" ? "(on wicks)" : "(on closes)"}
+          </span>
+        )}
         <span className="flex items-center gap-1.5">
           <svg width="16" height="8" aria-hidden>
             <line x1="0" y1="4" x2="16" y2="4" stroke={SUPPORT} strokeWidth="2" />

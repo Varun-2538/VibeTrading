@@ -75,6 +75,10 @@ export async function fetchCandles(
 export const STRICTNESS = ["strict", "balanced", "loose"] as const
 export type Strictness = (typeof STRICTNESS)[number]
 
+/** Which prices pattern geometry is measured on. Breaks are always closes. */
+export const SOURCES = ["wick", "close"] as const
+export type PatternSource = (typeof SOURCES)[number]
+
 /** Where a pattern is in its life, judged against the latest close. */
 export type PatternState = "forming" | "approaching" | "confirmed"
 
@@ -116,6 +120,7 @@ export async function analysePatterns(
     from?: number
     to?: number
     strictness?: Strictness
+    source?: PatternSource
   },
   signal?: AbortSignal,
 ): Promise<PatternResponse> {

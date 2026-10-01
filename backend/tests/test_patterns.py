@@ -299,18 +299,107 @@ class TestRanking:
 
 
 class TestConfidenceFloor:
-    def test_floor_excludes_weak_patterns(self):
+    def test_nothing_survives_an_impossible_floor(self):
         series = w_series(low2_offset=0.15, tail=12)
-        found = detect_double_patterns(series, min_confidence=0.0)
-        assert found, "fixture should produce a pattern with no floor"
+        assert detect_double_patterns(series, min_confidence=0.0)
+        assert detect_double_patterns(series, min_confidence=100.1) == []
 
-        # Derived from the fixture rather than hardcoded: the geometry is
-        # deliberately perfect in most fixtures and scores exactly 100.
-        score = found[0]["confidence"]
-        assert detect_double_patterns(series, min_confidence=score + 0.1) == []
+    @pytest.mark.parametrize("floor", [0.0, 40.0, 60.0, 80.0])
+    def test_everything_returned_meets_the_floor(self, floor):
+        """
+        The actual contract. Note that raising the floor can surface a pattern
+        that a lower floor hid: filtering runs before overlap-dropping, so
+        removing a winner lets the neighbour it was suppressing through. That
+        is intended - the neighbour qualifies and the winner no longer does.
+        """
+        found = detect_double_patterns(
+            combined_series(), min_confidence=floor, max_results=None
+        )
+        for pattern in found:
+            assert pattern["confidence"] >= floor
 
     def test_default_floor_still_admits_a_textbook_pattern(self):
         assert detect_double_patterns(w_series(tail=12), kinds=("W",))
+
+
+class TestPriceSource:
+    """
+    Pivots are measured on wicks by default, matching classic technical
+    analysis and most published implementations. Closes remain available
+    because crypto stop hunts routinely print equal wick lows that mean
+    nothing.
+    """
+
+    def test_wick_source_uses_the_extremes_not_the_closes(self):
+        # Wicks extend 3 below every close, so a W's shoulders should be
+        # reported 3 lower than the close-based reading of the same series.
+        series = w_series(tail=12, wick=3.0)
+        wick = detect_double_patterns(series, kinds=("W",), source="wick")
+        close = detect_double_patterns(series, kinds=("W",), source="close")
+
+        assert wick and close, "both readings should find the pattern"
+        assert wick[0]["points"]["low1"]["price"] < close[0]["points"]["low1"]["price"]
+
+    def test_neckline_uses_the_high_for_a_w(self):
+        series = w_series(tail=12, wick=3.0)
+        wick = detect_double_patterns(series, kinds=("W",), source="wick")
+        close = detect_double_patterns(series, kinds=("W",), source="close")
+        assert wick[0]["neckline"] > close[0]["neckline"]
+
+    def test_a_break_still_needs_a_close_beyond_the_neckline(self):
+        # Wicks poke above the neckline but no candle closes above it, so the
+        # pattern must not be reported as confirmed.
+        leg = 20
+        prices = [105.0]
+        prices += ramp(prices[-1], 90, leg)
+        prices += ramp(90, 100, leg)
+        prices += ramp(100, 90, leg)
+        prices += ramp(90, 98, leg)  # closes stay under the 100 neckline
+        candles = to_candles(prices, wick=4.0)  # but wicks reach 102
+
+        found = detect_double_patterns(candles, kinds=("W",), source="wick")
+        assert found, "expected the pattern"
+        assert found[0]["state"] != "confirmed", (
+            "a wick through the neckline is not a break"
+        )
+
+    def test_default_source_is_wick(self):
+        series = w_series(tail=12, wick=3.0)
+        assert (
+            detect_double_patterns(series, kinds=("W",))[0]["points"]["low1"]["price"]
+            == detect_double_patterns(series, kinds=("W",), source="wick")[0]["points"][
+                "low1"
+            ]["price"]
+        )
+
+    def test_unknown_source_is_rejected(self):
+        with pytest.raises(ValueError):
+            detect_double_patterns(w_series(tail=12), source="body")
+
+
+class TestRangeBoundPatterns:
+    """
+    Small W's inside a range are real setups that scalpers trade, so the
+    detector must not require a preceding trend. Thresholds are in ATR, which
+    is what lets a shallow pattern in a quiet range still qualify.
+    """
+
+    def test_a_small_w_inside_a_range_is_found(self):
+        leg = 12
+        prices = [100.0]
+        # Sideways chop between roughly 99 and 101, no trend either side.
+        for _ in range(3):
+            prices += ramp(prices[-1], 101, leg)
+            prices += ramp(101, 99, leg)
+        # A modest W within that same range.
+        prices += ramp(prices[-1], 99.0, leg)
+        prices += ramp(99.0, 100.6, leg)
+        prices += ramp(100.6, 99.05, leg)
+        prices += ramp(99.05, 100.8, leg)
+        candles = to_candles(prices)
+
+        found = detect_double_patterns(candles, strictness="loose", kinds=("W",))
+        assert found, "a range-bound W should still be detected"
 
 
 class TestDegenerateInput:

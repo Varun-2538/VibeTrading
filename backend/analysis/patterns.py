@@ -68,6 +68,11 @@ PRESETS: Dict[str, Strictness] = {
 
 KINDS = ("W", "M")
 
+# Which prices the shape is measured on. Wicks are the classic definition and
+# the default; closes ignore spikes. Note that neither changes how a break is
+# judged - that is always a close beyond the neckline.
+SOURCES = ("wick", "close")
+
 
 def atr(candles: Sequence[Dict[str, Any]], period: int = ATR_PERIOD) -> float:
     """
@@ -90,38 +95,60 @@ def atr(candles: Sequence[Dict[str, Any]], period: int = ATR_PERIOD) -> float:
     return sum(window) / len(window) if window else 0.0
 
 
+def pivot_series(
+    candles: Sequence[Dict[str, Any]], source: str = "wick"
+) -> Tuple[List[float], List[float]]:
+    """
+    The two price series pivots are measured against: (lows, highs).
+
+    With "wick" the extremes are used, which is how classic technical analysis
+    defines a double bottom and what most published implementations do. With
+    "close" both series are the closes, so a single spike cannot define a
+    pattern the body of the price action does not support - steadier in crypto,
+    where stop hunts routinely print equal wick lows that mean nothing.
+    """
+    if source == "wick":
+        return (
+            [float(c["low"]) for c in candles],
+            [float(c["high"]) for c in candles],
+        )
+    if source == "close":
+        closes = [float(c["close"]) for c in candles]
+        return closes, list(closes)
+    raise ValueError(f"Unknown source '{source}'. Expected one of: wick, close")
+
+
 def find_pivots(
-    candles: Sequence[Dict[str, Any]], k: int = 4
+    candles: Sequence[Dict[str, Any]], k: int = 4, source: str = "wick"
 ) -> Tuple[List[int], List[int]]:
     """
     Indices of swing lows and swing highs.
 
-    A swing low is a close that is the lowest within k bars either side. Closes
-    rather than wicks: a single spike should not define the shape of a pattern
-    that the body of the price action does not support.
+    A swing low is the lowest price within k bars either side; a swing high
+    mirrors it. See pivot_series for what "price" means here.
 
     The first and last k bars cannot be pivots - there is not enough either
     side to know - which is why a pattern only appears once price has moved on
     from its second low.
     """
-    lows: List[int] = []
-    highs: List[int] = []
+    pivot_lows: List[int] = []
+    pivot_highs: List[int] = []
     if len(candles) < 2 * k + 1:
-        return lows, highs
+        return pivot_lows, pivot_highs
 
-    closes = [float(c["close"]) for c in candles]
+    lows, highs = pivot_series(candles, source)
 
-    for i in range(k, len(closes) - k):
-        window = closes[i - k : i + k + 1]
-        price = closes[i]
+    for i in range(k, len(candles) - k):
+        low_window = lows[i - k : i + k + 1]
+        high_window = highs[i - k : i + k + 1]
         # Strict inequality on one side keeps a flat run from reporting every
         # bar in it as a pivot.
-        if price == min(window) and price < closes[i - k]:
-            lows.append(i)
-        if price == max(window) and price > closes[i - k]:
-            highs.append(i)
+        if lows[i] == min(low_window) and lows[i] < lows[i - k]:
+            pivot_lows.append(i)
+        if highs[i] == max(high_window) and highs[i] > highs[i - k]:
+            pivot_highs.append(i)
 
-    return lows, highs
+    return pivot_lows, pivot_highs
 
 
 def _score(value: float, best: float, worst: float) -> float:
@@ -132,10 +159,10 @@ def _score(value: float, best: float, worst: float) -> float:
     return round(max(0.0, min(1.0, ratio)) * 100, 1)
 
 
-def _point(candles, index) -> Dict[str, Any]:
+def _point(candles, index, price) -> Dict[str, Any]:
     return {
         "time": int(candles[index]["time"]),
-        "price": float(candles[index]["close"]),
+        "price": float(price),
         "index": index,
     }
 
@@ -145,6 +172,7 @@ def _detect_one_kind(
     kind: str,
     preset: Strictness,
     unit: float,
+    source: str = "wick",
 ) -> List[Dict[str, Any]]:
     """
     Find every W (or M) in the window.
@@ -152,15 +180,24 @@ def _detect_one_kind(
     M is the same geometry upside down, so the comparisons are written once and
     the sign flips: for an M the "lows" are pivot highs, the neckline sits below
     them, and a break is a close underneath it.
+
+    Geometry comes from the pivot series, but the break and the current state
+    are always judged on closes. A wick poking through the neckline is not a
+    break - the candle has to close beyond it - which is the standard reading
+    and stops a single stop-hunt spike from confirming a pattern.
     """
     is_w = kind == "W"
-    pivot_lows, pivot_highs = find_pivots(candles, preset.k)
+    pivot_lows, pivot_highs = find_pivots(candles, preset.k, source)
 
     # For a W the shoulders are lows and the neckline is the high between them.
     shoulders = pivot_lows if is_w else pivot_highs
     necks = pivot_highs if is_w else pivot_lows
     if len(shoulders) < 2 or not necks:
         return []
+
+    lows, highs = pivot_series(candles, source)
+    shoulder_prices = lows if is_w else highs
+    neck_prices = highs if is_w else lows
 
     closes = [float(c["close"]) for c in candles]
     last_close = closes[-1]
@@ -178,9 +215,11 @@ def _detect_one_kind(
             if not between:
                 continue
             # The most pronounced turn between the shoulders is the neckline.
-            neck = (max if is_w else min)(between, key=lambda i: closes[i])
+            neck = (max if is_w else min)(between, key=lambda i: neck_prices[i])
 
-            p_first, p_second, p_neck = closes[first], closes[second], closes[neck]
+            p_first = shoulder_prices[first]
+            p_second = shoulder_prices[second]
+            p_neck = neck_prices[neck]
 
             # The two shoulders must sit at roughly the same price.
             mismatch = abs(p_second - p_first)
@@ -232,9 +271,9 @@ def _detect_one_kind(
                     "confidence": confidence,
                     "components": components,
                     "points": {
-                        "low1" if is_w else "high1": _point(candles, first),
-                        "peak" if is_w else "trough": _point(candles, neck),
-                        "low2" if is_w else "high2": _point(candles, second),
+                        "low1" if is_w else "high1": _point(candles, first, p_first),
+                        "peak" if is_w else "trough": _point(candles, neck, p_neck),
+                        "low2" if is_w else "high2": _point(candles, second, p_second),
                     },
                     "neckline": p_neck,
                     "target": p_neck + height if is_w else p_neck - height,
@@ -288,6 +327,7 @@ def detect_double_patterns(
     kinds: Sequence[str] = KINDS,
     max_results: Optional[int] = MAX_PATTERNS,
     min_confidence: float = MIN_CONFIDENCE,
+    source: str = "wick",
 ) -> List[Dict[str, Any]]:
     """
     Double bottoms and double tops in a window, most actionable first.
@@ -307,6 +347,10 @@ def detect_double_patterns(
     for kind in kinds:
         if kind not in KINDS:
             raise ValueError(f"Unknown pattern kind '{kind}'. Expected one of: W, M")
+    if source not in SOURCES:
+        raise ValueError(
+            f"Unknown source '{source}'. Expected one of: {', '.join(SOURCES)}"
+        )
 
     preset = PRESETS[strictness]
     if len(candles) < max(2 * preset.k + 1, ATR_PERIOD):
@@ -320,7 +364,7 @@ def detect_double_patterns(
 
     found: List[Dict[str, Any]] = []
     for kind in kinds:
-        found += _detect_one_kind(candles, kind, preset, unit)
+        found += _detect_one_kind(candles, kind, preset, unit, source)
 
     found = [p for p in found if p["confidence"] >= min_confidence]
     ranked = _drop_overlaps(found)

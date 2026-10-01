@@ -10,7 +10,13 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
 
-from analysis.patterns import KINDS, MAX_PATTERNS, PRESETS, detect_double_patterns
+from analysis.patterns import (
+    KINDS,
+    MAX_PATTERNS,
+    PRESETS,
+    SOURCES,
+    detect_double_patterns,
+)
 from services.candle_service import (
     CandleService,
     CandleFetchError,
@@ -63,6 +69,7 @@ async def list_timeframes() -> Dict[str, List[str]]:
 class PatternRequest(WindowRequest):
     kinds: List[str] = list(KINDS)
     strictness: str = "balanced"
+    source: str = "wick"
     max_results: int = Field(default=MAX_PATTERNS, ge=1, le=50)
 
 
@@ -87,6 +94,7 @@ async def analyse_patterns(request: PatternRequest) -> Dict[str, Any]:
             visible,
             strictness=request.strictness,
             kinds=tuple(request.kinds),
+            source=request.source,
             max_results=None,
         )
         patterns = all_found[: request.max_results]
@@ -102,6 +110,7 @@ async def analyse_patterns(request: PatternRequest) -> Dict[str, Any]:
         "symbol": request.symbol.upper(),
         "timeframe": request.timeframe,
         "strictness": request.strictness,
+        "source": request.source,
         "sample_size": len(visible),
         "total_found": len(all_found),
         "patterns": patterns,
@@ -111,7 +120,7 @@ async def analyse_patterns(request: PatternRequest) -> Dict[str, Any]:
 @router.get("/analysis/strictness")
 async def list_strictness() -> Dict[str, List[str]]:
     """The strictness presets this deployment offers."""
-    return {"strictness": list(PRESETS), "kinds": list(KINDS)}
+    return {"strictness": list(PRESETS), "kinds": list(KINDS), "sources": list(SOURCES)}
 
 
 @router.post("/analysis/levels")

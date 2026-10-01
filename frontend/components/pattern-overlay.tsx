@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import type { IChartApi, ISeriesApi, UTCTimestamp } from "lightweight-charts"
+import type { IChartApi, ISeriesApi, SeriesType, UTCTimestamp } from "lightweight-charts"
 import { patternPoints, type Pattern, type PatternState } from "@/lib/api"
 
 /*
@@ -45,7 +45,9 @@ const STATE_STYLE: Record<
 
 interface PatternOverlayProps {
   chart: IChartApi | null
-  series: ISeriesApi<"Candlestick"> | null
+  // Any series type: only priceToCoordinate is used, so candles and a line
+  // both work and the overlay survives switching between them.
+  series: ISeriesApi<SeriesType> | null
   patterns: Pattern[]
 }
 
