@@ -356,7 +356,16 @@ def _drop_overlaps(patterns: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     kept: List[Dict[str, Any]] = []
     for pattern in sorted(patterns, key=survival_order):
-        if any(_overlap_ratio(pattern, k) > MAX_SPAN_OVERLAP for k in kept):
+        # Only against its own kind. A W and an M over the same bars are not
+        # two readings of one thing - price making two highs and two lows in
+        # the same span is simply a range, and both are worth marking. Letting
+        # them compete deleted a double bottom whose two lows were twelve
+        # dollars apart because a double top above it happened to be shorter.
+        if any(
+            _overlap_ratio(pattern, k) > MAX_SPAN_OVERLAP
+            for k in kept
+            if k["kind"] == pattern["kind"]
+        ):
             continue
         kept.append(pattern)
 

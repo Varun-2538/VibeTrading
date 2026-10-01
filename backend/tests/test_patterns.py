@@ -325,6 +325,28 @@ class TestOverlapHandling:
             f"expected both sequential patterns, got {len(found)}"
         )
 
+    def test_a_w_and_an_m_over_the_same_bars_both_survive(self):
+        """
+        Regression: dedupe compared patterns of different kinds, so a double
+        top could delete a double bottom occupying the same span. Price making
+        two highs and two lows over the same bars is a range, and both readings
+        are real - this cost a W whose lows were twelve dollars apart.
+        """
+        # A range: two tops near 101 and two bottoms near 99.
+        leg = 10
+        prices = [100.0]
+        for target in (101.0, 99.0, 101.0, 99.0, 100.5):
+            prices += ramp(prices[-1], target, leg)
+        candles = to_candles(prices)
+
+        found = detect_double_patterns(
+            candles, strictness="loose", max_results=None
+        )
+        kinds = {p["kind"] for p in found}
+        assert kinds == {"W", "M"}, (
+            f"expected both a double top and a double bottom, got {kinds or 'none'}"
+        )
+
     def test_a_fan_from_one_pivot_is_collapsed(self):
         # One low pairing with several nearby lows should not produce a fan of
         # near-identical patterns over the same price action.

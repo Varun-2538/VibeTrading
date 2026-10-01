@@ -150,9 +150,24 @@ export default function PatternOverlay({ chart, series, patterns }: PatternOverl
 
             {/* Measured move, only once the break has actually happened -
                 showing a target for a pattern that may never complete would
-                promise something the analysis does not support. */}
-            {pattern.state === "confirmed" && annotated && targetY !== null && (
+                promise something the analysis does not support.
+
+                The vertical connector matters: the target is the pattern's own
+                height projected from the neckline, and without something
+                joining the two the line just floats far below the shape and
+                reads as an error rather than a projection. */}
+            {pattern.state === "confirmed" && annotated && targetY !== null && neckY !== null && (
               <>
+                <line
+                  x1={lastX + 30}
+                  y1={neckY}
+                  x2={lastX + 30}
+                  y2={targetY}
+                  stroke={colour}
+                  strokeWidth={1}
+                  strokeDasharray="2 3"
+                  opacity={0.7}
+                />
                 <line
                   x1={lastX}
                   y1={targetY}
@@ -169,7 +184,9 @@ export default function PatternOverlay({ chart, series, patterns }: PatternOverl
                   fontSize={10}
                   fontFamily="ui-monospace, monospace"
                 >
-                  target
+                  target {pattern.target.toLocaleString(undefined, {
+                    maximumFractionDigits: 0,
+                  })}
                 </text>
               </>
             )}
