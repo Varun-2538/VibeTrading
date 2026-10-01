@@ -74,6 +74,7 @@ function Arrow({
   y2,
   label,
   dashed = false,
+  head = true,
 }: {
   x1: number
   y1: number
@@ -81,6 +82,8 @@ function Arrow({
   y2: number
   label?: string
   dashed?: boolean
+  /** Off for the first leg of an elbow, so the corner does not grow a head. */
+  head?: boolean
 }) {
   return (
     <g>
@@ -92,7 +95,7 @@ function Arrow({
         stroke={DIM}
         strokeWidth="1"
         strokeDasharray={dashed ? "4 3" : undefined}
-        markerEnd="url(#arrowhead)"
+        markerEnd={head ? "url(#arrowhead)" : undefined}
       />
       {label && (
         <text
@@ -181,7 +184,7 @@ function Diagram() {
           <Arrow x1={115} y1={72} x2={115} y2={136} label="HTML/JS" />
           {/* Separated vertically: the REST call out and the tick stream back
               sit on the same edge and collided when drawn at one height. */}
-          <Arrow x1={210} y1={60} x2={313} y2={60} label="REST" />
+          <Arrow x1={210} y1={60} x2={405} y2={60} label="REST" head={false} />
           <Arrow x1={405} y1={60} x2={405} y2={126} />
           <Arrow x1={405} y1={176} x2={405} y2={198} />
           <Arrow x1={405} y1={252} x2={405} y2={274} />
