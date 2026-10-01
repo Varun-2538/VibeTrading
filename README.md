@@ -1,418 +1,209 @@
-# 🤖 TradeSmart.AI
+# VibeTrading
 
-> **AI-Powered Trading Strategy Builder** using Cerebras, Meta Llama, and Docker MCP Gateway
+Technical analysis that only looks at the candles you are looking at.
 
-[![Cerebras](https://img.shields.io/badge/Cerebras-Llama%203.1-orange)](https://cloud.cerebras.ai/)
-[![Meta Llama](https://img.shields.io/badge/Meta-Llama%203.1-blue)](https://llama.meta.com/)
-[![Docker](https://img.shields.io/badge/Docker-MCP%20Gateway-2496ED)](https://www.docker.com/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115.0-009688)](https://fastapi.tiangolo.com/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+**Live:** [vibetrading.club](https://vibetrading.club) · **API:** [api.vibetrading.club/docs](https://api.vibetrading.club/docs)
 
-**Built for FutureStack 2025 Hackathon** | [View Submission Details](HACKATHON.md)
+VibeTrading reads recent candles for nine crypto pairs, finds the price levels
+the market keeps returning to and the double bottoms and double tops forming in
+them, and draws both on the chart. Analysis is scoped to the visible window, so
+panning or zooming re-analyses exactly what is on screen rather than a fixed
+lookback nobody chose.
 
----
-
-## 🎯 What is TradeSmart.AI?
-
-TradeSmart.AI democratizes professional trading by using **multi-agent AI** to analyze markets and generate actionable trading strategies in **under 60 seconds**.
-
-### ✨ Key Features
-
-- 🧠 **3 AI Agents** powered by Cerebras (Llama 3.1 70B + 8B)
-- 📊 **Automated Technical Analysis** (RSI, MACD, EMA)
-- 🎯 **Liquidation Zone Detection** (Support/Resistance)
-- 📈 **Auto-Chart Annotations** via MCP tools
-- ⚡ **<60s Strategy Generation** (10x faster than traditional methods)
-- 🐳 **Fully Dockerized** with MCP Gateway
+No signup, no accounts, free to use.
 
 ---
 
-## 🚀 Quick Start (5 minutes)
+## What it does
 
-### Prerequisites
+**Liquidity levels.** Clusters recent price action into the levels that have
+actually been tested, and reports how many times each one was tested so strength
+is measured rather than asserted.
 
-**Option A - Supabase (Recommended - Easier):**
-- Supabase account ([Free tier](https://supabase.com))
-- Cerebras API key ([Get free](https://cloud.cerebras.ai/))
-- See [Supabase Setup Guide](SUPABASE-SETUP.md)
+**Double bottoms and tops.** Finds W and M patterns and marks each with where it
+is in its life — `forming`, `approaching` the neckline, or `confirmed` by a close
+beyond it. A setup is visible while it develops rather than only once it has
+completed and given up most of its move.
 
-**Option B - Self-hosted:**
-- Docker & Docker Compose
-- Cerebras API key ([Get free](https://cloud.cerebras.ai/))
+**Two controls, because these are judgement calls.** *Scale* selects the size of
+structure to look for (swing, scalp, or both); *strictness* sets the quality bar
+within it. They are separate axes: bundling them made "small but precise" —
+exactly what a scalper wants — impossible to ask for.
 
-### Installation
+**A chat assistant** that answers questions about levels and patterns in plain
+language.
 
-**Linux/Mac:**
-```bash
-git clone <your-repo-url>
-cd TradeSmart.ai
-chmod +x quick-start.sh
-./quick-start.sh
+---
+
+## How the analysis works
+
+Every threshold is expressed in **ATR**, never as a percentage of price. This is
+the central design decision and it was learned the hard way: a fixed 2% rule is
+calibrated for daily charts and breaks completely intraday. On BTC, the shoulder
+tolerance used by widely-copied Pine scripts works out to 0.9 ATR on a daily
+chart but **65 ATR on a 1-minute chart**, where it matches any two lows at all.
+ATR-relative thresholds behave the same on every timeframe.
+
+The detector is deterministic — pivot detection, ATR-scaled comparisons, and a
+geometric score. There is no prediction model and no trained weights. A
+confidence percentage decomposes into three measurable terms (how closely the
+two shoulders match, how deep the pattern is, how symmetric its legs are), so
+any score can be explained rather than trusted blind.
+
+The language model is used **only** for the conversational interface. It never
+computes a level or a pattern.
+
+### An honest limitation
+
+Run the detector over a random walk with no structure in it and it returns
+roughly as many patterns as it does on real market data. This is a property of
+chart patterns generally rather than a defect in this implementation — random
+walks genuinely contain W-shapes — but it means **a mark is evidence of a shape,
+not evidence of an edge**. Confidence describes how cleanly a shape matches its
+geometric definition, not the probability that a trade works. Whether these
+patterns predict anything is a backtesting question this project has not yet
+answered.
+
+---
+
+## Architecture
+
+```
+Browser
+  │
+  ├─ vibetrading.club ......... Next.js 15 (App Router) on Vercel
+  │                             Lightweight Charts + SVG pattern overlay
+  │
+  └─ api.vibetrading.club ..... Caddy (automatic TLS)
+                                  │
+                                  ├─ FastAPI (Python 3.11, Docker)
+                                  │    ├─ analysis/  deterministic detectors
+                                  │    └─ agents/    Cerebras, chat only
+                                  ├─ TimescaleDB     candles, annotations
+                                  └─ Redis           hot-path cache
 ```
 
-**Windows:**
+Everything behind the API runs in Docker Compose on a single Google Compute
+Engine `e2-medium` in `asia-south1-a`. Live prices reach the browser over a
+WebSocket direct from the exchange; historical candles are served by the API and
+cached.
+
+| Layer | Choice |
+|---|---|
+| Frontend | Next.js 15, TypeScript, Tailwind, Lightweight Charts, Vercel |
+| API | FastAPI, Python 3.11, Pydantic, uvicorn |
+| Analysis | Pure Python, no ML dependency |
+| Database | TimescaleDB (PostgreSQL 15) — hypertables for time series |
+| Cache | Redis 7 |
+| Edge | Caddy 2, automatic TLS |
+| Compute | Google Compute Engine, `asia-south1` |
+| LLM | Cerebras (`gemma-4-31b`) via LangChain, chat only |
+| Market data | Binance public REST + WebSocket |
+
+---
+
+## Running it locally
+
+**Prerequisites:** Docker and Docker Compose, and a
+[Cerebras API key](https://cloud.cerebras.ai/) (free tier is enough) if you want
+the chat assistant. The charts and all analysis work without one.
+
 ```bash
-git clone <your-repo-url>
-cd TradeSmart.ai
-quick-start.bat
+git clone https://github.com/Varun-2538/smartTrade.ai.git
+cd smartTrade.ai
+
+cp .env.prod.example .env     # set CEREBRAS_API_KEY, TIMESCALE_USER, TIMESCALE_PASSWORD
+docker compose up -d          # TimescaleDB, Redis, MCP server, API
+
+cd frontend
+npm install
+npm run dev                   # http://localhost:3000
 ```
 
-### Manual Setup
+`docker-compose.yml` is the local stack; `docker-compose.prod.yml` is what runs
+on the server and adds Caddy for TLS.
+
+Verify the API:
 
 ```bash
-# 1. Configure environment
-cp .env.docker .env
-# Edit .env and add your CEREBRAS_API_KEY
-
-# 2. Start all services
-docker-compose up -d
-
-# 3. Verify deployment
 curl http://localhost:8000/health
 ```
 
----
-
-## 💡 How It Works
-
-### Architecture
-
-```
-User Prompt
-    ↓
-Orchestrator Agent (Llama 70B) ← Coordinates everything
-    ↓
-┌───────────────────┴────────────────────┐
-↓                                        ↓
-Liquidation Agent (Llama 8B)    Indicator Agent (Llama 8B)
-• Detects support/resistance    • Calculates RSI, MACD, EMA
-• Finds liquidation zones        • Analyzes momentum & trends
-    ↓                                        ↓
-    └────────────────┬───────────────────────┘
-                     ↓
-              MCP Gateway (Docker)
-              • 6 specialized tools
-              • Chart annotations
-              • Strategy synthesis
-                     ↓
-         ┌───────────┴──────────┐
-         ↓                      ↓
-    TimescaleDB            Redis Cache
-    (OHLC Data)           (Performance)
-```
-
-### Example Usage
-
-**Input:**
-```bash
-curl -X POST http://localhost:8000/api/strategy/build \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "Create a swing trading strategy for Bitcoin using RSI and liquidation zones",
-    "symbol": "BTC/USD",
-    "timeframe": "1h"
-  }'
-```
-
-**Output (in ~45 seconds):**
-```json
-{
-  "strategy": {
-    "entry_conditions": [
-      "RSI < 30 near support at $64,000",
-      "MACD bullish crossover"
-    ],
-    "exit_conditions": [
-      "RSI > 70 near resistance at $68,000"
-    ],
-    "risk_management": {
-      "stop_loss": 62500,
-      "take_profit": [67000, 68000],
-      "position_size_pct": 20,
-      "risk_reward_ratio": 2.5
-    }
-  },
-  "chart_annotations": ["3 liquidation zones marked"],
-  "execution_time_seconds": 45.2
-}
-```
-
----
-
-## 🏗️ Tech Stack
-
-### AI & Agents
-- **Cerebras Cloud** - Lightning-fast inference
-- **Meta Llama 3.1** (70B + 8B) - Reasoning & analysis
-- **LangChain** - Agent orchestration
-
-### Backend
-- **FastAPI** - Async Python API
-- **MCP (Model Context Protocol)** - Tool orchestration
-- **TimescaleDB** - Time-series data
-- **Redis** - High-performance caching
-
-### DevOps
-- **Docker & Docker Compose** - Containerization
-- **Uvicorn** - ASGI server
-- **Nginx** (production) - Load balancing
-
----
-
-## 📊 Performance Metrics
-
-| Metric | Traditional | TradeSmart.AI | Improvement |
-|--------|------------|---------------|-------------|
-| Strategy Generation | 3-5 min | <60 sec | **10x faster** |
-| Technical Analysis | Manual | Automated | **100x faster** |
-| Chart Annotations | 10-15 min | <5 sec | **200x faster** |
-| Multi-timeframe Analysis | 15-20 min | <2 min | **8x faster** |
-
----
-
-## 🐳 Docker MCP Gateway
-
-### 6 Custom MCP Tools
-
-1. **`get_ohlc_data`** - Fetch candlestick data from TimescaleDB
-2. **`calculate_indicators`** - Compute RSI, MACD, EMA
-3. **`detect_liquidation_levels`** - Find support/resistance zones
-4. **`create_chart_annotation`** - Draw visual markers
-5. **`create_liquidation_zone`** - Mark liquidation rectangles
-6. **`generate_strategy`** - Synthesize complete strategy
-
-### Service Architecture
-
-```yaml
-services:
-  mcp-server:      # MCP Gateway (stdio-based)
-  backend:         # FastAPI + 3 AI Agents
-  timescaledb:     # Time-series OHLC data
-  redis:           # Cache layer
-```
-
-**Full config:** See [mcp-gateway.json](mcp-gateway.json)
-
----
-
-## 📚 Documentation
-
-- 📖 [Hackathon Submission Details](HACKATHON.md)
-- 🐳 [Docker Deployment Guide](DOCKER-DEPLOYMENT.md)
-- 🔧 [Backend Documentation](backend/README.md)
-- 🌐 [API Documentation](http://localhost:8000/docs) (when running)
-- 📋 [Project Plan](plan.md)
-
----
-
-## 🎯 API Endpoints
-
-### Strategy Building
-- `POST /api/strategy/build` - Generate strategy from prompt
-- `GET /api/strategy/analyze/{symbol}` - Quick market analysis
-
-### Market Data
-- `GET /api/ohlc/{symbol}` - Fetch OHLC candlestick data
-- `GET /api/price/{symbol}` - Get latest price
-- `GET /api/indicators/{symbol}` - Calculate indicators
-- `GET /api/liquidation-levels/{symbol}` - Detect levels
-- `GET /api/market-summary/{symbol}` - Complete summary
-
-### Annotations
-- `GET /api/annotations/{symbol}` - Get chart annotations
-- `DELETE /api/annotations/{symbol}` - Clear annotations
-
-### WebSocket
-- `WS /ws/{symbol}` - Real-time market data
-- `WS /ws/strategy/{symbol}` - Strategy signals
-
-**Interactive Docs:** http://localhost:8000/docs
-
----
-
-## 🛠️ Development
-
-### Project Structure
-
-```
-TradeSmart.ai/
-├── backend/
-│   ├── agents/              # AI agents (Cerebras)
-│   ├── mcp/                 # MCP server & tools
-│   ├── controllers/         # API routes
-│   ├── services/            # Business logic
-│   ├── repositories/        # Data access
-│   ├── models/              # Pydantic schemas
-│   └── config/              # Settings
-├── frontend/                # Next.js (optional)
-├── docker-compose.yml       # Service orchestration
-├── init-db.sql             # Database schema
-└── mcp-gateway.json        # MCP configuration
-```
-
-### Local Development
+### Tests
 
 ```bash
-# Install dependencies
 cd backend
-pip install -r requirements.txt
-
-# Run locally (without Docker)
-python main.py
-
-# Run tests
-pytest tests/
-
-# Lint code
-black . && isort .
+python -m pytest tests/ -q    # 77 tests
 ```
 
----
-
-## 🔧 Configuration
-
-### Environment Variables
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `CEREBRAS_API_KEY` | Cerebras API key | ✅ Yes |
-| `TIMESCALE_USER` | Database user | ✅ Yes |
-| `TIMESCALE_PASSWORD` | Database password | ✅ Yes |
-| `REDIS_URL` | Redis connection | ✅ Yes |
-| `BINANCE_API_KEY` | Binance API (optional) | ❌ No |
-| `FRONTEND_URL` | Frontend URL for CORS | ❌ No |
-
-**File:** `.env` (copy from `.env.docker`)
+The pattern tests build synthetic W and M fixtures from line segments, so the
+geometry is known exactly and assertions are made on prices rather than on
+"something was found". Several tests exist because a real chart disagreed with
+the detector — those regressions are documented in the test docstrings.
 
 ---
 
-## 🧪 Testing
+## API
 
-### Quick Test
+Analysis endpoints take the same window — `{symbol, timeframe, from, to}` — so
+the chart can ask any question about exactly the candles it is showing.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/candles/{symbol}` | OHLC candles, times in unix ms |
+| `POST /api/analysis/levels` | Support and resistance in a window |
+| `POST /api/analysis/patterns` | Double bottoms and tops in a window |
+| `GET /api/analysis/strictness` | Available strictness, scale and source options |
+| `POST /api/chat/ask` | Ask the assistant a question |
+| `GET /api/timeframes` | Timeframes this deployment serves |
+| `GET /health` | Service and dependency health |
+
+Full interactive documentation at
+[api.vibetrading.club/docs](https://api.vibetrading.club/docs).
+
+Example:
 
 ```bash
-# Test strategy building
-curl -X POST http://localhost:8000/api/strategy/build \
+curl -X POST https://api.vibetrading.club/api/analysis/patterns \
   -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "Build a scalping strategy for ETH",
-    "symbol": "ETH/USD",
-    "timeframe": "15m"
-  }'
-```
-
-### Health Check
-
-```bash
-# Check all services
-curl http://localhost:8000/health
-
-# Expected response:
-{
-  "status": "healthy",
-  "services": {
-    "api": "operational",
-    "database": "connected",
-    "cache": "connected",
-    "mcp": "connected"
-  }
-}
+  -d '{"symbol":"BTCUSDT","timeframe":"1h","strictness":"balanced","scale":"both"}'
 ```
 
 ---
 
-## 🏆 Hackathon Tracks
+## Project layout
 
-This project is submitted for **3 tracks** at FutureStack 2025:
-
-### 1. 🧠 Cerebras Track ($5,000 + Interview)
-- Multi-agent architecture with Llama 70B + 8B
-- Parallel execution for <60s performance
-- Novel use case: AI trading strategy builder
-
-### 2. 🦙 Meta Llama Track ($5,000 + Coffee Chat)
-- Specialized financial domain prompts
-- JSON-structured outputs
-- Democratizing professional trading tools
-
-### 3. 🐳 Docker MCP Gateway ($5,000)
-- 6 custom MCP tools
-- AI-generated chart annotations
-- Production-ready containerization
-
-**Total Prize Pool:** $15,000
-
-[View Full Submission →](HACKATHON.md)
-
----
-
-## 🚢 Deployment
-
-### Cloud Deployment
-
-**Railway:**
-```bash
-railway up
+```
+backend/
+  analysis/         detectors — patterns.py is the W/M implementation
+  controllers/      FastAPI routes
+  services/         candle fetching, caching, market data
+  agents/           Cerebras agents for the chat assistant
+  repositories/     TimescaleDB access
+  tests/            77 tests
+frontend/
+  app/              Next.js App Router — landing, /app, legal pages
+  components/       price-chart, pattern-overlay, chat-panel
+  lib/api.ts        typed API client
+docs/superpowers/   design specs written before each slice
 ```
 
-**Render:**
-```bash
-render deploy
-```
-
-**Heroku:**
-```bash
-heroku container:push web
-heroku container:release web
-```
-
-### Production Checklist
-
-- [ ] Change default database password
-- [ ] Enable SSL/TLS
-- [ ] Configure CORS origins
-- [ ] Set up monitoring (Sentry)
-- [ ] Enable rate limiting
-- [ ] Add authentication
-
 ---
 
-## 🤝 Contributing
+## Status
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Live and in active development. Pattern detection has been corrected several
+times in response to real charts where it disagreed with a trader's reading; if
+you find one, [dev@vibetrading.club](mailto:dev@vibetrading.club) is read by a
+person.
 
----
+**VibeTrading is not financial advice.** It places no trades, holds no funds,
+and never asks for exchange API keys. See the
+[risk disclosure](https://vibetrading.club/legal/risk).
 
-## 📄 License
+Originally prototyped as *TradeSmart.AI* for the FutureStack 2025 hackathon, and
+substantially rewritten since.
 
-MIT License - see [LICENSE](LICENSE) file for details.
+## Licence
 
----
-
-## 🙏 Acknowledgments
-
-- **Cerebras** for lightning-fast AI inference
-- **Meta** for open-source Llama models
-- **Docker** for containerization platform
-- **TimescaleDB** for time-series database
-- **FastAPI** for async Python framework
-
----
-
-## 📞 Contact
-
-- **GitHub:** [Your GitHub]
-- **Email:** [Your Email]
-- **Twitter:** [Your Twitter]
-
----
-
-## 🌟 Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=your-username/TradeSmart.ai&type=Date)](https://star-history.com/#your-username/TradeSmart.ai&Date)
-
----
-
-**Built with ❤️ for FutureStack 2025 Hackathon**
-
-[⬆ Back to Top](#-tradesmartai)
+MIT

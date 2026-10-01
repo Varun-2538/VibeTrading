@@ -228,6 +228,7 @@ export default function Landing() {
 
             <nav className="flex flex-wrap gap-x-5 gap-y-2">
               {[
+                { href: "/architecture", label: "Architecture" },
                 { href: "/legal/risk", label: "Risk disclosure" },
                 { href: "/legal/terms", label: "Terms" },
                 { href: "/legal/privacy", label: "Privacy" },

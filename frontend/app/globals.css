@@ -235,3 +235,17 @@
 .legal-prose a:hover {
   opacity: 0.8;
 }
+
+.legal-prose code {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.85em;
+  color: var(--vt-mint);
+  background: rgba(122, 240, 206, 0.07);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+
+.legal-prose figure {
+  margin-left: 0;
+  margin-right: 0;
+}
