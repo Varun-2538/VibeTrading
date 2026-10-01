@@ -3,6 +3,56 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * VibeTrading brand layer - scoped to the marketing page so the trading
+ * panel keeps its own neutral chrome.
+ *
+ * The void is near-black with a teal cast rather than a true grey, so the
+ * mint reads as native to the surface instead of stuck on top of it. Mint is
+ * the only chromatic colour on the page: on a desaturated dark field the
+ * highest-chroma point takes the eye, so it is spent exclusively on the
+ * primary action and on signals that something is genuinely live.
+ */
+.vt {
+  --vt-void: #06110f;
+  --vt-surface: #0b1a17;
+  --vt-raised: #102420;
+  --vt-line: rgba(122, 240, 206, 0.11);
+  --vt-line-strong: rgba(122, 240, 206, 0.28);
+  --vt-mint: #7af0ce;
+  --vt-mint-deep: #1e8f74;
+  --vt-ink: #e6f4ef;
+  --vt-ink-dim: #7e9a92;
+  --vt-ink-faint: #47605a;
+}
+
+@keyframes vt-tape {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+@keyframes vt-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes vt-breathe {
+  0%, 100% { opacity: 0.30; }
+  50%      { opacity: 0.42; }
+}
+
+.vt-rise {
+  animation: vt-rise 0.75s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vt-rise,
+  .vt-tape-track,
+  .vt-breathe {
+    animation: none !important;
+  }
+}
+
 :root {
   --background: oklch(0.12 0.01 264);
   --foreground: oklch(0.98 0.01 264);
@@ -42,6 +92,7 @@
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-display), var(--font-geist-sans), sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
