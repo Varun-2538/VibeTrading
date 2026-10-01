@@ -40,7 +40,14 @@ class Strictness:
     depth      how far the neckline must sit from them, in ATR
     near_frac  how close to the neckline counts as the final approach, as a
                fraction of the pattern's own height
-    k          half-width of the swing-pivot window
+    scales     half-widths of the swing-pivot window to search at
+
+    Scales is a list because one pivot window cannot see both kinds of pattern
+    a trader cares about. A wide window finds clean multi-day swings and is
+    blind to the tight double bottoms that form inside a range - the second low
+    of one simply is not the lowest bar for four bars either side. Searching
+    several widths and merging finds both, and the scale guard in dedupe stops
+    the large ones from swallowing the small.
 
     tol and depth are in ATR because both ask whether a move is meaningful
     against the prevailing noise. Proximity to the neckline is not that kind of
@@ -51,20 +58,40 @@ class Strictness:
     ever being seen to approach.
     """
 
-    def __init__(self, tol, depth, near_frac, min_bars, max_bars, k):
+    def __init__(self, tol, depth, near_frac, min_bars, max_bars, scales):
         self.tol = tol
         self.depth = depth
         self.near_frac = near_frac
         self.min_bars = min_bars
         self.max_bars = max_bars
-        self.k = k
+        self.scales = scales
+
+    @property
+    def k(self) -> int:
+        """The widest scale, for callers that want a single representative."""
+        return max(self.scales)
 
 
 PRESETS: Dict[str, Strictness] = {
-    "strict": Strictness(tol=0.5, depth=2.5, near_frac=0.15, min_bars=12, max_bars=120, k=5),
-    "balanced": Strictness(tol=1.0, depth=1.5, near_frac=0.25, min_bars=8, max_bars=120, k=4),
-    "loose": Strictness(tol=2.0, depth=1.0, near_frac=0.40, min_bars=5, max_bars=150, k=3),
+    "strict": Strictness(
+        tol=0.5, depth=2.0, near_frac=0.15, min_bars=8, max_bars=120, scales=(4,)
+    ),
+    "balanced": Strictness(
+        tol=1.0, depth=1.2, near_frac=0.25, min_bars=5, max_bars=120, scales=(4,)
+    ),
+    # The only preset that searches the narrow pivot window, and so the
+    # only one that sees tight double bottoms inside a range. That scale
+    # finds real scalping setups but also matches chop - a pure random
+    # walk yields dozens - so it is opt-in rather than the default.
+    "loose": Strictness(
+        tol=2.0, depth=0.8, near_frac=0.40, min_bars=3, max_bars=150, scales=(2, 4)
+    ),
 }
+
+# Pattern width, in bars, at which the full shoulder tolerance applies.
+# Narrower patterns get a proportionally tighter one - see the check in
+# _detect_one_kind for why.
+TOL_REFERENCE_BARS = 20
 
 KINDS = ("W", "M")
 
@@ -172,6 +199,7 @@ def _detect_one_kind(
     kind: str,
     preset: Strictness,
     unit: float,
+    k: int,
     source: str = "wick",
 ) -> List[Dict[str, Any]]:
     """
@@ -187,7 +215,7 @@ def _detect_one_kind(
     and stops a single stop-hunt spike from confirming a pattern.
     """
     is_w = kind == "W"
-    pivot_lows, pivot_highs = find_pivots(candles, preset.k, source)
+    pivot_lows, pivot_highs = find_pivots(candles, k, source)
 
     # For a W the shoulders are lows and the neckline is the high between them.
     shoulders = pivot_lows if is_w else pivot_highs
@@ -221,9 +249,18 @@ def _detect_one_kind(
             p_second = shoulder_prices[second]
             p_neck = neck_prices[neck]
 
-            # The two shoulders must sit at roughly the same price.
+            # The two shoulders must sit at roughly the same price, and how
+            # close "roughly" is depends on how wide the pattern is.
+            #
+            # A short pattern has to be precise to mean anything: three bars
+            # apart with lows half an ATR apart is chop, while three bars apart
+            # with lows a twelfth of an ATR apart is a real double bottom that
+            # scalpers trade. Applying one flat tolerance at every width is
+            # what made searching narrow pivot windows unusable - it matched
+            # 17 to 41 "patterns" in a pure random walk.
             mismatch = abs(p_second - p_first)
-            if mismatch > preset.tol * unit:
+            width_factor = min(1.0, separation / TOL_REFERENCE_BARS)
+            if mismatch > preset.tol * unit * width_factor:
                 continue
 
             # The neckline must be a real move away from them, not a ripple.
@@ -315,14 +352,34 @@ def _span(pattern: Dict[str, Any]) -> Tuple[int, int]:
     return min(indices), max(indices)
 
 
+# Two patterns whose lengths differ by more than this are treated as different
+# structures rather than duplicates, however much they overlap. A small double
+# bottom inside a larger one is exactly what a scalper trades out of a range,
+# and it has its own neckline and its own, much earlier, signal.
+SCALE_RATIO = 3.0
+
+
 def _overlap_ratio(a: Dict[str, Any], b: Dict[str, Any]) -> float:
-    """How much of the shorter pattern is covered by the other."""
+    """
+    How much of the shorter pattern is covered by the other, or zero if the
+    two are at different scales.
+
+    The scale guard is load-bearing. Measuring overlap against the shorter
+    pattern means anything wholly containing another scores 1.0, so without it
+    a 117-bar pattern silently deleted a 3-bar one nested inside it - a crisp
+    confirmed double bottom lost to a vague forming one seven times its size.
+    """
     a_start, a_end = _span(a)
     b_start, b_end = _span(b)
+
+    a_len, b_len = a_end - a_start, b_end - b_start
+    shortest, longest = min(a_len, b_len), max(a_len, b_len)
+    if longest > SCALE_RATIO * max(shortest, 1):
+        return 0.0
+
     overlap = min(a_end, b_end) - max(a_start, b_start)
     if overlap <= 0:
         return 0.0
-    shortest = min(a_end - a_start, b_end - b_start)
     return overlap / shortest if shortest else 1.0
 
 
@@ -405,7 +462,7 @@ def detect_double_patterns(
         )
 
     preset = PRESETS[strictness]
-    if len(candles) < max(2 * preset.k + 1, ATR_PERIOD):
+    if len(candles) < max(2 * min(preset.scales) + 1, ATR_PERIOD):
         return []
 
     unit = atr(candles)
@@ -416,7 +473,8 @@ def detect_double_patterns(
 
     found: List[Dict[str, Any]] = []
     for kind in kinds:
-        found += _detect_one_kind(candles, kind, preset, unit, source)
+        for k in preset.scales:
+            found += _detect_one_kind(candles, kind, preset, unit, k, source)
 
     found = [p for p in found if p["confidence"] >= min_confidence]
     ranked = _drop_overlaps(found)

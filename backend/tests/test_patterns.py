@@ -12,6 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from analysis import patterns as detect_module
 from analysis.patterns import atr, detect_double_patterns, find_pivots
 
 
@@ -346,6 +347,33 @@ class TestOverlapHandling:
         assert kinds == {"W", "M"}, (
             f"expected both a double top and a double bottom, got {kinds or 'none'}"
         )
+
+    def test_a_small_pattern_nested_in_a_large_one_survives(self):
+        """
+        Regression: overlap is measured against the shorter pattern, so a large
+        pattern wholly containing a small one always scored 1.0 and deleted it.
+        A 117-bar forming pattern at 41% removed a 3-bar confirmed one at 52%
+        nested inside it - and that small one was a scalping setup off the
+        lows, with its own much earlier signal.
+        """
+        big = {
+            "kind": "W",
+            "state": "forming",
+            "confidence": 41.0,
+            "points": {"a": {"index": 77}, "b": {"index": 130}, "c": {"index": 194}},
+        }
+        small = {
+            "kind": "W",
+            "state": "confirmed",
+            "confidence": 52.0,
+            "points": {"a": {"index": 175}, "b": {"index": 176}, "c": {"index": 178}},
+        }
+
+        assert detect_module._overlap_ratio(big, small) == 0.0, (
+            "patterns 39x apart in length are different structures"
+        )
+        kept = detect_module._drop_overlaps([big, small])
+        assert len(kept) == 2, "both scales should survive"
 
     def test_a_fan_from_one_pivot_is_collapsed(self):
         # One low pairing with several nearby lows should not produce a fan of
