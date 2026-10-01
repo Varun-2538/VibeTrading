@@ -12,17 +12,30 @@ class CacheService:
         self.redis_client: Optional[redis.Redis] = None
 
     async def connect(self):
-        """Connect to Redis"""
+        """
+        Connect to Redis, or disable caching if it is not reachable.
+
+        from_url() is lazy - it builds a client without touching the socket, so
+        it cannot fail here even when nothing is listening. Left like that, the
+        client stays set and every later get/set pays a full connect timeout
+        before the broad except swallows it: roughly eight seconds per request,
+        which reads as a hung chart rather than a missing cache. Ping now so a
+        missing Redis is discovered once, at startup, and the timeouts keep a
+        mid-session outage from stalling requests either.
+        """
         try:
-            self.redis_client = await redis.from_url(
+            client = redis.from_url(
                 settings.redis_url,
                 encoding="utf-8",
-                decode_responses=True
+                decode_responses=True,
+                socket_connect_timeout=2,
+                socket_timeout=2,
             )
+            await client.ping()
+            self.redis_client = client
         except Exception as e:
-            # Redis unavailable - continue without caching
             self.redis_client = None
-            print(f"[WARNING] Redis connection failed: {e} - Running without cache")
+            print(f"[WARNING] Redis unavailable: {e} - running without cache")
 
     async def disconnect(self):
         """Disconnect from Redis"""

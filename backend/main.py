@@ -6,6 +6,8 @@ import uvicorn
 # Import controllers
 from controllers import strategy_router, ohlc_router, websocket_router
 from controllers.chat_controller import router as chat_router
+from controllers.analysis_controller import router as analysis_router
+from services.candle_service import close_http
 
 # Import services and database
 from models.database import db
@@ -85,6 +87,12 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[ERROR] MCP disconnect failed: {e}")
 
+    try:
+        await close_http()
+        print("[OK] Closed candle HTTP client")
+    except Exception as e:
+        print(f"[ERROR] Candle client close failed: {e}")
+
     print("[OK] Shutdown complete")
 
 
@@ -110,6 +118,7 @@ app.include_router(strategy_router)
 app.include_router(ohlc_router)
 app.include_router(websocket_router)
 app.include_router(chat_router)
+app.include_router(analysis_router)
 
 
 @app.get("/")

@@ -3,6 +3,8 @@ from datetime import datetime, timedelta
 import numpy as np
 from repositories.ohlc_repository import OHLCRepository
 from services.cache_service import cache_service
+from services.candle_service import CandleService
+from analysis.levels import detect_levels
 
 
 class MarketDataService:
@@ -212,76 +214,60 @@ class MarketDataService:
         use_cache: bool = True
     ) -> Dict[str, Any]:
         """
-        Detect liquidation levels (support/resistance) with smart caching
+        Detect liquidation levels (support/resistance) for a whole timeframe.
+
+        Candles come from CandleService so the levels agree with whatever the
+        chart is showing. For levels restricted to a visible window, use
+        detect_levels_in_window instead.
 
         Args:
             symbol: Trading pair
-            timeframe: Candle timeframe
-            lookback_periods: Periods to analyze
-            use_cache: Whether to use cache (default True, 5-min TTL)
+            timeframe: Candle timeframe (1m, 5m, 15m, 1h, 1d)
+            lookback_periods: Candles to analyse
+            use_cache: Whether to use the levels cache (5-min TTL)
 
         Returns:
             Dictionary with support and resistance levels
         """
         from services.cache_service import cache_service
 
-        # Try cache first (5 minute TTL for live data)
         if use_cache:
             cached_levels = await cache_service.get_cached_liquidity_levels(symbol, timeframe)
             if cached_levels:
-                print(f"[CACHE HIT] Liquidity levels for {symbol}")
+                print(f"[CACHE HIT] Liquidity levels for {symbol} {timeframe}")
                 return cached_levels
 
-        print(f"[CACHE MISS] Calculating fresh liquidity levels for {symbol}")
+        print(f"[CACHE MISS] Calculating fresh liquidity levels for {symbol} {timeframe}")
 
-        # Get support and resistance levels
-        levels = await OHLCRepository.calculate_support_resistance(
-            symbol, timeframe, lookback_periods, sensitivity=0.02
-        )
+        candles = await CandleService.get_candles(symbol, timeframe, lookback_periods)
+        result = detect_levels(candles)
 
-        # Get current price and convert to float
-        current_price = await MarketDataService.get_latest_price(symbol, timeframe)
-        current_price = float(current_price) if current_price else 0.0
-
-        # Categorize levels by strength. Strength reflects how often price
-        # tested the level, as a share of the candles analysed - a raw count
-        # would mean different things at different lookbacks. Proximity is
-        # reported separately as distance_pct.
-        sample_size = max(int(levels.get('sample_size', 0)), 1)
-
-        def describe(level: Dict[str, Any]) -> Dict[str, Any]:
-            price_float = float(level['price'])
-            test_count = int(level.get('test_count', 0))
-            distance_pct = abs(current_price - price_float) / current_price * 100
-            share = test_count / sample_size
-
-            if share >= 0.40:
-                strength = "strong"
-            elif share >= 0.15:
-                strength = "medium"
-            else:
-                strength = "weak"
-
-            return {
-                'price': price_float,
-                'strength': strength,
-                'test_count': test_count,
-                'distance_pct': round(distance_pct, 2)
-            }
-
-        support_levels = [describe(lvl) for lvl in levels.get('support', [])]
-        resistance_levels = [describe(lvl) for lvl in levels.get('resistance', [])]
-
-        result = {
-            'support_levels': support_levels,
-            'resistance_levels': resistance_levels,
-            'current_price': current_price
-        }
-
-        # Cache for 5 minutes (300 seconds) for live trading
         if use_cache:
             await cache_service.cache_liquidity_levels(symbol, timeframe, result, expiration=300)
 
+        return result
+
+    @staticmethod
+    async def detect_levels_in_window(
+        symbol: str,
+        timeframe: str = "1h",
+        frm: Optional[int] = None,
+        to: Optional[int] = None,
+        limit: int = 1000,
+    ) -> Dict[str, Any]:
+        """
+        Levels computed only from the candles inside a visible range.
+
+        Not cached: the window changes with every pan, so a cache keyed on it
+        would miss constantly while filling Redis with single-use entries. The
+        underlying candles are cached by CandleService, which is where the cost
+        actually is.
+        """
+        candles = await CandleService.get_candles(symbol, timeframe, limit)
+        visible = CandleService.window(candles, frm, to)
+        result = detect_levels(visible)
+        result["timeframe"] = timeframe
+        result["symbol"] = symbol.upper()
         return result
 
     @staticmethod
