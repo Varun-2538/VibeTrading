@@ -52,6 +52,8 @@ export interface BacktestReport {
   signals: { fires: number; setups: number }
   study: { seen: PeriodStudy; unseen: PeriodStudy }
   trades?: { seen: TradePeriod; unseen: TradePeriod }
+  tuning?: TuningReport
+  flags?: string[]
 }
 
 export interface Backtest {
@@ -77,7 +79,7 @@ export interface BacktestRule {
 
 export async function createBacktest(
   rule: BacktestRule,
-  options: { neutral: Neutral; split: number; exit: ExitPlan },
+  options: { neutral: Neutral; split: number; exit: ExitPlan; tune: boolean; grid?: Grid },
 ): Promise<{ id: string; status: BacktestStatus }> {
   const res = await fetch(`${API_BASE}/api/backtests`, {
     method: "POST",
@@ -94,6 +96,8 @@ export async function createBacktest(
       neutral: options.neutral,
       split: options.split,
       exit: options.exit,
+      tune: options.tune,
+      grid: options.grid,
     }),
   })
   if (!res.ok) await failResponse(res, "Could not start the backtest")
@@ -281,6 +285,57 @@ export function equityLines(
   }
 }
 
+export interface Grid {
+  stop_atr: number[]
+  target_r: number[]
+  max_bars: number[]
+  min_confidence: number[]
+  min_strength: ("weak" | "medium" | "strong")[]
+}
+
+export const DEFAULT_GRID: Grid = {
+  stop_atr: [1, 1.5, 2],
+  target_r: [1, 2, 3],
+  max_bars: [10, 20, 40],
+  min_confidence: [60, 70, 80],
+  min_strength: ["weak", "medium", "strong"],
+}
+
+export interface Setting {
+  filters: { min_confidence?: number; min_strength?: string }
+  stop_atr: number
+  target_r: number
+  max_bars: number
+}
+
+export interface TuningRow {
+  settings: Setting
+  trades: number
+  expectancy_r: number | null
+  max_drawdown_pct: number | null
+  total_return_pct: number | null
+}
+
+export interface TuningReport {
+  tried: number
+  objective: string
+  min_trades: number
+  qualified: boolean
+  chosen: Setting
+  top: TuningRow[]
+}
+
+export function settingLabel(setting: Setting): string {
+  const parts = [`stop ${setting.stop_atr} ATR`, `target ${setting.target_r}R`, `${setting.max_bars} bars`]
+  if (setting.filters.min_confidence !== undefined) parts.push(`confidence ${setting.filters.min_confidence}`)
+  if (setting.filters.min_strength !== undefined) parts.push(`strength ${setting.filters.min_strength}`)
+  return parts.join(" · ")
+}
+
+export function overfit(report: BacktestReport): boolean {
+  return (report.flags ?? []).includes("likely_overfit")
+}
+
 export function tradeVerdict(report: BacktestReport): string | null {
   if (!report.trades) return null
   const { seen, unseen } = report.trades
@@ -288,9 +343,11 @@ export function tradeVerdict(report: BacktestReport): string | null {
   if (unseen.flags.includes("too_few_trades")) {
     return `Only ${unseen.trades} unseen trades — too few to judge this exit plan.`
   }
+  const prefix = report.tuning ? `Selected from ${report.tuning.tried} settings: ` : "Trading it on unseen data: "
+  const note = overfit(report) ? " — far below seen, so likely fitted to the seen data." : "."
   return (
-    `Trading it on unseen data: ${fmtR(unseen.expectancy_r)} per trade over ${unseen.trades} trades, ` +
+    `${prefix}${fmtR(unseen.expectancy_r)} per trade over ${unseen.trades} unseen trades, ` +
     `${fmtPct(unseen.total_return_pct)} total, worst drawdown ${fmtPct(unseen.max_drawdown_pct)} ` +
-    `(seen: ${fmtR(seen.expectancy_r)} per trade).`
+    `(seen: ${fmtR(seen.expectancy_r)} per trade)${note}`
   )
 }
