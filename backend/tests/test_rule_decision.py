@@ -124,3 +124,31 @@ def test_sequence_candidates_are_the_single_match_or_nothing():
 def test_first_passing_returns_the_first_sequence_candidate():
     c = Candidate("seq:1", "neutral", False, {})
     assert first_passing("sequence", {}, [c]) is c
+
+
+from services.rule_decision import step_direction
+
+BULL_BAR = {"open": 100.0, "close": 101.0, "high": 101.5, "low": 99.5, "time": 0, "volume": 1.0}
+BEAR_BAR = {"open": 101.0, "close": 100.0, "high": 101.5, "low": 99.5, "time": 0, "volume": 1.0}
+
+
+def test_a_cross_reads_its_own_direction():
+    assert step_direction({"type": "ema_cross", "cross": "above"}, BEAR_BAR) == "bullish"
+    assert step_direction({"type": "macd_cross", "cross": "below"}, BULL_BAR) == "bearish"
+    assert step_direction({"type": "vwap_cross", "cross": "above"}, BEAR_BAR) == "bullish"
+    assert step_direction({"type": "bollinger", "cross": "below"}, BULL_BAR) == "bearish"
+
+
+def test_directionless_steps_take_the_colour_of_the_bar():
+    for kind in ("volume_spike", "atr_expansion", "bollinger_squeeze"):
+        assert step_direction({"type": kind}, BULL_BAR) == "bullish"
+        assert step_direction({"type": kind}, BEAR_BAR) == "bearish"
+    doji = {"open": 100.0, "close": 100.0, "high": 101.0, "low": 99.0, "time": 0, "volume": 1.0}
+    assert step_direction({"type": "volume_spike"}, doji) == "neutral"
+
+
+def test_the_old_step_types_are_unchanged():
+    assert step_direction({"type": "indicator", "cross": "above"}, BEAR_BAR) == "bullish"
+    assert step_direction({"type": "structure", "side": "bearish"}, BULL_BAR) == "bearish"
+    assert step_direction({"type": "candle", "shape": "hammer"}, BEAR_BAR) == "bullish"
+    assert step_direction({"type": "candle", "shape": "doji"}, BULL_BAR) == "neutral"
