@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!--
+    The tab mark is the wordmark's candle, redrawn for 16px.
+
+    The wordmark's version is a 1.25px outline on an 11x18 box; scaled into a
+    favicon that stroke lands on half a device pixel and turns to mush. So the
+    proportions are rebuilt rather than scaled: a heavier stroke, a shorter and
+    wider body, and a wick trimmed to what still reads at tab size.
+
+    Hollow, not filled, because that is the chart's own language for a candle
+    that closed up - the same convention the panel draws.
+  -->
+  <rect width="32" height="32" rx="7" fill="#06110f"/>
+  <g stroke="#7af0ce" stroke-width="3" stroke-linecap="butt">
+    <line x1="16" y1="3" x2="16" y2="29"/>
+    <rect x="9.5" y="11" width="13" height="10" fill="#06110f"/>
+  </g>
+</svg>
