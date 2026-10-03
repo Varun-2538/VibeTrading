@@ -8,6 +8,8 @@ lives in repositories.history_repository; everything here is testable without
 a database.
 """
 import asyncio
+import time
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
@@ -155,3 +157,75 @@ async def fetch_page(
     raise HistoryFetchError(
         f"Gave up on {symbol} {timeframe} from {start_ms} after {MAX_ATTEMPTS} attempts: {last_error}"
     )
+
+
+PAGE_PAUSE_SECONDS = 0.3
+
+
+@dataclass
+class BackfillResult:
+    symbol: str
+    timeframe: str
+    pages: int
+    bars: int
+    error: Optional[str] = None
+
+
+def _default_repo():
+    # Imported lazily so the pure helpers above import without a database.
+    from repositories.history_repository import HistoryRepository
+
+    return HistoryRepository
+
+
+async def backfill(
+    symbol: str,
+    timeframe: str,
+    *,
+    client: Any,
+    now_ms: int,
+    repo: Any = None,
+    fetch=None,
+    sleep=asyncio.sleep,
+) -> BackfillResult:
+    """
+    Bring one series up to the newest closed bar, then trim past its depth.
+
+    Resumes after the newest stored bar, so a restart repeats nothing. Each page
+    is stored as soon as it arrives: a failure part-way keeps every earlier page
+    and reports the error instead of raising, so one bad pair cannot stop the
+    others.
+    """
+    repo = repo or _default_repo()
+    fetch = fetch or fetch_page
+    step = _step(timeframe)
+    floor = depth_start_ms(timeframe, now_ms)
+
+    latest = await repo.latest_time(symbol, timeframe)
+    cursor = floor if latest is None else max(floor, latest + step)
+    newest_closed = now_ms - (now_ms % step) - step
+
+    pages = 0
+    bars = 0
+    error: Optional[str] = None
+    while cursor <= newest_closed:
+        try:
+            candles = await fetch(client, symbol, timeframe, cursor, now_ms=now_ms, sleep=sleep)
+        except HistoryFetchError as exc:
+            error = str(exc)
+            break
+        pages += 1
+        if not candles:
+            break
+        bars += await repo.upsert(symbol, timeframe, candles)
+        advanced_to = candles[-1]["time"] + step
+        if advanced_to <= cursor:
+            break  # the exchange handed back what we already asked past
+        cursor = advanced_to
+        if cursor <= newest_closed:
+            await sleep(PAGE_PAUSE_SECONDS)
+
+    if HISTORY_DEPTH_DAYS[timeframe] is not None:
+        await repo.trim(symbol, timeframe, floor)
+
+    return BackfillResult(symbol.upper(), timeframe, pages, bars, error)
