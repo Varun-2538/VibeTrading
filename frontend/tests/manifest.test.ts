@@ -19,6 +19,14 @@ describe("web app manifest", () => {
     expect(m.background_color).toBe("#040609")
   })
 
+  it("declares an explicit scope and id", () => {
+    // Left to inference, engines disagree about what counts as leaving the
+    // app - and a departure is what makes the Android app show the browser's
+    // close button and URL bar over itself.
+    expect(m.scope).toBe("/")
+    expect(m.id).toBe("/")
+  })
+
   it("lists 192, 512 and a maskable 512 icon", () => {
     const sizes = m.icons?.map((i) => `${i.sizes}:${i.purpose ?? "any"}`)
     expect(sizes).toEqual(["192x192:any", "512x512:any", "512x512:maskable"])
