@@ -96,3 +96,22 @@ def test_the_prompt_names_every_shape():
 
     for shape in SHAPES:
         assert shape in SYSTEM_PROMPT
+
+
+def test_structure_steps_are_accepted_and_described():
+    data = json.loads(json.dumps(GOOD))
+    data["params"]["steps"] = [
+        {"type": "structure", "event": "sweep", "side": "bullish"},
+        {"type": "candle", "shape": "bullish_engulfing"},
+    ]
+    rule = parse_draft(json.dumps(data), None, "1h")
+    assert rule.params.steps[0].type == "structure"
+    from analysis.sequence import describe_steps
+    assert describe_steps(rule.params.model_dump()["steps"]) == "bullish sweep, then bullish_engulfing"
+
+
+def test_unknown_structure_event_is_rejected():
+    data = json.loads(json.dumps(GOOD))
+    data["params"]["steps"] = [{"type": "structure", "event": "order_block", "side": "bullish"}]
+    with pytest.raises(RuleParseError, match="event"):
+        parse_draft(json.dumps(data), None, "1h")

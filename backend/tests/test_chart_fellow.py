@@ -183,3 +183,39 @@ def test_ground_reports_how_many_were_dropped():
     }])
     _, dropped = ground(a, SCENE)
     assert dropped == 2
+
+
+# --- structure --------------------------------------------------------------
+
+
+def _with_structure():
+    scene = json.loads(json.dumps(SCENE))
+    scene["structure"] = {
+        "trend": "uptrend",
+        "swings": [{"label": "HL", "t": T0 + 80 * H, "price": 60_100.0}, {"label": "HH", "t": T0 + 90 * H, "price": 62_800.0}],
+        "events": [{"event": "sweep", "side": "bullish", "level": 60_050.0, "t": T0 + 96 * H}],
+        "pullback": {"side": "bullish", "retrace": 0.45, "holds": {"label": "HL", "t": T0 + 80 * H, "price": 60_100.0}},
+    }
+    return scene
+
+
+def test_structure_event_level_and_bar_are_markable():
+    scene = _with_structure()
+    a = parse_answer(answer_with([
+        {"type": "hline", "price": 60_050.0, "label": "swept"},
+        {"type": "bar", "time": T0 + 96 * H, "text": "sweep"},
+    ], kind="structure", label="liquidity sweep"), scene)
+    assert len(a.findings[0].marks) == 2
+    assert a.findings[0].grounded
+
+
+def test_swings_can_be_joined_by_a_polyline():
+    scene = _with_structure()
+    pts = [{"time": T0 + 80 * H, "price": 60_100.0}, {"time": T0 + 90 * H, "price": 62_800.0}]
+    a = parse_answer(answer_with([{"type": "polyline", "points": pts, "label": "HL-HH"}], kind="structure"), scene)
+    assert len(a.findings[0].marks) == 1
+
+
+def test_a_sweep_the_scene_does_not_list_is_still_refused():
+    a = parse_answer(answer_with([{"type": "hline", "price": 60_050.0, "label": "swept"}], kind="structure"), SCENE)
+    assert a.findings[0].marks == []

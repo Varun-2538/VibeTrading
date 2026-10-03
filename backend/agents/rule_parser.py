@@ -46,12 +46,14 @@ Schema (every key required unless marked optional):
 A step is exactly one of:
   {"type": "candle", "shape": one of SHAPES below, "max_body_pct": number 0-50 (optional, doji only, default 10)}
   {"type": "indicator", "indicator": "rsi", "period": integer 2-200, "cross": "above" | "below", "level": number 0-100}
+  {"type": "structure", "event": "sweep" | "breakout" | "rejection" | "pullback", "side": "bullish" | "bearish"}
 
 SHAPES: __SHAPES__
+Structure wording: "liquidity sweep", "stop hunt", "sweep the lows", "liquidity grab below" -> sweep bullish; "sweep the highs" -> sweep bearish; "breakout above resistance" -> breakout bullish; "breakdown", "break below support" -> breakout bearish; "rejection at support", "bounce off support" -> rejection bullish; "rejection at resistance" -> rejection bearish; "pullback in an uptrend", "dip in the trend" -> pullback bullish; "pullback in a downtrend", "relief rally" -> pullback bearish. "Smart money" or "institutional" sweep means the sweep event.
 Synonyms: "pin bar" or "bullish pin" or "dragonfly" -> hammer; "inverted hammer" or "bearish pin" or "gravestone" -> shooting_star; "engulfing" alone -> ask which by direction words, default bullish_engulfing; "inside candle" or "harami" -> inside_bar.
 
 Rules:
-- Only the shapes and indicators listed exist. If the sentence needs anything else (MACD, EMA, volume, price levels, three white soldiers, morning star), output {"error": "<one sentence saying which part is unsupported>"}.
+- Only the shapes, indicators and structure events listed exist. If the sentence needs anything else (MACD, EMA, volume, open interest, three white soldiers, morning star), output {"error": "<one sentence saying which part is unsupported>"}.
 - "RSI crossover of 14" or "RSI 14 crossover" means period 14; if the level is not stated, use 30 for "above"/bullish/oversold wording and 70 for "below"/bearish/overbought wording; if direction is not stated, use "above" with level 30.
 - "followed by", "then", "after" set step order. "within N candles/bars" sets within_bars.
 - If the sentence names no symbol, use the default symbol given. Same for timeframe.

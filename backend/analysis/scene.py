@@ -20,6 +20,7 @@ from analysis import candles as candle_shapes
 from analysis import indicators
 from analysis.levels import detect_levels
 from analysis.patterns import detect_double_patterns
+from analysis import structure as market_structure
 
 # List caps. Raising these costs tokens on every question.
 MAX_LEVELS_PER_SIDE = 5
@@ -27,6 +28,8 @@ MAX_PATTERNS = 4
 MAX_SHAPES = 6
 MAX_CROSSES = 3
 LAST_BARS = 5
+MAX_SWINGS = 6
+MAX_EVENTS = 6
 
 # How far back an indicator cross still counts as "recent", in bars.
 RECENT_BARS = 12
@@ -49,7 +52,10 @@ VOCABULARY = {
     "patterns": ["W (double bottom)", "M (double top)"],
     "candles": list(candle_shapes.SHAPES),
     "indicators": ["rsi", "ema", "macd"],
-    "structure": [],
+    "structure": [
+        "trend (HH/HL, LH/LL swings)",
+        "breakout", "liquidity sweep", "rejection", "pullback",
+    ],
 }
 
 
@@ -189,6 +195,34 @@ def _indicators(candles: Sequence[Dict[str, Any]], places: int) -> Dict[str, Any
     return out
 
 
+def _structure(candles: Sequence[Dict[str, Any]], places: int) -> Dict[str, Any]:
+    """Swings, the trend they imply, recent level events, and any pullback now."""
+    sw = market_structure.swings(candles)
+    pts = [
+        {"label": p["label"], "t": p["t"], "price": _r(p["price"], places)}
+        for p in sw["points"][-MAX_SWINGS:]
+    ]
+    events = [
+        {"event": e["event"], "side": e["side"], "level": _r(e["level"], places), "t": e["t"]}
+        for e in market_structure.recent_events(candles, RECENT_BARS)[:MAX_EVENTS]
+    ]
+    pb = market_structure.pullback(candles, sw)
+    return {
+        "trend": sw["trend"],
+        "swings": pts,
+        "events": events,
+        "pullback": (
+            {
+                "side": pb["side"],
+                "retrace": pb["retrace"],
+                "holds": {"label": pb["holds"]["label"], "price": _r(pb["holds"]["price"], places), "t": pb["holds"]["t"]},
+            }
+            if pb
+            else None
+        ),
+    }
+
+
 def empty_scene(symbol: str, timeframe: str) -> Dict[str, Any]:
     """A valid scene for a window with nothing in it."""
     return {
@@ -259,7 +293,7 @@ def build_scene(
             "shapes": _shapes(candles),
         },
         "indicators": _indicators(candles, places),
-        "structure": {},
+        "structure": _structure(candles, places),
         "vocabulary": VOCABULARY,
         "unsupported": list(UNSUPPORTED),
     }

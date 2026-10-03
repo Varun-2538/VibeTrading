@@ -196,6 +196,8 @@ def _match_sequence(
     last = steps[-1]
     if last.get("type") == "indicator":
         direction = "bullish" if last.get("cross") == "above" else "bearish"
+    elif last.get("type") == "structure":
+        direction = last.get("side", "neutral")
     else:
         direction = SHAPE_BIAS.get(last.get("shape", ""), "neutral")
 
