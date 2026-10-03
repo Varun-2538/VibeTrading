@@ -23,4 +23,15 @@ describe("middleware on the app host", () => {
       expect(res.headers.get(REWRITE_HEADER)).toBeNull()
     },
   )
+
+  // The panel links to these. Rewritten onto /app they 404; sent to another
+  // host they open with the browser's own close button and URL bar over the
+  // app. Served as themselves they stay inside the Trusted Web Activity.
+  it.each(["/legal/risk", "/legal/privacy", "/legal/terms", "/architecture"])(
+    "serves %s on the app origin without rewriting",
+    (path) => {
+      const res = middleware(onAppHost(path))
+      expect(res.headers.get(REWRITE_HEADER)).toBeNull()
+    },
+  )
 })
