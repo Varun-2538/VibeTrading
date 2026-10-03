@@ -58,3 +58,21 @@ def test_missing_bars_counts_holes_between_first_and_last():
     assert hs.missing_bars(0, 9 * step, 10, "15m") == 0
     assert hs.missing_bars(0, 9 * step, 7, "15m") == 3
     assert hs.missing_bars(0, 0, 0, "15m") == 0
+
+
+from datetime import datetime, timezone
+
+from repositories import history_repository as hr
+
+
+def test_row_round_trip_keeps_ms_and_utc():
+    candle = {"time": 1_700_000_000_000, "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 9.0}
+    row = hr.to_row("btcusdt", "1h", candle)
+    assert row[0] == "BTCUSDT" and row[1] == "1h"
+    assert row[2] == datetime(2023, 11, 14, 22, 13, 20, tzinfo=timezone.utc)
+    record = {"time": row[2], "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 9.0}
+    assert hr.from_record(record) == candle
+
+
+def test_ms_conversion_is_exact_for_whole_seconds():
+    assert hr.dt_to_ms(hr.ms_to_dt(1_780_000_000_000)) == 1_780_000_000_000
