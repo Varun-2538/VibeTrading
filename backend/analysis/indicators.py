@@ -13,7 +13,7 @@ import numpy as np
 
 # Indicators the rule vocabulary knows. Adding one is: a function here, a name
 # in this tuple, and a case in analysis/sequence.py.
-INDICATORS = ("rsi",)
+INDICATORS = ("rsi", "ema", "macd", "stochastic", "bollinger", "vwap", "volume", "atr")
 
 
 def rsi(prices: np.ndarray, period: int = 14) -> np.ndarray:
@@ -108,4 +108,180 @@ def crosses(series: np.ndarray, level: float, direction: str) -> np.ndarray:
         else:
             raise ValueError(f"direction must be 'above' or 'below', got {direction!r}")
     out[1:] = hit & ~np.isnan(prev) & ~np.isnan(curr)
+    return out
+
+
+def sma(values: np.ndarray, period: int) -> np.ndarray:
+    """Simple moving average, NaN until there are `period` values."""
+    values = np.asarray(values, dtype=float)
+    out = np.full(values.shape, np.nan)
+    if period <= 0 or values.size < period:
+        return out
+    window = np.convolve(values, np.ones(period) / period, mode="valid")
+    out[period - 1:] = window
+    return out
+
+
+def stochastic(
+    highs: np.ndarray,
+    lows: np.ndarray,
+    closes: np.ndarray,
+    k_period: int = 14,
+    k_smooth: int = 3,
+    d_period: int = 3,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Smoothed %K and its %D average.
+
+    %K is where the close sits inside the highest high and lowest low of the
+    last k_period bars. A range of zero has no position to report, so it stays
+    NaN rather than being called 50 or 100.
+    """
+    highs = np.asarray(highs, dtype=float)
+    lows = np.asarray(lows, dtype=float)
+    closes = np.asarray(closes, dtype=float)
+    raw = np.full(closes.shape, np.nan)
+
+    for i in range(k_period - 1, closes.size):
+        window = slice(i + 1 - k_period, i + 1)
+        top, bottom = highs[window].max(), lows[window].min()
+        if top > bottom:
+            raw[i] = (closes[i] - bottom) / (top - bottom) * 100.0
+
+    k = raw if k_smooth <= 1 else sma(raw, k_smooth)
+    return k, sma(k, d_period)
+
+
+def bollinger(
+    closes: np.ndarray,
+    period: int = 20,
+    std: float = 2.0,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Middle, upper, lower band and bandwidth, as fractions of the middle."""
+    closes = np.asarray(closes, dtype=float)
+    middle = sma(closes, period)
+    deviation = np.full(closes.shape, np.nan)
+    for i in range(period - 1, closes.size):
+        deviation[i] = closes[i + 1 - period: i + 1].std()
+    upper = middle + std * deviation
+    lower = middle - std * deviation
+    with np.errstate(divide="ignore", invalid="ignore"):
+        width = (upper - lower) / middle
+    return middle, upper, lower, width
+
+
+WEEK_MS = 7 * 86_400_000
+DAY_MS = 86_400_000
+# 1970-01-01 was a Thursday, so Monday is four days in.
+WEEK_OFFSET_MS = 4 * DAY_MS
+
+
+def _session(times: np.ndarray, anchor: str) -> np.ndarray:
+    times = np.asarray(times, dtype=np.int64)
+    if anchor == "week":
+        return (times + WEEK_OFFSET_MS) // WEEK_MS
+    return times // DAY_MS
+
+
+def vwap(
+    highs: np.ndarray,
+    lows: np.ndarray,
+    closes: np.ndarray,
+    volumes: np.ndarray,
+    times: np.ndarray,
+    anchor: str = "day",
+) -> np.ndarray:
+    """
+    Volume-weighted average price since the session opened.
+
+    Crypto never closes, so "the session" is a clock convention: the UTC day,
+    or the week beginning Monday - the same anchors charting tools default to.
+    Typical price (high, low, close averaged) is the classic weight.
+    """
+    highs = np.asarray(highs, dtype=float)
+    lows = np.asarray(lows, dtype=float)
+    closes = np.asarray(closes, dtype=float)
+    volumes = np.asarray(volumes, dtype=float)
+    typical = (highs + lows + closes) / 3.0
+    sessions = _session(times, anchor)
+
+    out = np.full(closes.shape, np.nan)
+    price_volume = 0.0
+    volume = 0.0
+    current = None
+    for i in range(closes.size):
+        if sessions[i] != current:
+            current, price_volume, volume = sessions[i], 0.0, 0.0
+        price_volume += typical[i] * volumes[i]
+        volume += volumes[i]
+        out[i] = price_volume / volume if volume > 0 else typical[i]
+    return out
+
+
+def volume_ratio(volumes: np.ndarray, period: int = 20) -> np.ndarray:
+    """This bar's volume over the average of the `period` bars before it."""
+    volumes = np.asarray(volumes, dtype=float)
+    average = sma(volumes, period)
+    out = np.full(volumes.shape, np.nan)
+    if volumes.size > period:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            out[period:] = volumes[period:] / average[period - 1: -1]
+        out[np.isinf(out)] = np.nan
+    return out
+
+
+def true_range(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray) -> np.ndarray:
+    """True range, NaN on the first bar - it has no previous close."""
+    highs = np.asarray(highs, dtype=float)
+    lows = np.asarray(lows, dtype=float)
+    closes = np.asarray(closes, dtype=float)
+    out = np.full(highs.shape, np.nan)
+    if highs.size < 2:
+        return out
+    previous = closes[:-1]
+    out[1:] = np.maximum(
+        highs[1:] - lows[1:],
+        np.maximum(np.abs(highs[1:] - previous), np.abs(lows[1:] - previous)),
+    )
+    return out
+
+
+def atr_series(
+    highs: np.ndarray,
+    lows: np.ndarray,
+    closes: np.ndarray,
+    period: int = 14,
+) -> np.ndarray:
+    """
+    Average true range of the bars *before* each bar.
+
+    Excluding the current bar is what lets a threshold ask "is this bar bigger
+    than what came before it" without the bar inflating its own benchmark.
+    """
+    ranges = true_range(highs, lows, closes)
+    average = sma(ranges, period)
+    out = np.full(ranges.shape, np.nan)
+    if ranges.size > 1:
+        out[1:] = average[:-1]
+    return out
+
+
+def crosses_series(a: np.ndarray, b: np.ndarray, direction: str) -> np.ndarray:
+    """
+    True on the bar where `a` crossed `b`.
+
+    Strict on both sides: it must have been on the other side before and be
+    beyond it now, so a series resting exactly on the other never signals.
+    """
+    a = np.asarray(a, dtype=float)
+    b = np.asarray(b, dtype=float)
+    out = np.zeros(a.shape, dtype=bool)
+    if a.size < 2:
+        return out
+    before, now = a[:-1] - b[:-1], a[1:] - b[1:]
+    valid = ~(np.isnan(before) | np.isnan(now))
+    if direction == "above":
+        out[1:] = valid & (before <= 0) & (now > 0)
+    else:
+        out[1:] = valid & (before >= 0) & (now < 0)
     return out

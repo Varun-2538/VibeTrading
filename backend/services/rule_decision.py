@@ -199,6 +199,34 @@ def liquidity_candidates(
     return out
 
 
+# Steps that say which way they point. Everything else is read from the bar.
+CROSSING_STEPS = ("indicator", "ema_cross", "macd_cross", "stoch_cross", "bollinger", "vwap_cross")
+
+
+def step_direction(step: Dict[str, Any], candle: Dict[str, Any]) -> str:
+    """
+    Which way a sequence points, judged by its final step.
+
+    A crossing knows its own direction. A squeeze, a volume spike or a range
+    expansion does not - they say "something is happening", not which way - so
+    they take the colour of the bar they fired on.
+    """
+    kind = step.get("type", "candle")
+    if kind in CROSSING_STEPS:
+        return "bullish" if step.get("cross", "above") == "above" else "bearish"
+    if kind == "structure":
+        return step.get("side", "neutral")
+    if kind == "candle":
+        return SHAPE_BIAS.get(step.get("shape", ""), "neutral")
+
+    close, opened = float(candle["close"]), float(candle["open"])
+    if close > opened:
+        return "bullish"
+    if close < opened:
+        return "bearish"
+    return "neutral"
+
+
 def sequence_candidates(params: Dict[str, Any], candles: Sequence[Dict[str, Any]]) -> List[Candidate]:
     """
     Identity is the bar time of every matched step. Direction comes from the
@@ -211,13 +239,7 @@ def sequence_candidates(params: Dict[str, Any], candles: Sequence[Dict[str, Any]
         return []
 
     times = [int(candles[i]["time"]) for i in picked]
-    last = steps[-1]
-    if last.get("type") == "indicator":
-        direction = "bullish" if last.get("cross") == "above" else "bearish"
-    elif last.get("type") == "structure":
-        direction = last.get("side", "neutral")
-    else:
-        direction = SHAPE_BIAS.get(last.get("shape", ""), "neutral")
+    direction = step_direction(steps[-1], candles[picked[-1]])
 
     evidence = {
         "summary": describe_steps(steps),
