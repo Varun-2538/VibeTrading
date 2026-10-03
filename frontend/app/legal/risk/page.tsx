@@ -4,7 +4,7 @@ import { CONTACT_EMAIL } from "@/lib/contact"
 export const metadata: Metadata = {
   title: "Risk disclosure — VibeTrading",
   description:
-    "VibeTrading performs technical analysis on public market data. It is not investment advice, it executes no trades, and it never touches your exchange account.",
+    "VibeTrading performs technical analysis on public market data and can alert you when conditions you set are met. It is not investment advice, it executes no trades, and it never touches your exchange account.",
 }
 
 export default function RiskPage() {
@@ -12,17 +12,18 @@ export default function RiskPage() {
     <>
       <h1>Risk disclosure</h1>
       <p className="lede">
-        VibeTrading is an analysis tool. It is not a broker, not an adviser, and
-        not a signal service. Read this page before you act on anything the app
-        shows you.
+        VibeTrading is an analysis tool. It can watch for conditions you define
+        and tell you when they occur, but it is not a broker, not an adviser,
+        and it decides nothing for you. Read this page before you act on
+        anything the app shows you.
       </p>
 
       <h2>This is not financial advice</h2>
       <p>
         Nothing produced by VibeTrading — the levels, the W and M patterns, the
-        confidence percentages, the measured-move targets, or anything the chat
-        assistant writes — is investment advice, a recommendation, or a
-        solicitation to buy or sell anything. It is arithmetic applied to public
+        confidence percentages, the measured-move targets, the alerts your
+        rules fire, or anything the chat assistant writes — is investment
+        advice, a recommendation, or a solicitation to buy or sell anything. It is arithmetic applied to public
         price history, presented for you to interpret. No one at VibeTrading
         knows your finances, your risk tolerance, or your goals, and the app
         does not take them into account.
@@ -47,6 +48,36 @@ export default function RiskPage() {
         pattern is, how symmetric the legs are. It is not a probability that a
         trade will work. A 90% double bottom is a tidy-looking double bottom,
         nothing more.
+      </p>
+
+      <h2>Strategy alerts are notifications, not instructions</h2>
+      <p>
+        You can arm a rule — a pattern shape, or price meeting a support or
+        resistance level — and the app will tell you when that condition is met.
+        An alert means exactly one thing: the arithmetic described above matched
+        on a candle that has closed. It is not a view on whether to trade, it
+        carries no opinion about your position or your risk, and it is not a
+        signal to act.
+      </p>
+      <p>
+        Alerts are deliberately late. A rule only fires on closed candles, and
+        by default only once a pattern is confirmed and has survived a further
+        candle — so by the time you hear from us, some of the move has already
+        happened. That is the trade we chose: fewer alerts for setups that
+        vanish, at the cost of a worse entry.
+      </p>
+      <p>
+        <strong>Do not use alerts as risk management.</strong> They are not a
+        stop-loss and not a substitute for one. Delivery is best effort and is
+        not guaranteed: our server may be down or restarting, market data may be
+        cached or stale, an hourly rule may not notice for several minutes, and
+        a rule may simply never fire. If you would be harmed by an alert
+        arriving late or not at all, do not depend on it — put a real order on
+        your exchange instead.
+      </p>
+      <p>
+        Rules are tied to the browser that created them, not to an account.
+        Clearing your site data loses them.
       </p>
 
       <h2>Chart patterns are not predictions</h2>

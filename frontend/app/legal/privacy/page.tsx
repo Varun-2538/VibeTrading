@@ -15,7 +15,7 @@ export default function PrivacyPage() {
         VibeTrading has no accounts, no logins and no passwords. We hold almost
         nothing about you, and this page says exactly what "almost" means.
       </p>
-      <p className="meta">Last updated 12 August 2026.</p>
+      <p className="meta">Last updated 10 September 2026.</p>
 
       <h2>What we do not collect</h2>
       <p>
@@ -51,10 +51,22 @@ export default function PrivacyPage() {
 
       <h2>What we store</h2>
       <p>
-        Our database holds market data, not user data: candles fetched from the
-        public market API, and chart annotations recorded against a trading
-        symbol. None of it is attached to a person, because we have no concept
-        of a person — there are no accounts to attach it to.
+        Mostly market data: candles fetched from the public market API, and
+        chart annotations recorded against a trading symbol. None of it is
+        attached to a person, because we have no concept of a person — there are
+        no accounts to attach it to.
+      </p>
+      <p>
+        The exception is strategy rules. If you arm one, we store the rule you
+        built and the history of times it fired, on our server, so it can keep
+        being evaluated while your browser is closed. Each rule is grouped under
+        a random identifier your browser generates and keeps in local storage.
+        That identifier is not derived from you or your device and is not linked
+        to anything else we hold — it only separates one browser's rules from
+        another's. Anyone with the identifier can see and change the rules under
+        it, so it is a convenience, not a security boundary. Clearing your site
+        data discards it, at which point the rules are no longer reachable from
+        the app.
       </p>
 
       <h2>Who else is involved</h2>
@@ -86,9 +98,11 @@ export default function PrivacyPage() {
       <h2>How long things are kept</h2>
       <p>
         Market data and annotations are kept for as long as they are useful for
-        analysis. Server logs are kept for a short operational period and then
-        rotate away. Because we do not link anything to an identity, there is no
-        personal profile accumulating over time.
+        analysis. Strategy rules and their fire history are kept until you
+        delete the rule, which also deletes its history. Server logs are kept
+        for a short operational period and then rotate away. Because we do not
+        link anything to an identity, there is no personal profile accumulating
+        over time.
       </p>
 
       <h2>Your rights</h2>
