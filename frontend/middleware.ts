@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
+import { isPwaPath } from "@/lib/pwa-paths"
+
 /**
  * One deployment serves two hosts:
  *   vibetrading.club      -> the landing page
@@ -11,11 +13,11 @@ import type { NextRequest } from "next/server"
  * path so the same page is never reachable at two URLs.
  */
 export function middleware(request: NextRequest) {
-  const host = request.headers.get("host") ?? ""
+  const host = request.headers.get("host") ?? request.nextUrl.hostname ?? ""
   const isAppHost = host.split(":")[0].startsWith("app.")
   const { pathname } = request.nextUrl
 
-  if (!isAppHost) return NextResponse.next()
+  if (!isAppHost || isPwaPath(pathname)) return NextResponse.next()
 
   if (pathname === "/app" || pathname.startsWith("/app/")) {
     const url = request.nextUrl.clone()
@@ -29,6 +31,9 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Skip static assets and the API namespace.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
+  // Skip static assets, the API namespace, and the files a Trusted Web Activity
+  // reads from the origin (manifest, service worker, offline page, asset links).
+  matcher: [
+    "/((?!_next/static|_next/image|manifest\\.webmanifest|sw\\.js|offline$|\\.well-known/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+  ],
 }
