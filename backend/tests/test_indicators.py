@@ -227,3 +227,23 @@ def test_crosses_series_is_false_wherever_an_input_is_nan():
 
 def test_indicator_names_cover_the_new_triggers():
     assert ind.INDICATORS == ("rsi", "ema", "macd", "stochastic", "bollinger", "vwap", "volume", "atr")
+
+
+def test_rolling_min_tracks_the_window_and_ignores_nan():
+    values = np.array([np.nan, 5.0, 3.0, 4.0, 9.0, 9.0])
+    out = ind.rolling_min(values, 3)
+    assert np.isnan(out[0])
+    assert list(out[1:]) == [5.0, 3.0, 3.0, 3.0, 4.0]
+
+
+def test_rolling_min_matches_the_naive_version():
+    rng = np.random.default_rng(3)
+    values = rng.normal(size=200)
+    values[::17] = np.nan
+    fast = ind.rolling_min(values, 20)
+    for i in range(values.size):
+        window = values[max(0, i - 19): i + 1]
+        if np.isnan(window).all():
+            assert np.isnan(fast[i])
+        else:
+            assert fast[i] == pytest.approx(np.nanmin(window))

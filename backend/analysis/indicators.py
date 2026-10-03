@@ -7,7 +7,7 @@ drifts. Every function returns a full series aligned to the input, with the
 warm-up region filled with NaN so a caller cannot mistake "not computed yet"
 for a real value of zero.
 """
-from typing import Tuple
+from typing import List, Tuple
 
 import numpy as np
 
@@ -263,6 +263,31 @@ def atr_series(
     out = np.full(ranges.shape, np.nan)
     if ranges.size > 1:
         out[1:] = average[:-1]
+    return out
+
+
+def rolling_min(values: np.ndarray, window: int) -> np.ndarray:
+    """
+    Smallest value in the `window` ending at each position, ignoring NaN.
+
+    One pass, with a monotonic deque of candidate indices: the naive version
+    rescans the window at every bar, and a backtest calls this once per
+    replayed bar, so the difference is a minute against an hour.
+    """
+    values = np.asarray(values, dtype=float)
+    out = np.full(values.shape, np.nan)
+    candidates: List[int] = []  # indices, their values increasing
+
+    for i in range(values.size):
+        while candidates and candidates[0] <= i - window:
+            candidates.pop(0)
+        value = values[i]
+        if not np.isnan(value):
+            while candidates and values[candidates[-1]] >= value:
+                candidates.pop()
+            candidates.append(i)
+        if candidates:
+            out[i] = values[candidates[0]]
     return out
 
 
