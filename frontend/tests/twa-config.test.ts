@@ -41,6 +41,16 @@ describe("Android wrapper configuration", () => {
     expect(gradle).toContain(`applicationId "${twa.packageId}"`)
   })
 
+  it("uses one full app name, in both files and in both labels", () => {
+    // appName labels the application (Settings, permission dialogs);
+    // launcherName labels the home screen icon. Bubblewrap keeps them separate
+    // so the icon can be short - here they are deliberately the same.
+    expect(twa.name).toBe("VibeTrading Club")
+    expect(twa.launcherName).toBe("VibeTrading Club")
+    expect(gradleValue("name")).toBe(twa.name)
+    expect(gradleValue("launcherName")).toBe(twa.launcherName)
+  })
+
   it("declares a minimum SDK Play will accept", () => {
     // Play's installer check rejects the upload below 24, and bubblewrap
     // generates 21 by default - so this drifts back every time the project is

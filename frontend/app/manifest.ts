@@ -7,8 +7,9 @@ import type { MetadataRoute } from "next"
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "VibeTrading",
-    short_name: "VibeTrading",
+    name: "VibeTrading Club",
+    // Matches `name`: the full name is wanted even where it may be clipped.
+    short_name: "VibeTrading Club",
     description:
       "Liquidity levels and double-bottom / double-top patterns, scoped to the candles you are looking at.",
     // A stable identity for the installed app, and an explicit scope. Without

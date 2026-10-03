@@ -10,8 +10,9 @@ describe("web app manifest", () => {
   const m = manifest()
 
   it("is installable as a standalone portrait app", () => {
-    expect(m.name).toBe("VibeTrading")
-    expect(m.short_name).toBe("VibeTrading")
+    // One full name everywhere, matching the Android app's label.
+    expect(m.name).toBe("VibeTrading Club")
+    expect(m.short_name).toBe("VibeTrading Club")
     expect(m.start_url).toBe("/")
     expect(m.display).toBe("standalone")
     expect(m.orientation).toBe("portrait")
