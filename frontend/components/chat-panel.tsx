@@ -139,17 +139,17 @@ export default function ChatPanel({ onClose, currentSymbol, onSymbolChange, onMa
   return (
     <div className="flex h-full flex-col bg-card">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-primary" />
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-3 lg:px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <Sparkles className="h-4 w-4 shrink-0 text-primary" />
           <h2 className="text-sm font-semibold text-foreground">AI Assistant</h2>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-2 lg:gap-3">
           <div className="flex items-center gap-2">
             <div className={`h-2 w-2 rounded-full ${isLoading ? "bg-yellow-500 animate-pulse" : "bg-green-500"}`} />
             <span className="text-xs text-muted-foreground">{isLoading ? "Thinking..." : "Online"}</span>
           </div>
-          <Button onClick={onClose} size="icon" variant="ghost" className="h-7 w-7">
+          <Button onClick={onClose} size="icon" variant="ghost" className="h-9 w-9 lg:h-7 lg:w-7">
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -157,13 +157,13 @@ export default function ChatPanel({ onClose, currentSymbol, onSymbolChange, onMa
 
       {/* Messages */}
       <div className="flex-1 overflow-hidden">
-        <ScrollArea className="h-full px-4 py-4">
+        <ScrollArea className="h-full px-3 py-4 lg:px-4">
           <div className="space-y-4">
             {messages.map((message) => (
               <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[85%] ${message.role === "user" ? "" : "w-full"}`}>
+                <div className={`max-w-[90%] sm:max-w-[85%] ${message.role === "user" ? "" : "w-full"}`}>
                   <div
-                    className={`rounded-lg px-4 py-2.5 ${
+                    className={`rounded-lg px-3 py-2.5 lg:px-4 ${
                       message.role === "user"
                         ? "bg-primary text-primary-foreground"
                         : "bg-secondary text-secondary-foreground"
@@ -181,7 +181,7 @@ export default function ChatPanel({ onClose, currentSymbol, onSymbolChange, onMa
                       <Button
                         size="sm"
                         onClick={() => handleAcceptLevels(message.id)}
-                        className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                        className="h-9 flex-1 bg-green-600 text-white hover:bg-green-700"
                       >
                         <Check className="h-4 w-4 mr-1" />
                         Mark on Chart
@@ -190,7 +190,7 @@ export default function ChatPanel({ onClose, currentSymbol, onSymbolChange, onMa
                         size="sm"
                         variant="outline"
                         onClick={() => handleRejectLevels(message.id)}
-                        className="flex-1 border-red-500/50 text-red-500 hover:bg-red-500/10"
+                        className="h-9 flex-1 border-red-500/50 text-red-500 hover:bg-red-500/10"
                       >
                         <XIcon className="h-4 w-4 mr-1" />
                         Dismiss
@@ -212,7 +212,7 @@ export default function ChatPanel({ onClose, currentSymbol, onSymbolChange, onMa
       </div>
 
       {/* Input Area */}
-      <div className="border-t border-border p-4">
+      <div className="shrink-0 border-t border-border p-3 lg:p-4">
         <div className="flex gap-2">
           <Input
             value={input}
@@ -222,7 +222,7 @@ export default function ChatPanel({ onClose, currentSymbol, onSymbolChange, onMa
             className="flex-1 bg-secondary border-border"
             disabled={isLoading}
           />
-          <Button onClick={handleSend} size="icon" disabled={isLoading || !input.trim()}>
+          <Button onClick={handleSend} size="icon" className="h-9 w-9 shrink-0" disabled={isLoading || !input.trim()}>
             {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </Button>
         </div>

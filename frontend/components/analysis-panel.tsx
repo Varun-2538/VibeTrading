@@ -1,16 +1,17 @@
 export default function AnalysisPanel() {
   return (
-    <div className="h-full w-full bg-card">
+    <div className="flex h-full w-full flex-col bg-card">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+      <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-3 lg:px-4">
         <h2 className="text-sm font-semibold text-foreground">Analysis Panel</h2>
         <span className="text-xs text-muted-foreground">Coming Soon</span>
       </div>
 
-      {/* Empty State */}
-      <div className="flex h-[calc(100%-57px)] items-center justify-center">
+      {/* Empty state. Flex rather than a hard-coded header height, which was
+          only ever right at one type size. */}
+      <div className="flex min-h-0 flex-1 items-center justify-center px-6 py-6">
         <div className="text-center">
-          <div className="mx-auto mb-4 h-16 w-16 rounded-full bg-secondary flex items-center justify-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
             <svg className="h-8 w-8 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
@@ -20,8 +21,8 @@ export default function AnalysisPanel() {
               />
             </svg>
           </div>
-          <h3 className="text-sm font-medium text-foreground mb-1">Empty Panel</h3>
-          <p className="text-xs text-muted-foreground max-w-xs">
+          <h3 className="mb-1 text-sm font-medium text-foreground">Empty Panel</h3>
+          <p className="mx-auto max-w-xs text-xs leading-relaxed text-muted-foreground">
             This panel is reserved for future features like technical indicators, market depth, or order book.
           </p>
         </div>
