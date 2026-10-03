@@ -79,3 +79,20 @@ def test_no_symbol_anywhere_asks_for_one():
 def test_garbage_is_a_friendly_error():
     with pytest.raises(RuleParseError, match="couldn't read"):
         parse_draft("Sure! Here is your rule:", "BTCUSDT", "1h")
+
+
+def test_every_shape_the_detectors_know_is_accepted():
+    from analysis.candles import SHAPES
+
+    for shape in SHAPES:
+        data = json.loads(json.dumps(GOOD))
+        data["params"]["steps"] = [{"type": "candle", "shape": shape}]
+        assert parse_draft(json.dumps(data), None, "1h").params.steps[0].shape == shape
+
+
+def test_the_prompt_names_every_shape():
+    from agents.rule_parser import SYSTEM_PROMPT
+    from analysis.candles import SHAPES
+
+    for shape in SHAPES:
+        assert shape in SYSTEM_PROMPT

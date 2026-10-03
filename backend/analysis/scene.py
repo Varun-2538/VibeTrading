@@ -118,8 +118,7 @@ def _patterns(
 def _shapes(candles: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Newest first, so the cap keeps what a trader would look at first."""
     out: List[Dict[str, Any]] = []
-    for shape in candle_shapes.SHAPES:
-        mask = candle_shapes.shape_mask(candles, shape)
+    for shape, mask in candle_shapes.shape_masks(candles).items():
         for i in np.flatnonzero(mask):
             out.append({"shape": shape, "t": int(candles[i]["time"])})
     out.sort(key=lambda s: s["t"], reverse=True)

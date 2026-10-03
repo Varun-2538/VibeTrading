@@ -16,6 +16,7 @@ from openai import RateLimitError
 from pydantic import ValidationError
 
 from agents.llm import make_llm
+from analysis.candles import SHAPES
 from analysis.sequence import describe_steps
 from models.rule_schemas import RuleCreate
 
@@ -28,7 +29,7 @@ class LLMBusy(Exception):
     """The provider rate-limited us; try again shortly."""
 
 
-SYSTEM_PROMPT = """You convert a trader's sentence into ONE alert rule as JSON. Output JSON only, no prose, no code fences.
+SYSTEM_PROMPT_TEMPLATE = """You convert a trader's sentence into ONE alert rule as JSON. Output JSON only, no prose, no code fences.
 
 Schema (every key required unless marked optional):
 {
@@ -43,16 +44,21 @@ Schema (every key required unless marked optional):
 }
 
 A step is exactly one of:
-  {"type": "candle", "shape": "doji", "max_body_pct": number 0-50 (optional, default 10)}
+  {"type": "candle", "shape": one of SHAPES below, "max_body_pct": number 0-50 (optional, doji only, default 10)}
   {"type": "indicator", "indicator": "rsi", "period": integer 2-200, "cross": "above" | "below", "level": number 0-100}
 
+SHAPES: __SHAPES__
+Synonyms: "pin bar" or "bullish pin" or "dragonfly" -> hammer; "inverted hammer" or "bearish pin" or "gravestone" -> shooting_star; "engulfing" alone -> ask which by direction words, default bullish_engulfing; "inside candle" or "harami" -> inside_bar.
+
 Rules:
-- Only the shapes and indicators listed exist. If the sentence needs anything else (hammer, MACD, EMA, volume, price levels), output {"error": "<one sentence saying which part is unsupported>"}.
+- Only the shapes and indicators listed exist. If the sentence needs anything else (MACD, EMA, volume, price levels, three white soldiers, morning star), output {"error": "<one sentence saying which part is unsupported>"}.
 - "RSI crossover of 14" or "RSI 14 crossover" means period 14; if the level is not stated, use 30 for "above"/bullish/oversold wording and 70 for "below"/bearish/overbought wording; if direction is not stated, use "above" with level 30.
 - "followed by", "then", "after" set step order. "within N candles/bars" sets within_bars.
 - If the sentence names no symbol, use the default symbol given. Same for timeframe.
 - If the sentence is not asking for an alert on a condition, output {"error": "..."}.
 """
+
+SYSTEM_PROMPT = SYSTEM_PROMPT_TEMPLATE.replace("__SHAPES__", ", ".join(SHAPES))
 
 
 def _strip_fences(text: str) -> str:

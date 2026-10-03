@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from analysis.candles import SHAPE_BIAS
 from analysis.levels import detect_levels
 from analysis.patterns import detect_double_patterns
 from analysis.sequence import describe_steps, match_sequence
@@ -196,7 +197,7 @@ def _match_sequence(
     if last.get("type") == "indicator":
         direction = "bullish" if last.get("cross") == "above" else "bearish"
     else:
-        direction = "neutral"
+        direction = SHAPE_BIAS.get(last.get("shape", ""), "neutral")
 
     evidence = {
         "summary": describe_steps(steps),
