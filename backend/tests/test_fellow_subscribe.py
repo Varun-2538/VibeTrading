@@ -190,6 +190,15 @@ def test_level_from_its_line_keeps_that_level_strength():
         "agent": "liquidity", "side": "resistance", "min_strength": "medium",
         "event": "approach", "proximity_pct": 0.3, "lookback": 500,
     }
+    assert "medium or stronger resistance" in sub.summary
+
+
+def test_weak_level_alert_says_any_level():
+    scene = copy.deepcopy(SCENE)
+    scene["levels"]["support"][0]["strength"] = "weak"
+    sub = subscription_for(finding("level", "support", [{"type": "hline", "price": 60_000.0}]), scene)
+    assert sub.draft["params"]["min_strength"] == "weak"
+    assert "near any support" in sub.summary
 
 
 # --- refusals ----------------------------------------------------------------
