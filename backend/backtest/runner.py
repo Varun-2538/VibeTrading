@@ -11,6 +11,7 @@ import asyncio
 import time
 from typing import Any, Dict, Optional
 
+from backtest.metrics import trade_period
 from backtest.replay import first_index, replay_range, tape_key
 from backtest.signals import distinct_setups, signals_from_tape
 from backtest.study import study
@@ -126,7 +127,12 @@ async def _run(job, jobs, history, clock, started, chunk, to_thread) -> Dict[str
             "split_time": int(candles[split]["time"]),
             "tape_cached": cached,
             "replay_seconds": round(replay_seconds, 1),
+            "exit": request.exit.model_dump(),
         },
         "signals": {"fires": len(fires), "setups": len(setups)},
         "study": study(candles, setups, start=start, split=split, end=end, neutral=request.neutral),
+        "trades": {
+            "seen": trade_period(candles, setups, start, split, request.exit, request.neutral, TIMEFRAME_MS[timeframe]),
+            "unseen": trade_period(candles, setups, split, end, request.exit, request.neutral, TIMEFRAME_MS[timeframe]),
+        },
     }
