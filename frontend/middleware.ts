@@ -13,6 +13,8 @@ import { isPwaPath } from "@/lib/pwa-paths"
  * path so the same page is never reachable at two URLs.
  */
 export function middleware(request: NextRequest) {
+  // The Host header is always present in production; the fallback exists so a
+  // NextRequest built from a bare URL (as the tests do) resolves the same host.
   const host = request.headers.get("host") ?? request.nextUrl.hostname ?? ""
   const isAppHost = host.split(":")[0].startsWith("app.")
   const { pathname } = request.nextUrl

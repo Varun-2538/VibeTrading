@@ -7,6 +7,8 @@
  * navigation cannot reach the server. It never caches API responses or chart
  * assets: a stale candle presented as live would be worse than an error.
  */
+// The cached /offline page is refreshed only when this worker's bytes change,
+// so bump the version here whenever app/offline/page.tsx changes.
 const CACHE = "vt-offline-v1"
 const OFFLINE_URL = "/offline"
 

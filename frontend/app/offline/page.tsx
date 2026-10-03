@@ -9,7 +9,9 @@ export const metadata: Metadata = {
  * Served by the service worker when a navigation fails.
  *
  * Styled inline rather than through globals.css: the worker caches only this
- * HTML, so the stylesheet and the fonts are exactly what will not load.
+ * HTML, so the stylesheet and the fonts are exactly what will not load. The
+ * inline <style> below replaces the margin/background reset globals.css
+ * would normally provide.
  */
 export default function OfflinePage() {
   return (
@@ -28,6 +30,7 @@ export default function OfflinePage() {
         fontFamily: "system-ui, sans-serif",
       }}
     >
+      <style>{`html,body{margin:0;background:#040609}`}</style>
       <svg width="40" height="40" viewBox="0 0 32 32" aria-hidden="true">
         <g stroke="#7af0ce" strokeWidth="3">
           <line x1="16" y1="3" x2="16" y2="29" />
