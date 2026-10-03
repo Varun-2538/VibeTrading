@@ -16,7 +16,7 @@ export type Strength = "weak" | "medium" | "strong"
 
 export interface PatternRuleParams {
   agent: "pattern"
-  kinds: ("W" | "M")[]
+  kinds: ("W" | "M" | "HS" | "IHS" | "CUP")[]
   states: PatternState[]
   min_confidence: number
   strictness: Strictness

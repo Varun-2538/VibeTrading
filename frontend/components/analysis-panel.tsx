@@ -55,7 +55,7 @@ interface AnalysisPanelProps {
   timeframe: Timeframe
 }
 
-type PatternKind = "W" | "M"
+type PatternKind = "W" | "M" | "HS" | "IHS" | "CUP"
 
 const FIELD = "h-7 text-xs"
 
@@ -427,6 +427,9 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
                       <SelectItem value="both">W or M</SelectItem>
                       <SelectItem value="W">W (bottom)</SelectItem>
                       <SelectItem value="M">M (top)</SelectItem>
+                      <SelectItem value="HS">Head &amp; shoulders</SelectItem>
+                      <SelectItem value="IHS">Inverse H&amp;S</SelectItem>
+                      <SelectItem value="CUP">Cup &amp; handle</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
