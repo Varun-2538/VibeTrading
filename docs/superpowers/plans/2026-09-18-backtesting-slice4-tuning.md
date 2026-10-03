@@ -223,7 +223,8 @@ def test_progress_is_reported_for_every_setting():
 
 
 def test_a_grid_where_nothing_reaches_the_minimum_says_so():
-    result = tuned(doji_series(500), DOJI, 400)
+    # 62 evaluated bars hold about a dozen dojis - nowhere near MIN_TRADES.
+    result = tuned(doji_series(300), DOJI, 120)
     assert result["qualified"] is False
     assert result["chosen"]["max_bars"] in (10, 20)
 
