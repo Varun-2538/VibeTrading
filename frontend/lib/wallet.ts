@@ -36,6 +36,23 @@ export function buildConnectors(projectId: string | undefined): CreateConnectorF
   return connectors
 }
 
+/**
+ * The connector to start with when the user clicks "Connect".
+ *
+ * The injected connector is only useful when there is actually an injected
+ * provider - on a phone there is none, and wagmi would report "provider not
+ * found" for a button that looked perfectly clickable. So it is chosen only when
+ * the page has seen window.ethereum; otherwise WalletConnect, whose modal
+ * deep-links to whatever wallet app is installed.
+ */
+export function pickConnector<T extends { id: string }>(
+  connectors: readonly T[],
+  hasInjectedProvider: boolean,
+): T | undefined {
+  const byId = (id: string) => connectors.find((c) => c.id === id)
+  return (hasInjectedProvider ? byId("injected") : undefined) ?? byId("walletConnect")
+}
+
 export const wagmiConfig = createConfig({
   chains: [arbitrum],
   connectors: buildConnectors(process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID),

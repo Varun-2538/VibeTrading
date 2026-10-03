@@ -11,7 +11,7 @@ import {
   verifySignature,
   type Session,
 } from "@/lib/session"
-import { ARBITRUM_CHAIN_ID } from "@/lib/wallet"
+import { ARBITRUM_CHAIN_ID, pickConnector } from "@/lib/wallet"
 
 export type SessionStatus =
   | "disconnected"
@@ -74,9 +74,13 @@ export function useSession() {
 
   const startConnect = useCallback(() => {
     setError(null)
-    const connector = connectors[0]
+    const hasInjectedProvider =
+      typeof window !== "undefined" && Boolean((window as { ethereum?: unknown }).ethereum)
+    const connector = pickConnector(connectors, hasInjectedProvider)
     if (!connector) {
-      setError("No browser wallet found. Install MetaMask or Rabby to continue.")
+      setError(
+        "No wallet found. On a computer, install MetaMask or Rabby. On a phone, open this page from inside your wallet app's browser.",
+      )
       return
     }
     connect({ connector })

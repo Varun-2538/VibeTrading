@@ -52,6 +52,12 @@ export default function PrivacyPage() {
         transaction or spending.
       </p>
       <p>
+        If you connect from a phone, the connection is relayed through
+        WalletConnect&rsquo;s servers, which see your wallet address and this
+        app&rsquo;s name in order to pair the two. The signature request itself
+        goes to your wallet, not to them.
+      </p>
+      <p>
         Be clear-eyed about what an address is, though. It is not anonymous. It
         is a durable identifier, it is the same address everywhere you use it,
         and anyone — including us — can look up its entire transaction history on
