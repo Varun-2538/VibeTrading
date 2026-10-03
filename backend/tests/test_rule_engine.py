@@ -428,3 +428,22 @@ async def test_sequence_ending_on_a_directional_shape_takes_its_bias(monkeypatch
     assert blocked is None and signal is not None
     assert signal.direction == "bullish"
     assert signal.evidence["summary"] == "bullish_engulfing"
+
+
+async def test_sequence_with_a_structure_step_fires_on_a_sweep(monkeypatch):
+    """A liquidity sweep of support on the newest closed bar, as a rule."""
+    from test_structure import bar, with_support
+
+    async def no_exists(_key):
+        return False
+
+    monkeypatch.setattr(RuleEventRepository, "exists", no_exists)
+    bars = with_support()
+    bars.append(bar(103, 106, 97.5, 104, t=bars[-1]["time"] + 60_000))
+    rule = _sequence_rule()
+    rule["params"]["steps"] = [{"type": "structure", "event": "sweep", "side": "bullish"}]
+
+    signal, blocked = await RuleEngine.evaluate_rule(rule, bars, dry_run=True)
+    assert blocked is None and signal is not None
+    assert signal.direction == "bullish"
+    assert signal.evidence["summary"] == "bullish sweep"

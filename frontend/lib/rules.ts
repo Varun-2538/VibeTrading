@@ -57,7 +57,13 @@ export interface IndicatorStep {
   level: number
 }
 
-export type SequenceStep = CandleStep | IndicatorStep
+export interface StructureStep {
+  type: "structure"
+  event: "breakout" | "sweep" | "rejection" | "pullback"
+  side: "bullish" | "bearish"
+}
+
+export type SequenceStep = CandleStep | IndicatorStep | StructureStep
 
 /** Steps in order, the last one landing on the newest closed bar. */
 export interface SequenceRuleParams {

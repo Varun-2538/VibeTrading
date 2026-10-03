@@ -16,6 +16,8 @@ from analysis.candles import DEFAULT_DOJI_BODY_PCT, SHAPES
 from analysis.levels import MAX_LEVELS_PER_SIDE  # noqa: F401  (kept for callers)
 from analysis.patterns import DEFAULT_SCALE, KINDS, PRESETS, SCALES, SOURCES
 from analysis.sequence import DEFAULT_WITHIN_BARS
+from analysis.structure import EVENTS as STRUCTURE_EVENTS
+from analysis.structure import SIDES as STRUCTURE_SIDES
 
 # Ordered weakest to strongest, so "at least medium" is a slice of this list.
 STRENGTH_ORDER = ("weak", "medium", "strong")
@@ -91,7 +93,19 @@ class IndicatorStep(BaseModel):
     level: float = Field(default=30.0, ge=0, le=100)
 
 
-SequenceStep = Union[CandleStep, IndicatorStep]
+class StructureStep(BaseModel):
+    """
+    Price did something at a level: swept it, broke it, or rejected off it -
+    or the newest bar is a pullback inside the trend. Judged on closed bars
+    against levels from the bars before, so it cannot repaint.
+    """
+
+    type: Literal["structure"] = "structure"
+    event: Literal[STRUCTURE_EVENTS] = "sweep"  # type: ignore[valid-type]
+    side: Literal[STRUCTURE_SIDES] = "bullish"  # type: ignore[valid-type]
+
+
+SequenceStep = Union[CandleStep, IndicatorStep, StructureStep]
 
 
 class SequenceRuleParams(BaseModel):

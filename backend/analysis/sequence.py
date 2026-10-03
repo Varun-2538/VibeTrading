@@ -14,9 +14,13 @@ import numpy as np
 
 from analysis import candles as candle_shapes
 from analysis import indicators
+from analysis import structure
 
 # Bars a step may lag its predecessor by, if the rule does not say.
 DEFAULT_WITHIN_BARS = 3
+
+# How far back structure events are computed for a sequence step.
+STRUCTURE_TAIL_BARS = 60
 
 
 def step_mask(candles: Sequence[Dict[str, Any]], step: Dict[str, Any]) -> np.ndarray:
@@ -30,6 +34,18 @@ def step_mask(candles: Sequence[Dict[str, Any]], step: Dict[str, Any]) -> np.nda
             max_body_pct=step.get("max_body_pct", candle_shapes.DEFAULT_DOJI_BODY_PCT),
         )
 
+    if kind == "structure":
+        # Level events are computed for the tail of the window only; a
+        # sequence never needs one further back than its steps can reach.
+        masks = structure.event_masks(candles, tail=STRUCTURE_TAIL_BARS)
+        key = (step.get("event"), step.get("side"))
+        if key not in masks:
+            raise ValueError(
+                f"Unknown structure step {key!r}. Expected event in "
+                f"{', '.join(structure.EVENTS)} and side in {', '.join(structure.SIDES)}."
+            )
+        return masks[key]
+
     if kind == "indicator":
         name = step.get("indicator")
         closes = np.array([float(c["close"]) for c in candles], dtype=float)
@@ -40,7 +56,7 @@ def step_mask(candles: Sequence[Dict[str, Any]], step: Dict[str, Any]) -> np.nda
             f"Unknown indicator {name!r}. Expected one of: {', '.join(indicators.INDICATORS)}"
         )
 
-    raise ValueError(f"Unknown step type {kind!r}. Expected 'candle' or 'indicator'.")
+    raise ValueError(f"Unknown step type {kind!r}. Expected 'candle', 'indicator' or 'structure'.")
 
 
 def match_sequence(
@@ -93,4 +109,6 @@ def describe_steps(steps: Sequence[Dict[str, Any]]) -> str:
                 f"{step['indicator'].upper()}({step.get('period', 14)}) "
                 f"crosses {step['cross']} {step['level']:g}"
             )
+        elif step.get("type") == "structure":
+            parts.append(f"{step['side']} {step['event']}")
     return ", then ".join(parts)

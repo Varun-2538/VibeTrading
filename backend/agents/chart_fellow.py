@@ -50,8 +50,10 @@ You are given a SCENE: what the detectors found in exactly the candles on the us
 
 Hard rules:
 - Only assert what the scene contains. If the scene has no double bottom, you do not see one. If it lists a support level at a price, you may say so and mark it at that exact price.
-- The scene's "vocabulary" lists what you can see. If the user asks about something outside it, or anything in "unsupported" (open interest, short covering, long unwinding, order flow...), say you cannot see that yet and put its name in not_visible. Do not guess.
-- Every mark must copy a price or bar time from the scene verbatim: hline prices from levels/neckline/target, bar times from candles.shapes/last/indicator crosses, polyline points from a pattern's points. Marks that do not match the scene will be removed.
+- The scene's "vocabulary" lists what you can see. If the user asks about something outside it, or anything in "unsupported" (open interest, short covering, long unwinding, order flow...), say you cannot see that yet and put its name in not_visible. Do not guess. not_visible holds only things the user actually asked about - never list the unsupported set unprompted.
+- Talk like a trader, not like someone reading JSON: never mention field names, "null", "the scene" or "the data provided". Say "no pullback right now", not "pullback is null".
+- Every mark must copy a price or bar time from the scene verbatim: hline prices from levels/neckline/target/structure event levels, bar times from candles.shapes/last/indicator crosses/structure events, polyline points from a pattern's points or the structure swings. Marks that do not match the scene will be removed.
+- "Smart money", "institutional", "stop hunt", "liquidity grab" all mean the structure events: a sweep is a wick through a level with a close back on the original side. Describe what the bar did; never claim to know who traded. Structure gives the trend from swings (HH/HL or LH/LL), recent breakouts/sweeps/rejections at levels, and whether the newest bar is a pullback.
 - Answer what was asked. For each thing the user asked about, add one finding with present true or false. Absent things are useful answers: "no, I don't see a W here" is a good reply.
 - Keep reply_md short - a few sentences a trader would actually say. Never write raw millisecond timestamps in reply_md; say "the latest candle", "three bars back" or similar. Timestamps belong in marks only.
 
@@ -94,6 +96,11 @@ def _scene_prices(scene: Dict[str, Any]) -> List[float]:
         prices += [float(pt["price"]) for pt in p.get("points", {}).values()]
     ema = scene.get("indicators", {}).get("ema", {})
     prices += [float(v) for k, v in ema.items() if k in ("20", "50")]
+    st = scene.get("structure") or {}
+    prices += [float(p["price"]) for p in st.get("swings", [])]
+    prices += [float(e["level"]) for e in st.get("events", [])]
+    if st.get("pullback"):
+        prices.append(float(st["pullback"]["holds"]["price"]))
     return prices
 
 
@@ -113,14 +120,22 @@ def _scene_times(scene: Dict[str, Any]) -> set:
         cross = ind.get(name, {}).get("recent_cross")
         if cross:
             times.add(int(cross["t"]))
+    st = scene.get("structure") or {}
+    times.update(int(p["t"]) for p in st.get("swings", []))
+    times.update(int(e["t"]) for e in st.get("events", []))
+    if st.get("pullback"):
+        times.add(int(st["pullback"]["holds"]["t"]))
     return times
 
 
 def _pattern_points(scene: Dict[str, Any]) -> set:
+    """Points a polyline may pass through: pattern pivots and swing points."""
     pts = set()
     for p in scene.get("patterns", []):
         for pt in p.get("points", {}).values():
             pts.add((int(pt["t"]), float(pt["price"])))
+    for sp in (scene.get("structure") or {}).get("swings", []):
+        pts.add((int(sp["t"]), float(sp["price"])))
     return pts
 
 
