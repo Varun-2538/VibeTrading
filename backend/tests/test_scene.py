@@ -24,7 +24,7 @@ from analysis.scene import (
 
 # Roughly 1,200 tokens. The system prompt, history and answer must fit
 # beside it inside a few thousand tokens.
-SCENE_BYTE_CEILING = 4_500
+SCENE_BYTE_CEILING = 5_000
 
 
 def random_walk(n=300, seed=3, start=60_000.0):
@@ -112,3 +112,57 @@ def test_prices_are_rounded_to_the_symbol_scale():
     assert len(str(scene["price"]["last"]).split(".")[-1]) <= 5
     scene = build_scene(random_walk(start=60_000), symbol="BTCUSDT", timeframe="1h")
     assert len(str(scene["price"]["last"]).split(".")[-1]) <= 1
+
+
+def test_the_scene_reports_the_new_indicators():
+    scene = build_scene(random_walk(n=400, seed=5), symbol="BTCUSDT", timeframe="1h")
+    ind = scene["indicators"]
+    assert set(ind) >= {"rsi", "ema", "macd", "stoch", "bollinger", "vwap", "volume", "atr"}
+
+    assert 0 <= ind["stoch"]["k"] <= 100
+    assert ind["stoch"]["state"] in ("overbought", "oversold", "middle")
+    assert ind["bollinger"]["upper"] > ind["bollinger"]["lower"]
+    assert isinstance(ind["bollinger"]["squeeze"], bool)
+    assert ind["vwap"]["anchor"] == "day" and ind["vwap"]["side"] in ("above", "below")
+    assert ind["volume"]["ratio"] > 0
+    assert isinstance(ind["atr"]["expansion"], bool)
+
+
+def test_new_indicator_events_carry_bar_times_the_guard_can_check():
+    scene = build_scene(random_walk(n=400, seed=5), symbol="BTCUSDT", timeframe="1h")
+    window = scene["window"]
+    ind = scene["indicators"]
+    times = (
+        [c["t"] for c in ind["stoch"]["recent_crosses"]]
+        + [c["t"] for c in ind["bollinger"]["recent_crosses"]]
+        + [c["t"] for c in ind["vwap"]["recent_crosses"]]
+        + list(ind["volume"]["spikes"])
+        + list(ind["atr"]["recent"])
+    )
+    assert times, "no events at all in 400 random bars"
+    for t in times:
+        assert window["from"] <= t <= window["to"]
+
+
+def test_the_new_indicators_are_capped():
+    scene = build_scene(random_walk(n=1000, seed=11), symbol="BTCUSDT", timeframe="1h")
+    ind = scene["indicators"]
+    assert len(ind["stoch"]["recent_crosses"]) <= 2
+    assert len(ind["bollinger"]["recent_crosses"]) <= 2
+    assert len(ind["vwap"]["recent_crosses"]) <= 2
+    assert len(ind["volume"]["spikes"]) <= 2
+    assert len(ind["atr"]["recent"]) <= 2
+
+
+def test_the_vocabulary_names_every_indicator_the_scene_can_report():
+    scene = build_scene(random_walk(n=400, seed=5), symbol="BTCUSDT", timeframe="1h")
+    said = " ".join(scene["vocabulary"]["indicators"])
+    for word in ("rsi", "ema", "macd", "stochastic", "bollinger", "vwap", "volume", "atr"):
+        assert word in said
+
+
+def test_a_short_window_reports_only_what_warmed_up():
+    scene = build_scene(random_walk(n=30, seed=5), symbol="BTCUSDT", timeframe="1h")
+    # Nothing that needs 20 or more bars can be there; whatever is must be whole.
+    for name, block in scene["indicators"].items():
+        assert block, name

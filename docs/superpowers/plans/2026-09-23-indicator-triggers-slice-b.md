@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **The scene is a token budget, not a data dump.** It travels with every chat question on a free-tier model, so each indicator adds only what the model needs to speak and to mark: a current value, a state word, and at most two recent event times. The byte ceiling rises from 4,500 to 5,200 and the test keeps enforcing it.
+- **The scene is a token budget, not a data dump.** It travels with every chat question on a free-tier model, so each indicator adds only what the model needs to speak and to mark: a current value, a state word, and at most two recent event times. The byte ceiling rises from 4,500 to 5,000 and the test keeps enforcing it; the measured scene is 4,369 bytes.
 - **Nothing the detectors did not find may be marked.** New scene entries must expose their bar times so the grounding guard in `chart_fellow.ground()` can vouch for marks on them.
 - **Alerts are built by the server from scene entries**, never from the model's words: the same rule as slice 5 of the chart fellow. A finding whose indicator has no rule step gets no Alert button.
 - **The panel builds one-step sequence rules.** Multi-step chains stay in chat; a Signal rule is `{"agent": "sequence", "steps": [<one step>], "within_bars": 3, "lookback": <enough for the step>}`.
