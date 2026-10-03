@@ -2,13 +2,14 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useCallback, useState } from "react"
 import PriceChart from "@/components/price-chart"
 import ChatPanel from "@/components/chat-panel"
 import AnalysisPanel from "@/components/analysis-panel"
 import { Button } from "@/components/ui/button"
 import { BarChart3, CandlestickChart, MessageSquare, Sparkles } from "lucide-react"
 import type { LiquidityData, Timeframe } from "@/lib/api"
+import type { Mark, PatternSettings, Viewport } from "@/lib/marks"
 
 /*
  * Two layouts, one tree.
@@ -49,6 +50,17 @@ export default function TradingDashboard() {
     symbol: string
     liquidityData: LiquidityData
   } | null>(null)
+  // What the chart is showing, so the assistant answers about exactly those
+  // candles with exactly the detector settings that are drawn.
+  const [viewport, setViewport] = useState<Viewport | null>(null)
+  const [patternSettings, setPatternSettings] = useState<PatternSettings>({
+    strictness: "balanced",
+    source: "wick",
+    scale: "swing",
+  })
+  // Drawings the assistant was asked to make. Already grounded server-side.
+  const [marks, setMarks] = useState<Mark[]>([])
+  const clearMarks = useCallback(() => setMarks([]), [])
 
   const handleChatResize = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -140,6 +152,10 @@ export default function TradingDashboard() {
             onTimeframeChange={setTimeframe}
             liquidityData={markedLevels}
             onClearLevels={() => setMarkedLevels(null)}
+            onViewportChange={setViewport}
+            onPatternSettingsChange={setPatternSettings}
+            marks={marks}
+            onClearMarks={clearMarks}
           />
         </div>
 
@@ -181,6 +197,10 @@ export default function TradingDashboard() {
             currentSymbol={currentSymbol}
             onSymbolChange={setCurrentSymbol}
             onMarkLevels={setMarkedLevels}
+            timeframe={timeframe}
+            viewport={viewport}
+            patternSettings={patternSettings}
+            onMarks={setMarks}
           />
         </div>
       </div>

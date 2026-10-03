@@ -268,6 +268,17 @@ export default function ArchitecturePage() {
         evaluates the rule every minute is deterministic and never calls the
         model.
       </p>
+      <p>
+        The same discipline runs the chart conversation. When you ask "do you
+        see support here?", the model is not shown the chart. It is shown a{" "}
+        <em>scene</em>: the detectors' output for exactly the candles on your
+        screen — every level, pattern, candle shape and indicator cross, each
+        with a price and a bar time. It narrates from that and may ask for
+        marks, and a guard then drops any mark whose price or bar the detectors
+        did not report. What gets drawn is detector fact; the model chose which
+        facts answered your question. You can see precisely what it saw at{" "}
+        <code>POST /api/scene</code>.
+      </p>
 
       <h2>Who owns a rule</h2>
       <p>
@@ -321,7 +332,7 @@ export default function ArchitecturePage() {
 
       <h2>Testing</h2>
       <p>
-        176 tests. Pattern fixtures are built from line segments so the geometry
+        210 tests. Pattern fixtures are built from line segments so the geometry
         is known exactly and assertions can be made on prices rather than on
         "something was found". A good number of those tests exist because a real
         chart disagreed with the detector and the disagreement turned out to be
