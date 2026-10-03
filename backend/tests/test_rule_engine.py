@@ -409,3 +409,22 @@ async def test_sequence_identity_is_the_matched_bar_times(monkeypatch):
     b, _ = await RuleEngine.evaluate_rule(_sequence_rule(), bars, dry_run=True)
     assert a.identity == b.identity == f"seq:{bars[-1]['time']}"
     assert a.dedup_key() == b.dedup_key()
+
+
+async def test_sequence_ending_on_a_directional_shape_takes_its_bias(monkeypatch):
+    """A bullish engulfing bar reads bullish; a lone doji stays neutral."""
+    async def no_exists(_key):
+        return False
+
+    monkeypatch.setattr(RuleEventRepository, "exists", no_exists)
+    bars = _doji_bars(30, doji_last=False)
+    # Previous bar down, last bar up and covering it; bodies well above 0.1 ATR.
+    bars[-2].update({"open": 130.0, "close": 124.0, "high": 131.0, "low": 123.0})
+    bars[-1].update({"open": 123.5, "close": 131.0, "high": 132.0, "low": 123.0})
+    rule = _sequence_rule()
+    rule["params"]["steps"] = [{"type": "candle", "shape": "bullish_engulfing"}]
+
+    signal, blocked = await RuleEngine.evaluate_rule(rule, bars, dry_run=True)
+    assert blocked is None and signal is not None
+    assert signal.direction == "bullish"
+    assert signal.evidence["summary"] == "bullish_engulfing"

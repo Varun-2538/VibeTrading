@@ -12,7 +12,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from analysis.candles import DEFAULT_DOJI_BODY_PCT
+from analysis.candles import DEFAULT_DOJI_BODY_PCT, SHAPES
 from analysis.levels import MAX_LEVELS_PER_SIDE  # noqa: F401  (kept for callers)
 from analysis.patterns import DEFAULT_SCALE, KINDS, PRESETS, SCALES, SOURCES
 from analysis.sequence import DEFAULT_WITHIN_BARS
@@ -74,7 +74,9 @@ class CandleStep(BaseModel):
     """One bar has a shape. Settled at close; cannot repaint."""
 
     type: Literal["candle"] = "candle"
-    shape: Literal["doji"] = "doji"
+    # Subscripting Literal with the tuple unpacks it, so the schema follows
+    # analysis.candles.SHAPES without a second list to keep in step.
+    shape: Literal[SHAPES] = "doji"  # type: ignore[valid-type]
     # Body as a percentage of the bar's high-low range.
     max_body_pct: float = Field(default=DEFAULT_DOJI_BODY_PCT, gt=0, le=50)
 

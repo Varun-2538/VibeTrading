@@ -34,9 +34,18 @@ export interface LiquidityRuleParams {
   lookback: number
 }
 
+/** Mirrors analysis/candles.py SHAPES. The server validates; this is for display. */
+export type CandleShape =
+  | "doji"
+  | "hammer"
+  | "shooting_star"
+  | "bullish_engulfing"
+  | "bearish_engulfing"
+  | "inside_bar"
+
 export interface CandleStep {
   type: "candle"
-  shape: "doji"
+  shape: CandleShape
   max_body_pct?: number
 }
 
