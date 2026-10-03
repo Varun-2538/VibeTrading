@@ -4,7 +4,13 @@ from contextlib import asynccontextmanager
 import uvicorn
 
 # Import controllers
-from controllers import strategy_router, ohlc_router, websocket_router, rules_router
+from controllers import (
+    auth_router,
+    strategy_router,
+    ohlc_router,
+    websocket_router,
+    rules_router,
+)
 from controllers.chat_controller import router as chat_router
 from controllers.analysis_controller import router as analysis_router
 from services.candle_service import close_http
@@ -106,10 +112,28 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configure CORS
+# Configure CORS.
+#
+# The wildcard that used to sit in this list let any origin drive the wallet
+# sign-in handshake, so it is gone. The panel is served from app.vibetrading.club
+# (see frontend/middleware.ts) while FRONTEND_URL names the landing domain, so
+# both have to be listed explicitly - allowing only frontend_url would block
+# every API call the trading panel makes.
+ALLOWED_ORIGINS = [
+    settings.frontend_url,
+    "https://vibetrading.club",
+    "https://www.vibetrading.club",
+    "https://app.vibetrading.club",
+    "http://localhost:3000",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_url, "http://localhost:3000", "*"],  # Update in production
+    allow_origins=sorted(set(ALLOWED_ORIGINS)),
+    # Vercel preview deployments get a fresh subdomain per build, so they cannot
+    # be enumerated. Anchored at both ends: an unanchored pattern would also
+    # match evil-vibetrading.vercel.app.attacker.com.
+    allow_origin_regex=r"^https://[a-z0-9-]+\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -122,6 +146,7 @@ app.include_router(websocket_router)
 app.include_router(chat_router)
 app.include_router(analysis_router)
 app.include_router(rules_router)
+app.include_router(auth_router)
 
 
 @app.get("/")
@@ -166,7 +191,7 @@ async def get_config():
         "max_lookback_periods": 1000,
         "websocket_endpoints": [
             "/ws/{symbol}",
-            "/ws/strategy/{symbol}"
+            "/ws/rules"
         ]
     }
 

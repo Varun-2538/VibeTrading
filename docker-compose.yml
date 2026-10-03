@@ -85,6 +85,9 @@ services:
       - TIMESCALE_PASSWORD=${TIMESCALE_PASSWORD:-tradesmart123}
       - REDIS_URL=redis://redis:6379
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      # Local development only: a fixed throwaway secret keeps sessions valid
+      # across restarts. Production sets a real one and has no default.
+      - JWT_SECRET=${JWT_SECRET:-dev-only-insecure-secret}
       - BACKEND_PORT=8000
       - BINANCE_API_KEY=${BINANCE_API_KEY:-}
       - BINANCE_API_SECRET=${BINANCE_API_SECRET:-}

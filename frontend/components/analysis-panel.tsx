@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { AlertCircle, Bell, Loader2, Plus, Trash2, Zap } from "lucide-react"
+import { AlertCircle, Bell, Loader2, Plus, Trash2, Wallet, Zap } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -42,8 +42,11 @@ import {
   type RuleEvent,
   type RuleParams,
   type Strength,
+  UnauthorizedError,
 } from "@/lib/rules"
+import { useSession, type SessionStatus } from "@/hooks/use-session"
 import { useStrategySocket } from "@/hooks/use-strategy-socket"
+import { ARBITRUM_NAME, shortAddress } from "@/lib/wallet"
 import { cn } from "@/lib/utils"
 
 interface AnalysisPanelProps {
@@ -63,7 +66,84 @@ function relativeTime(iso: string): string {
   return `${Math.floor(seconds / 86_400)}d ago`
 }
 
+/**
+ * Shown until a wallet has proved itself.
+ *
+ * Rules and the record of what they fired are private to the address that
+ * created them, so there is nothing to display before one is established. The
+ * copy says what signing does and does not authorise, because "sign this
+ * message" is exactly the prompt users are trained to be wary of.
+ */
+function SignInGate({
+  status,
+  busy,
+  error,
+  onConnect,
+  onSignIn,
+  onSwitchChain,
+}: {
+  status: SessionStatus
+  busy: boolean
+  error: string | null
+  onConnect: () => void
+  onSignIn: () => void
+  onSwitchChain: () => void
+}) {
+  const copy = {
+    disconnected: {
+      title: "Connect a wallet to build strategy rules",
+      body: `Your rules and the alerts they fire are private to your address. Connect an ${ARBITRUM_NAME} wallet to begin.`,
+      label: "Connect wallet",
+      action: onConnect,
+    },
+    "wrong-chain": {
+      title: `Switch to ${ARBITRUM_NAME}`,
+      body: `Sign-in is tied to ${ARBITRUM_NAME}. Switch networks in your wallet to continue.`,
+      label: `Switch to ${ARBITRUM_NAME}`,
+      action: onSwitchChain,
+    },
+    "needs-signature": {
+      title: "Sign to prove the address is yours",
+      body: "One signature, free, and no transaction. It proves you control this address so nobody else can read or change your rules. It authorises no spending, approval or trade.",
+      label: "Sign in",
+      action: onSignIn,
+    },
+    ready: null,
+  }[status]
+
+  if (!copy) return null
+
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+      <Wallet className="h-5 w-5 text-muted-foreground" />
+      <div className="max-w-sm">
+        <p className="text-xs font-medium text-foreground">{copy.title}</p>
+        <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{copy.body}</p>
+      </div>
+      <Button onClick={copy.action} disabled={busy} size="sm" className="h-7 gap-1 text-xs">
+        {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        {copy.label}
+      </Button>
+      {error && (
+        <p className="max-w-sm text-[11px] leading-relaxed text-destructive">{error}</p>
+      )}
+    </div>
+  )
+}
+
 export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps) {
+  const {
+    status,
+    address,
+    session,
+    error: walletError,
+    busy: walletBusy,
+    connect,
+    signIn,
+    signOut,
+    invalidate,
+    switchToArbitrum,
+  } = useSession()
   const [rules, setRules] = useState<Rule[]>([])
   const [events, setEvents] = useState<RuleEvent[]>([])
   const [tab, setTab] = useState("build")
@@ -94,13 +174,33 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
       setEvents(nextEvents)
       setError(null)
     } catch (err) {
+      if (err instanceof UnauthorizedError) {
+        // The token expired or the server's signing secret was rotated. Drop it
+        // and let the gate ask for a fresh signature; showing a red error for
+        // something the user cannot act on would be worse.
+        invalidate()
+        setRules([])
+        setEvents([])
+        setError(null)
+        return
+      }
       setError(err instanceof Error ? err.message : "Could not reach the rules service")
     }
-  }, [])
+  }, [invalidate])
 
   useEffect(() => {
+    // Rules are per-address, so there is nothing to fetch before sign-in - and
+    // the request would 401 anyway. Refetching when the address changes is the
+    // point: it swaps in that wallet's rules rather than leaving the last one's
+    // on screen.
+    if (status !== "ready") {
+      setRules([])
+      setEvents([])
+      setUnseen(0)
+      return
+    }
     void refresh()
-  }, [refresh])
+  }, [refresh, status, address])
 
   const handleSignal = useCallback(() => {
     // Refetch rather than trusting the pushed payload: the row is authoritative
@@ -109,7 +209,9 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
     setUnseen((n) => n + 1)
   }, [refresh])
 
-  useStrategySocket(symbol, handleSignal, refresh)
+  // Keyed on the token, not the symbol: the channel carries this owner's fires
+  // for every pair, and it reconnects when the session changes.
+  useStrategySocket(session?.token ?? null, handleSignal, refresh, invalidate)
 
   useEffect(() => {
     if (tab === "fired") setUnseen(0)
@@ -212,6 +314,27 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
     }
   }
 
+  if (status !== "ready") {
+    return (
+      <div className="flex h-full w-full flex-col bg-card">
+        <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2 lg:px-4">
+          <h2 className="text-sm font-semibold text-foreground">Strategy</h2>
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {symbol} · {timeframe}
+          </span>
+        </div>
+        <SignInGate
+          status={status}
+          busy={walletBusy}
+          error={walletError}
+          onConnect={connect}
+          onSignIn={signIn}
+          onSwitchChain={switchToArbitrum}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full w-full flex-col bg-card">
       <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col gap-0">
@@ -221,6 +344,16 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
             <span className="font-mono text-[11px] text-muted-foreground">
               {symbol} · {timeframe}
             </span>
+            {address && (
+              <button
+                onClick={signOut}
+                title={`${address} — sign out`}
+                className="hidden items-center gap-1 rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground hover:text-foreground sm:inline-flex"
+              >
+                <Wallet className="h-2.5 w-2.5" />
+                {shortAddress(address)}
+              </button>
+            )}
           </div>
           <TabsList className="h-7">
             <TabsTrigger value="build" className="h-5 px-2 text-xs">
@@ -437,7 +570,8 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
           <p className="mt-3 max-w-2xl text-[11px] leading-relaxed text-muted-foreground">
             Rules are evaluated server-side on closed candles only, and must hold for one
             further candle before firing — so a pattern that repaints away never alerts.
-            Alerts only; nothing here places a trade. Rules are tied to this browser.
+            Alerts only; nothing here places a trade. Rules are private to your wallet
+            address and follow it to any browser you sign in from.
           </p>
         </TabsContent>
 

@@ -58,6 +58,10 @@ services:
       TIMESCALE_PASSWORD: ${TIMESCALE_PASSWORD}
       REDIS_URL: redis://redis:6379
       FRONTEND_URL: ${FRONTEND_URL:-https://vibetrading.club}
+      # Signs wallet session tokens. Required, with no fallback: a default here
+      # would let anyone mint a token for any address. Rotating it invalidates
+      # every session, which is the intended way to force everyone to sign in again.
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       BACKEND_PORT: 8000
     depends_on:
       timescaledb:

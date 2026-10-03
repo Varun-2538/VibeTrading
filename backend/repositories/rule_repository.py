@@ -31,11 +31,14 @@ class RuleRepository:
         cooldown_secs: int,
         persist_bars: int,
     ) -> Dict[str, Any]:
+        # owner_kind is written explicitly rather than left to the column
+        # default: it records what the owner_key actually is, and a silent
+        # default is the wrong place for that to be decided.
         query = f"""
             INSERT INTO strategy_rules
-                (owner_key, name, agent, symbol, timeframe, params,
+                (owner_key, owner_kind, name, agent, symbol, timeframe, params,
                  cooldown_secs, persist_bars)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            VALUES ($1, 'wallet', $2, $3, $4, $5, $6, $7, $8)
             RETURNING {RULE_COLUMNS}
         """
         return await db.fetchrow(

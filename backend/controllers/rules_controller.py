@@ -1,10 +1,10 @@
 """
 CRUD for strategy rules, plus the feed of what they fired.
 
-Ownership comes from an `X-Owner-Key` header. That key is a namespace, not an
-authentication credential - see require_owner_key. Every query is scoped by it
-and a mismatch returns 404 rather than 403, so a caller cannot use the response
-to confirm that someone else's rule id exists.
+Ownership is a wallet address proven by signature at sign-in and carried in a
+bearer token - see require_owner. Every query is scoped by it, and a mismatch
+returns 404 rather than 403, so a caller cannot use the response to confirm that
+someone else's rule id exists.
 """
 from typing import Any, Dict, List, Optional
 from uuid import UUID
@@ -12,6 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 
 from analysis.patterns import KINDS, PRESETS, SCALES, SOURCES
+from services.auth_service import AuthError, read_token
 from models.rule_schemas import (
     PATTERN_STATES,
     STRENGTH_ORDER,
@@ -28,28 +29,39 @@ from services.rule_engine import RuleEngine
 router = APIRouter(prefix="/api/rules", tags=["Rules"])
 
 
-async def require_owner_key(x_owner_key: Optional[str] = Header(default=None)) -> str:
+async def require_owner(authorization: Optional[str] = Header(default=None)) -> str:
     """
-    The caller's rule namespace.
+    The signed-in wallet address that owns the rules in this request.
 
-    This is NOT authentication: anyone holding the key can act as its owner, and
-    the server never verifies who minted it. It is sufficient only because a
-    Phase 1 rule can do nothing but raise an alert. Before a rule can spend
-    money this must be replaced with a signed-in identity.
+    Unlike the browser-minted key this replaced, the caller cannot choose it: the
+    address comes out of a token the server signed, and the server only signs one
+    after recovering that address from an EIP-4361 signature. 401 rather than 400
+    on a bad token, so the client knows to sign in again instead of treating it as
+    a malformed request it could fix.
     """
-    if not x_owner_key:
+    if not authorization:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing X-Owner-Key header",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sign in with your wallet to manage strategy rules",
+            headers={"WWW-Authenticate": "Bearer"},
         )
+
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Expected an Authorization: Bearer header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     try:
-        UUID(x_owner_key)
-    except ValueError:
+        return read_token(token.strip())
+    except AuthError as exc:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="X-Owner-Key must be a UUID",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+            headers={"WWW-Authenticate": "Bearer"},
         )
-    return x_owner_key
 
 
 def _not_found() -> HTTPException:
@@ -75,7 +87,7 @@ async def rule_schema() -> Dict[str, Any]:
 
 @router.get("/events", response_model=List[RuleEventOut])
 async def list_events(
-    owner_key: str = Depends(require_owner_key),
+    owner_key: str = Depends(require_owner),
     rule_id: Optional[UUID] = Query(default=None),
     symbol: Optional[str] = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
@@ -92,7 +104,7 @@ async def list_events(
 @router.post("", response_model=RuleOut, status_code=status.HTTP_201_CREATED)
 async def create_rule(
     request: RuleCreate,
-    owner_key: str = Depends(require_owner_key),
+    owner_key: str = Depends(require_owner),
 ) -> Dict[str, Any]:
     """
     Arm a new rule.
@@ -123,7 +135,7 @@ async def create_rule(
 
 @router.get("", response_model=List[RuleOut])
 async def list_rules(
-    owner_key: str = Depends(require_owner_key),
+    owner_key: str = Depends(require_owner),
     symbol: Optional[str] = Query(default=None),
     enabled: Optional[bool] = Query(default=None),
 ) -> List[Dict[str, Any]]:
@@ -135,7 +147,7 @@ async def list_rules(
 async def update_rule(
     rule_id: UUID,
     request: RuleUpdate,
-    owner_key: str = Depends(require_owner_key),
+    owner_key: str = Depends(require_owner),
 ) -> Dict[str, Any]:
     """Enable, disable, rename or retune a rule."""
     fields: Dict[str, Any] = {}
@@ -163,7 +175,7 @@ async def update_rule(
 @router.delete("/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_rule(
     rule_id: UUID,
-    owner_key: str = Depends(require_owner_key),
+    owner_key: str = Depends(require_owner),
 ) -> None:
     """Delete a rule and its fire history."""
     if not await RuleRepository.delete(str(rule_id), owner_key):
@@ -173,7 +185,7 @@ async def delete_rule(
 @router.post("/{rule_id}/test", response_model=RuleTestOut)
 async def test_rule(
     rule_id: UUID,
-    owner_key: str = Depends(require_owner_key),
+    owner_key: str = Depends(require_owner),
     emit: bool = Query(
         default=False,
         description="Also record and broadcast the event, to exercise the alert path",

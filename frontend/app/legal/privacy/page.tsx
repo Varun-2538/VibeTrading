@@ -4,7 +4,7 @@ import { CONTACT_EMAIL } from "@/lib/contact"
 export const metadata: Metadata = {
   title: "Privacy — VibeTrading",
   description:
-    "VibeTrading has no accounts and no logins. What it collects, what it sends to third parties, and what it keeps.",
+    "VibeTrading has no sign-up and no password. What it collects, what a wallet address means for your privacy, what it sends to third parties, and what it keeps.",
 }
 
 export default function PrivacyPage() {
@@ -12,14 +12,15 @@ export default function PrivacyPage() {
     <>
       <h1>Privacy</h1>
       <p className="lede">
-        VibeTrading has no accounts, no logins and no passwords. We hold almost
-        nothing about you, and this page says exactly what "almost" means.
+        VibeTrading has no sign-up, no password and no email address. One feature
+        — strategy rules — identifies you, and it does so by wallet address. This
+        page says exactly what that means and what else we hold.
       </p>
-      <p className="meta">Last updated 10 September 2026.</p>
+      <p className="meta">Last updated 11 September 2026.</p>
 
       <h2>What we do not collect</h2>
       <p>
-        There is no sign-up, so there is no name, email address, password or
+        There is no registration, so there is no name, email address, password or
         profile. We do not ask for identity documents, phone numbers, payment
         details or exchange credentials, because the app has no feature that
         uses any of them. We do not set advertising cookies and we do not run
@@ -41,6 +42,25 @@ export default function PrivacyPage() {
         the chat box — there is no reason the app needs it, and treating it as a
         private channel would be a mistake.
       </p>
+      <h3>Your wallet address, if you build strategy rules</h3>
+      <p>
+        Strategy rules are private to whoever created them, so that feature needs
+        to know who is asking. Connecting a wallet and signing a message proves
+        you control an address, and we store that address alongside your rules.
+        We ask your wallet for one signature and nothing else: we request no
+        token approvals, we cannot move anything, and signing in authorises no
+        transaction or spending.
+      </p>
+      <p>
+        Be clear-eyed about what an address is, though. It is not anonymous. It
+        is a durable identifier, it is the same address everywhere you use it,
+        and anyone — including us — can look up its entire transaction history on
+        a public blockchain. If that address is linked to your identity anywhere
+        else, it is effectively linked here too. It is also personal data in
+        several jurisdictions, and we treat it as such. If you would rather not
+        make that connection, use a wallet you keep for this purpose, or do not
+        use strategy rules — the charts and analysis need no wallet at all.
+      </p>
       <h3>Ordinary server logs</h3>
       <p>
         Our server and the platforms in front of it keep the usual technical
@@ -59,14 +79,17 @@ export default function PrivacyPage() {
       <p>
         The exception is strategy rules. If you arm one, we store the rule you
         built and the history of times it fired, on our server, so it can keep
-        being evaluated while your browser is closed. Each rule is grouped under
-        a random identifier your browser generates and keeps in local storage.
-        That identifier is not derived from you or your device and is not linked
-        to anything else we hold — it only separates one browser's rules from
-        another's. Anyone with the identifier can see and change the rules under
-        it, so it is a convenience, not a security boundary. Clearing your site
-        data discards it, at which point the rules are no longer reachable from
-        the app.
+        being evaluated while your browser is closed. Each rule is stored against
+        the wallet address that created it, and only that address can read,
+        change or delete it. That is a deliberate change from how this feature
+        first shipped, when rules were grouped under a random identifier the
+        browser generated — an identifier anyone could copy and use, which is why
+        it is gone.
+      </p>
+      <p>
+        Signing in leaves a session token in your browser's local storage. It
+        lasts seven days, it only permits reading and editing your own rules, and
+        signing out or clearing site data removes it.
       </p>
 
       <h2>Who else is involved</h2>
@@ -100,17 +123,19 @@ export default function PrivacyPage() {
         Market data and annotations are kept for as long as they are useful for
         analysis. Strategy rules and their fire history are kept until you
         delete the rule, which also deletes its history. Server logs are kept
-        for a short operational period and then rotate away. Because we do not
-        link anything to an identity, there is no personal profile accumulating
-        over time.
+        for a short operational period and then rotate away. Sign-in challenges
+        live for five minutes and are discarded the moment they are used.
       </p>
 
       <h2>Your rights</h2>
       <p>
         Depending on where you live you may have rights to access, correct or
-        delete personal data held about you. In our case the honest answer is
-        usually that we hold none, since there is no account to look up. If you
-        believe we hold something about you and want it removed, write to{" "}
+        delete personal data held about you. If you have never armed a strategy
+        rule, the honest answer is that we hold nothing to look up. If you have,
+        the data is your wallet address and the rules under it: you can delete any
+        rule from the panel at any time, which removes it and its fire history. To
+        have the address itself removed, or if you believe we hold anything else
+        about you, write to{" "}
         <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> and we will deal
         with it.
       </p>

@@ -5,7 +5,7 @@ from services.actions.base import ActionResult
 
 class AlertAction:
     """
-    Pushes the fire to any browser watching the symbol.
+    Pushes the fire to the owner of the rule, and to nobody else.
 
     Delivery is best effort. The event row is already committed before this
     runs, and the panel refetches its feed on mount and on reconnect, so a
@@ -32,7 +32,9 @@ class AlertAction:
         }
 
         try:
-            await broadcast_strategy_signal(signal.symbol, payload)
+            # Addressed to the rule's owner, not to the symbol: a fired signal is
+            # private to the person whose rule fired it.
+            await broadcast_strategy_signal(rule["owner_key"], payload)
         except Exception as exc:  # noqa: BLE001 - see docstring
             return ActionResult(status="failed", result={"error": str(exc)})
 

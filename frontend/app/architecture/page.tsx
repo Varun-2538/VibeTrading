@@ -260,6 +260,30 @@ export default function ArchitecturePage() {
         the analysis — the worst it can do is describe it clumsily.
       </p>
 
+      <h2>Who owns a rule</h2>
+      <p>
+        Strategy rules are private to one person, which is the only part of the
+        product that needs an identity. There is no user table and no password:
+        the server mints an{" "}
+        <a href="https://eips.ethereum.org/EIPS/eip-4361">EIP-4361</a> message,
+        the wallet signs it, and the server recovers the signer and issues a
+        seven-day bearer token naming that address.
+      </p>
+      <p>
+        The server builds the message it will later verify, rather than parsing
+        one the client sends. Because the exact string is kept server-side for the
+        five minutes the challenge is valid, verification is one string comparison
+        and one signature recovery — there is no parser to get wrong. The nonce is
+        deleted the moment it is used, and since <code>DEL</code> is atomic, two
+        requests racing the same challenge cannot both succeed.
+      </p>
+      <p>
+        Fired alerts are delivered on a socket keyed by owner rather than by
+        symbol. That was a correctness fix, not a design flourish: signals
+        previously travelled on the public per-symbol market stream, which
+        delivered one user's fired rules to every browser watching that pair.
+      </p>
+
       <h2>Analysis follows the viewport</h2>
       <p>
         Every analysis endpoint takes the same window —{" "}
@@ -288,7 +312,7 @@ export default function ArchitecturePage() {
 
       <h2>Testing</h2>
       <p>
-        77 tests. Pattern fixtures are built from line segments so the geometry
+        133 tests. Pattern fixtures are built from line segments so the geometry
         is known exactly and assertions can be made on prices rather than on
         "something was found". A good number of those tests exist because a real
         chart disagreed with the detector and the disagreement turned out to be

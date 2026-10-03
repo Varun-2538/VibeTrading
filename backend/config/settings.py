@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     binance_api_key: Optional[str] = None
     binance_api_secret: Optional[str] = None
 
+    # Session signing. Deliberately has no default: a guessable secret here lets
+    # anyone mint a token for any wallet address, so a deploy that forgot to set
+    # it must fail at boot rather than run in that state.
+    jwt_secret: str
+
     # App Config
     frontend_url: str = "http://localhost:3000"
     backend_port: int = 8000

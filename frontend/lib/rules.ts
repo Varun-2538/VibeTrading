@@ -7,7 +7,7 @@ import {
   type Strictness,
   type Timeframe,
 } from "@/lib/api"
-import { getOwnerKey } from "@/lib/owner"
+import { getToken } from "@/lib/session"
 
 export type RuleAgent = "pattern" | "liquidity"
 export type LevelSide = "support" | "resistance"
@@ -98,17 +98,36 @@ export interface CreateRuleInput {
   persist_bars?: number
 }
 
+/**
+ * The session is gone or was never established.
+ *
+ * Distinct from a general failure because the remedy is different: another
+ * signature, not another attempt. The panel uses it to drop the stored token and
+ * show the sign-in prompt again.
+ */
+export class UnauthorizedError extends Error {}
+
 function headers(): HeadersInit {
+  const token = getToken()
+  if (!token) {
+    // Fail here rather than send a request we know will 401.
+    throw new UnauthorizedError("Sign in with your wallet to manage strategy rules")
+  }
   return {
     "Content-Type": "application/json",
-    "X-Owner-Key": getOwnerKey(),
+    Authorization: `Bearer ${token}`,
   }
+}
+
+async function fail(res: Response, fallback: string): Promise<never> {
+  const message = await readError(res, fallback)
+  throw res.status === 401 ? new UnauthorizedError(message) : new Error(message)
 }
 
 export async function listRules(symbol?: string): Promise<Rule[]> {
   const query = symbol ? `?symbol=${encodeURIComponent(symbol)}` : ""
   const res = await fetch(`${API_BASE}/api/rules${query}`, { headers: headers() })
-  if (!res.ok) throw new Error(await readError(res, "Could not load rules"))
+  if (!res.ok) await fail(res, "Could not load rules")
   return res.json()
 }
 
@@ -118,7 +137,7 @@ export async function createRule(input: CreateRuleInput): Promise<Rule> {
     headers: headers(),
     body: JSON.stringify(input),
   })
-  if (!res.ok) throw new Error(await readError(res, "Could not arm this rule"))
+  if (!res.ok) await fail(res, "Could not arm this rule")
   return res.json()
 }
 
@@ -131,7 +150,7 @@ export async function updateRule(
     headers: headers(),
     body: JSON.stringify(patch),
   })
-  if (!res.ok) throw new Error(await readError(res, "Could not update this rule"))
+  if (!res.ok) await fail(res, "Could not update this rule")
   return res.json()
 }
 
@@ -140,7 +159,7 @@ export async function deleteRule(id: string): Promise<void> {
     method: "DELETE",
     headers: headers(),
   })
-  if (!res.ok) throw new Error(await readError(res, "Could not delete this rule"))
+  if (!res.ok) await fail(res, "Could not delete this rule")
 }
 
 export async function testRule(id: string): Promise<RuleTestResult> {
@@ -148,7 +167,7 @@ export async function testRule(id: string): Promise<RuleTestResult> {
     method: "POST",
     headers: headers(),
   })
-  if (!res.ok) throw new Error(await readError(res, "Could not test this rule"))
+  if (!res.ok) await fail(res, "Could not test this rule")
   return res.json()
 }
 
@@ -156,7 +175,7 @@ export async function listEvents(limit = 50): Promise<RuleEvent[]> {
   const res = await fetch(`${API_BASE}/api/rules/events?limit=${limit}`, {
     headers: headers(),
   })
-  if (!res.ok) throw new Error(await readError(res, "Could not load fired signals"))
+  if (!res.ok) await fail(res, "Could not load fired signals")
   return res.json()
 }
 

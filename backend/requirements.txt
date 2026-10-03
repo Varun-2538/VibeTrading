@@ -26,3 +26,8 @@ apscheduler
 # Database
 sqlalchemy
 alembic
+
+# Wallet sign-in. eth-account recovers the signer from a personal_sign
+# signature; web3 is not needed because nothing here touches a node.
+eth-account
+pyjwt

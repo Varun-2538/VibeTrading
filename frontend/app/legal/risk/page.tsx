@@ -76,8 +76,11 @@ export default function RiskPage() {
         your exchange instead.
       </p>
       <p>
-        Rules are tied to the browser that created them, not to an account.
-        Clearing your site data loses them.
+        Rules are private to the wallet address that created them. Connecting a
+        wallet and signing a message is how we establish that address, and it is
+        all it does: there is no transaction, no token approval, and no ability
+        for us to move anything you hold. If you lose access to that address, you
+        lose access to the rules under it.
       </p>
 
       <h2>Chart patterns are not predictions</h2>
@@ -114,7 +117,9 @@ export default function RiskPage() {
         </li>
         <li>
           <strong>We do not hold funds or custody assets.</strong> There is no
-          wallet, no deposit, and no withdrawal.
+          deposit and no withdrawal. You can connect a wallet, but only to sign a
+          message proving an address is yours — we never request an approval or a
+          transaction, and we could not spend from it if we tried.
         </li>
         <li>
           <strong>We do not manage money</strong> or accept discretionary
