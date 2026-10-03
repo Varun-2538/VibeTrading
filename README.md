@@ -84,7 +84,7 @@ Browser
 ```
 
 Everything behind the API runs in Docker Compose on a single Google Compute
-Engine `e2-medium` in `asia-south1-a`. Live prices reach the browser over a
+Engine `e2-small` in `asia-south1-a`. Live prices reach the browser over a
 WebSocket direct from the exchange; historical candles are served by the API and
 cached.
 

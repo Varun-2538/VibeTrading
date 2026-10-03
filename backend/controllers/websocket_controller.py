@@ -111,6 +111,105 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+# Route order matters here. Starlette matches in the order routes are declared,
+# so "/ws/rules" MUST be declared before "/ws/{symbol}" - otherwise the path
+# parameter swallows it and a client asking for the rules channel silently gets
+# the market stream for a symbol named "rules". Do not reorder these.
+
+async def _authenticate(websocket: WebSocket) -> Optional[str]:
+    """
+    Read the opening auth frame and return the owner it names.
+
+    The token arrives in a message rather than a query string on purpose: query
+    strings are written to access logs, and a browser cannot set headers on a
+    WebSocket. Returns None when the socket should be closed - the caller does the
+    closing, since only it knows whether the peer is still there.
+    """
+    try:
+        raw = await asyncio.wait_for(
+            websocket.receive_text(), timeout=AUTH_GRACE_SECONDS
+        )
+    except (asyncio.TimeoutError, WebSocketDisconnect):
+        return None
+    except Exception:
+        return None
+
+    try:
+        message = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+    if not isinstance(message, dict) or message.get("type") != "auth":
+        return None
+
+    token = message.get("token")
+    if not isinstance(token, str) or not token:
+        return None
+
+    try:
+        return read_token(token)
+    except AuthError:
+        return None
+
+
+@router.websocket("/ws/rules")
+async def rules_websocket(websocket: WebSocket):
+    """
+    A signed-in owner's fired strategy signals.
+
+    Replaces /ws/strategy/{symbol}, which accepted its socket without ever
+    registering it with the manager and so could not receive a broadcast at all.
+    Being keyed by owner rather than symbol also means a rule on one pair reaches
+    the user while they are looking at another - one socket for the session
+    instead of one per chart.
+
+    The first frame must be {"type": "auth", "token": "<jwt>"}.
+    """
+    await websocket.accept()
+
+    owner_key = await _authenticate(websocket)
+    if owner_key is None:
+        try:
+            # 1008 is policy violation: the socket was well-formed, the caller
+            # just never proved who it was.
+            await websocket.close(code=1008, reason="Authentication required")
+        except RuntimeError:
+            # Already gone - it disconnected rather than authenticating.
+            pass
+        return
+
+    manager.register_owner(websocket, owner_key)
+
+    try:
+        await websocket.send_json({
+            "type": "authenticated",
+            "address": owner_key,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+
+        while True:
+            try:
+                data = await websocket.receive_text()
+                message = json.loads(data)
+
+                if message.get("type") == "ping":
+                    await websocket.send_json({
+                        "type": "pong",
+                        "timestamp": datetime.utcnow().isoformat()
+                    })
+
+            except WebSocketDisconnect:
+                break
+            except json.JSONDecodeError:
+                # A malformed frame is not worth tearing the socket down for.
+                continue
+
+    except Exception as e:
+        print(f"Rules WebSocket error: {e}")
+    finally:
+        manager.disconnect_owner(websocket, owner_key)
+
+
 @router.websocket("/ws/{symbol}")
 async def websocket_endpoint(websocket: WebSocket, symbol: str):
     """
@@ -210,100 +309,6 @@ async def websocket_endpoint(websocket: WebSocket, symbol: str):
         print(f"WebSocket error: {e}")
     finally:
         manager.disconnect(websocket, symbol)
-
-
-async def _authenticate(websocket: WebSocket) -> Optional[str]:
-    """
-    Read the opening auth frame and return the owner it names.
-
-    The token arrives in a message rather than a query string on purpose: query
-    strings are written to access logs, and a browser cannot set headers on a
-    WebSocket. Returns None when the socket should be closed - the caller does the
-    closing, since only it knows whether the peer is still there.
-    """
-    try:
-        raw = await asyncio.wait_for(
-            websocket.receive_text(), timeout=AUTH_GRACE_SECONDS
-        )
-    except (asyncio.TimeoutError, WebSocketDisconnect):
-        return None
-    except Exception:
-        return None
-
-    try:
-        message = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        return None
-
-    if not isinstance(message, dict) or message.get("type") != "auth":
-        return None
-
-    token = message.get("token")
-    if not isinstance(token, str) or not token:
-        return None
-
-    try:
-        return read_token(token)
-    except AuthError:
-        return None
-
-
-@router.websocket("/ws/rules")
-async def rules_websocket(websocket: WebSocket):
-    """
-    A signed-in owner's fired strategy signals.
-
-    Replaces /ws/strategy/{symbol}, which accepted its socket without ever
-    registering it with the manager and so could not receive a broadcast at all.
-    Being keyed by owner rather than symbol also means a rule on one pair reaches
-    the user while they are looking at another - one socket for the session
-    instead of one per chart.
-
-    The first frame must be {"type": "auth", "token": "<jwt>"}.
-    """
-    await websocket.accept()
-
-    owner_key = await _authenticate(websocket)
-    if owner_key is None:
-        try:
-            # 1008 is policy violation: the socket was well-formed, the caller
-            # just never proved who it was.
-            await websocket.close(code=1008, reason="Authentication required")
-        except RuntimeError:
-            # Already gone - it disconnected rather than authenticating.
-            pass
-        return
-
-    manager.register_owner(websocket, owner_key)
-
-    try:
-        await websocket.send_json({
-            "type": "authenticated",
-            "address": owner_key,
-            "timestamp": datetime.utcnow().isoformat()
-        })
-
-        while True:
-            try:
-                data = await websocket.receive_text()
-                message = json.loads(data)
-
-                if message.get("type") == "ping":
-                    await websocket.send_json({
-                        "type": "pong",
-                        "timestamp": datetime.utcnow().isoformat()
-                    })
-
-            except WebSocketDisconnect:
-                break
-            except json.JSONDecodeError:
-                # A malformed frame is not worth tearing the socket down for.
-                continue
-
-    except Exception as e:
-        print(f"Rules WebSocket error: {e}")
-    finally:
-        manager.disconnect_owner(websocket, owner_key)
 
 
 async def broadcast_price_update(symbol: str, price_data: dict):

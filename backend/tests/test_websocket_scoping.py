@@ -146,3 +146,20 @@ async def test_unauthenticated_openings_are_refused(frame):
 
 async def test_a_socket_that_says_nothing_is_refused():
     assert await ws._authenticate(FakeSocket(frames=[])) is None
+
+
+# --- routing ---------------------------------------------------------------
+
+
+def test_the_rules_route_is_declared_before_the_symbol_route():
+    """
+    Starlette matches routes in declaration order, so "/ws/{symbol}" declared
+    first swallows "/ws/rules" and hands back the market stream for a symbol
+    named "rules". It fails silently - the socket opens and even sends frames -
+    which is why this is pinned rather than left to review. It shipped once.
+    """
+    paths = [route.path for route in ws.router.routes]
+
+    assert "/ws/rules" in paths
+    assert "/ws/{symbol}" in paths
+    assert paths.index("/ws/rules") < paths.index("/ws/{symbol}")

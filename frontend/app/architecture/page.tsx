@@ -166,7 +166,7 @@ function Diagram() {
             strokeDasharray="3 3"
           />
           <text x={312} y={114} fill={MINT} fontSize="9.5" fontFamily="ui-monospace, monospace">
-            GOOGLE COMPUTE ENGINE · e2-medium · asia-south1-a
+            GOOGLE COMPUTE ENGINE · e2-small · asia-south1-a
           </text>
 
           <Box x={315} y={128} w={180} h={48} title="Caddy 2" sub="automatic TLS" />
@@ -208,7 +208,7 @@ export default function ArchitecturePage() {
     <DocShell wide>
       <h1>Architecture</h1>
       <p className="lede">
-        A small, boring, legible stack. One virtual machine, three containers, a
+        A small, boring, legible stack. One virtual machine, four containers, a
         static frontend, and an analysis layer with no machine learning in it.
       </p>
 
@@ -223,7 +223,7 @@ export default function ArchitecturePage() {
       </p>
       <p>
         Everything else runs in Docker Compose on a single Google Compute Engine{" "}
-        <code>e2-medium</code> in <code>asia-south1-a</code>: Caddy terminating
+        <code>e2-small</code> in <code>asia-south1-a</code>: Caddy terminating
         TLS, a FastAPI service, TimescaleDB, and Redis. One machine is genuinely
         enough at this stage, and pretending otherwise would mean paying for
         idle capacity.
@@ -321,7 +321,7 @@ export default function ArchitecturePage() {
 
       <h2>What we would change with more traffic</h2>
       <p>
-        Honestly, not much yet — a single <code>e2-medium</code> serves the
+        Honestly, not much yet — a single <code>e2-small</code> serves the
         current load with sub-250ms analysis responses. The first things to move
         would be read replicas for TimescaleDB and pushing candle fetching onto a
         scheduled worker rather than doing it inline on cache misses. We would
