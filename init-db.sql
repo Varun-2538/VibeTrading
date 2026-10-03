@@ -31,3 +31,7 @@ CREATE TABLE IF NOT EXISTS annotations (
 
 CREATE INDEX IF NOT EXISTS idx_annotations_symbol_created
     ON annotations (symbol, created_at DESC);
+
+-- Strategy rules live in backend/db/migrations/001_strategy_rules.sql, which is
+-- applied on every boot by Database.bootstrap_schema(). Kept there rather than
+-- duplicated here so the two can never drift.

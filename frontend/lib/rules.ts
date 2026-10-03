@@ -1,0 +1,169 @@
+import {
+  API_BASE,
+  readError,
+  type PatternScale,
+  type PatternSource,
+  type PatternState,
+  type Strictness,
+  type Timeframe,
+} from "@/lib/api"
+import { getOwnerKey } from "@/lib/owner"
+
+export type RuleAgent = "pattern" | "liquidity"
+export type LevelSide = "support" | "resistance"
+export type LevelEvent = "approach" | "break"
+export type Strength = "weak" | "medium" | "strong"
+
+export interface PatternRuleParams {
+  agent: "pattern"
+  kinds: ("W" | "M")[]
+  states: PatternState[]
+  min_confidence: number
+  strictness: Strictness
+  source: PatternSource
+  scale: PatternScale
+  lookback: number
+}
+
+export interface LiquidityRuleParams {
+  agent: "liquidity"
+  side: LevelSide
+  min_strength: Strength
+  event: LevelEvent
+  proximity_pct: number
+  lookback: number
+}
+
+export type RuleParams = PatternRuleParams | LiquidityRuleParams
+
+export interface Rule {
+  id: string
+  name: string
+  agent: RuleAgent
+  symbol: string
+  timeframe: string
+  params: Record<string, unknown>
+  action: Record<string, unknown>
+  enabled: boolean
+  cooldown_secs: number
+  persist_bars: number
+  last_fired_at: string | null
+  fire_count: number
+  created_at: string
+}
+
+export interface RuleEvent {
+  id: number
+  rule_id: string
+  rule_name: string | null
+  symbol: string
+  timeframe: string
+  agent: RuleAgent
+  direction: "bullish" | "bearish" | "neutral" | null
+  price: number
+  candle_time: string
+  fired_at: string
+  /** The signal can still repaint, so it may only ever alert. */
+  provisional: boolean
+  evidence: Record<string, any>
+  action_kind: string
+  action_status: string
+}
+
+/** Why a matched signal would still not fire. */
+export type BlockedBy = "no_match" | "persistence" | "cooldown" | "dedup"
+
+export interface RuleTestResult {
+  would_fire: boolean
+  blocked_by: BlockedBy | null
+  signal: {
+    agent: RuleAgent
+    symbol: string
+    timeframe: string
+    candle_time: string
+    identity: string
+    direction: string
+    price: number
+    provisional: boolean
+    evidence: Record<string, any>
+  } | null
+}
+
+export interface CreateRuleInput {
+  name: string
+  symbol: string
+  timeframe: Timeframe
+  params: RuleParams
+  cooldown_secs?: number
+  persist_bars?: number
+}
+
+function headers(): HeadersInit {
+  return {
+    "Content-Type": "application/json",
+    "X-Owner-Key": getOwnerKey(),
+  }
+}
+
+export async function listRules(symbol?: string): Promise<Rule[]> {
+  const query = symbol ? `?symbol=${encodeURIComponent(symbol)}` : ""
+  const res = await fetch(`${API_BASE}/api/rules${query}`, { headers: headers() })
+  if (!res.ok) throw new Error(await readError(res, "Could not load rules"))
+  return res.json()
+}
+
+export async function createRule(input: CreateRuleInput): Promise<Rule> {
+  const res = await fetch(`${API_BASE}/api/rules`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) throw new Error(await readError(res, "Could not arm this rule"))
+  return res.json()
+}
+
+export async function updateRule(
+  id: string,
+  patch: { enabled?: boolean; name?: string },
+): Promise<Rule> {
+  const res = await fetch(`${API_BASE}/api/rules/${id}`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify(patch),
+  })
+  if (!res.ok) throw new Error(await readError(res, "Could not update this rule"))
+  return res.json()
+}
+
+export async function deleteRule(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/rules/${id}`, {
+    method: "DELETE",
+    headers: headers(),
+  })
+  if (!res.ok) throw new Error(await readError(res, "Could not delete this rule"))
+}
+
+export async function testRule(id: string): Promise<RuleTestResult> {
+  const res = await fetch(`${API_BASE}/api/rules/${id}/test`, {
+    method: "POST",
+    headers: headers(),
+  })
+  if (!res.ok) throw new Error(await readError(res, "Could not test this rule"))
+  return res.json()
+}
+
+export async function listEvents(limit = 50): Promise<RuleEvent[]> {
+  const res = await fetch(`${API_BASE}/api/rules/events?limit=${limit}`, {
+    headers: headers(),
+  })
+  if (!res.ok) throw new Error(await readError(res, "Could not load fired signals"))
+  return res.json()
+}
+
+/** Human-readable reason a rule that matched still did not fire. */
+export const BLOCKED_REASON: Record<BlockedBy, string> = {
+  no_match: "Conditions not met on the last closed candle",
+  persistence: "Matched, but waiting for it to hold another candle",
+  cooldown: "Matched, but still inside the cooldown window",
+  dedup: "Already fired for this candle",
+}

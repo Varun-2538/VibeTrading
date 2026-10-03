@@ -60,12 +60,43 @@ class CryptoScheduler:
             name='Initial crypto data fetch'
         )
 
+        # One sweep for every armed strategy rule. Deliberately a single job
+        # rather than one per rule: per-rule jobs multiply without bound and
+        # lose the batching that makes a sweep cheap.
+        self.scheduler.add_job(
+            self.evaluate_strategy_rules,
+            trigger=IntervalTrigger(minutes=1),
+            id='evaluate_strategy_rules',
+            name='Evaluate armed strategy rules',
+            max_instances=1,
+            coalesce=True,
+            replace_existing=True
+        )
+
         self.scheduler.start()
         self.is_running = True
         print("[OK] Crypto scheduler started")
         print("   - Live updates: Every 5 minutes (24/7)")
         print("   - Data retention: Last 30 days")
         print("   - Daily cleanup: 00:00 UTC")
+        print("   - Strategy rules: Evaluated every minute")
+
+    async def evaluate_strategy_rules(self):
+        """Fire any armed rule whose condition is met on the latest closed bar."""
+        from services.rule_engine import RuleEngine
+
+        try:
+            fired = await RuleEngine.evaluate_due()
+            if fired:
+                print(f"[RULES] {len(fired)} rule(s) fired")
+        except Exception as e:
+            print(f"[ERROR] Strategy rule sweep failed: {e}")
+
+    async def trigger_rule_evaluation(self):
+        """Run a sweep immediately, for the test endpoint."""
+        from services.rule_engine import RuleEngine
+
+        return await RuleEngine.evaluate_due()
 
     async def stop(self):
         """Stop the scheduler"""

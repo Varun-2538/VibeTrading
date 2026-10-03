@@ -47,10 +47,18 @@ export interface MsCandle {
   volume: number
 }
 
-async function readError(res: Response, fallback: string): Promise<string> {
+export async function readError(res: Response, fallback: string): Promise<string> {
   try {
     const body = await res.json()
-    return body?.detail ?? fallback
+    const detail = body?.detail
+    // FastAPI validation failures put an array of field errors in `detail`,
+    // which would otherwise surface to the user as "[object Object]".
+    if (Array.isArray(detail)) {
+      const first = detail[0]
+      const field = Array.isArray(first?.loc) ? first.loc[first.loc.length - 1] : null
+      return field ? `${field}: ${first.msg}` : (first?.msg ?? fallback)
+    }
+    return detail ?? fallback
   } catch {
     return fallback
   }

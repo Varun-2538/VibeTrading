@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 
 # Import controllers
-from controllers import strategy_router, ohlc_router, websocket_router
+from controllers import strategy_router, ohlc_router, websocket_router, rules_router
 from controllers.chat_controller import router as chat_router
 from controllers.analysis_controller import router as analysis_router
 from services.candle_service import close_http
@@ -29,6 +29,8 @@ async def lifespan(app: FastAPI):
     try:
         await db.connect()
         print("[OK] Connected to Supabase/PostgreSQL")
+        await db.bootstrap_schema()
+        print("[OK] Schema up to date")
     except Exception as e:
         print(f"[ERROR] Database connection failed: {e}")
 
@@ -99,7 +101,7 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app
 app = FastAPI(
     title="TradeSmart.AI API",
-    description="AI-powered trading strategy builder using Cerebras LLMs and MCP",
+    description="AI-powered trading strategy builder using LLM agents and MCP",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -119,6 +121,7 @@ app.include_router(ohlc_router)
 app.include_router(websocket_router)
 app.include_router(chat_router)
 app.include_router(analysis_router)
+app.include_router(rules_router)
 
 
 @app.get("/")

@@ -8,7 +8,7 @@ import ChatPanel from "@/components/chat-panel"
 import AnalysisPanel from "@/components/analysis-panel"
 import { Button } from "@/components/ui/button"
 import { BarChart3, CandlestickChart, MessageSquare, Sparkles } from "lucide-react"
-import type { LiquidityData } from "@/lib/api"
+import type { LiquidityData, Timeframe } from "@/lib/api"
 
 /*
  * Two layouts, one tree.
@@ -42,6 +42,9 @@ export default function TradingDashboard() {
   const [isDraggingAnalysis, setIsDraggingAnalysis] = useState(false)
   const [region, setRegion] = useState<CompactRegion>("chart")
   const [currentSymbol, setCurrentSymbol] = useState("BTCUSDT")
+  // Lifted out of the chart so the strategy panel builds rules against the
+  // timeframe the user is actually looking at.
+  const [timeframe, setTimeframe] = useState<Timeframe>("1h")
   const [markedLevels, setMarkedLevels] = useState<{
     symbol: string
     liquidityData: LiquidityData
@@ -133,6 +136,8 @@ export default function TradingDashboard() {
           <PriceChart
             symbol={currentSymbol}
             onSymbolChange={setCurrentSymbol}
+            timeframe={timeframe}
+            onTimeframeChange={setTimeframe}
             liquidityData={markedLevels}
             onClearLevels={() => setMarkedLevels(null)}
           />
@@ -154,7 +159,7 @@ export default function TradingDashboard() {
           >
             <div className="absolute left-1/2 top-1/2 h-1 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-border" />
           </div>
-          <AnalysisPanel />
+          <AnalysisPanel symbol={currentSymbol} timeframe={timeframe} />
         </div>
 
         {/* Chat: a resizable column at lg, a full-screen region below it. */}

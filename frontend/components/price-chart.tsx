@@ -111,6 +111,9 @@ function applyCandles(
 interface PriceChartProps {
   symbol?: string
   onSymbolChange?: (symbol: string) => void
+  /** Controlled by the page so the strategy panel can read the same timeframe. */
+  timeframe: Timeframe
+  onTimeframeChange: (timeframe: Timeframe) => void
   /** Levels pushed from chat via "Mark on Chart". */
   liquidityData?: { symbol: string; liquidityData: LiquidityData } | null
   onClearLevels?: () => void
@@ -119,11 +122,13 @@ interface PriceChartProps {
 export default function PriceChart({
   symbol,
   onSymbolChange,
+  timeframe,
+  onTimeframeChange,
   liquidityData,
   onClearLevels,
 }: PriceChartProps) {
   const selected = symbol || "BTCUSDT"
-  const [timeframe, setTimeframe] = useState<Timeframe>("1h")
+  const setTimeframe = onTimeframeChange
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
