@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from analysis.levels import detect_levels
 from analysis.patterns import detect_double_patterns
+from analysis.sequence import describe_steps, match_sequence
 from models.rule_schemas import STRENGTH_ORDER
 from repositories.rule_repository import RuleEventRepository, RuleRepository
 from services.actions import ACTIONS
@@ -173,6 +174,40 @@ def _match_liquidity(
     return None
 
 
+def _match_sequence(
+    params: Dict[str, Any],
+    candles: Sequence[Dict[str, Any]],
+) -> Optional[Tuple[str, str, bool, Dict[str, Any]]]:
+    """
+    Identity is the bar time of every matched step, so the same doji-then-cross
+    seen by two sweeps is one signal. Direction comes from the final step: a
+    cross above reads bullish, below bearish, and a lone candle shape is
+    neutral. Never provisional - every step is settled at candle close.
+    """
+    steps = params.get("steps") or []
+    picked = match_sequence(candles, steps, int(params.get("within_bars", 3)))
+    if picked is None:
+        return None
+
+    times = [int(candles[i]["time"]) for i in picked]
+    identity = "seq:" + ":".join(str(t) for t in times)
+
+    last = steps[-1]
+    if last.get("type") == "indicator":
+        direction = "bullish" if last.get("cross") == "above" else "bearish"
+    else:
+        direction = "neutral"
+
+    evidence = {
+        "summary": describe_steps(steps),
+        "steps": [
+            {**step, "bar_time": _candle_time(candles[i]).isoformat()}
+            for step, i in zip(steps, picked)
+        ],
+    }
+    return identity, direction, False, evidence
+
+
 class RuleEngine:
     """Sweeps armed rules and fires the ones whose conditions hold."""
 
@@ -215,6 +250,10 @@ class RuleEngine:
             matched = _match_liquidity(
                 params, levels, [float(c["close"]) for c in candles]
             )
+        elif agent == "sequence":
+            # Nothing to share across rules here: the masks depend on each
+            # rule's own periods and levels, and they are cheap.
+            matched = _match_sequence(params, candles)
         else:
             return None, BLOCKED_NO_MATCH
 
@@ -395,7 +434,7 @@ class RuleEngine:
                             max_results=None,
                         )
                     patterns = pattern_cache[key]
-                else:
+                elif rule["agent"] == "liquidity":
                     if levels_cache is None:
                         levels_cache = detect_levels(closed)
                     levels = levels_cache

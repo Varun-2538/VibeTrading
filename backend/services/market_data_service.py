@@ -4,6 +4,7 @@ import numpy as np
 from repositories.ohlc_repository import OHLCRepository
 from services.cache_service import cache_service
 from services.candle_service import CandleService
+from analysis import indicators as indicator_math
 from analysis.levels import detect_levels
 
 
@@ -137,25 +138,13 @@ class MarketDataService:
 
     @staticmethod
     def _calculate_rsi(prices: np.ndarray, period: int = 14) -> np.ndarray:
-        """Calculate RSI indicator"""
-        deltas = np.diff(prices)
-        gains = np.where(deltas > 0, deltas, 0)
-        losses = np.where(deltas < 0, -deltas, 0)
-
-        avg_gains = np.zeros(len(prices))
-        avg_losses = np.zeros(len(prices))
-
-        avg_gains[period] = np.mean(gains[:period])
-        avg_losses[period] = np.mean(losses[:period])
-
-        for i in range(period + 1, len(prices)):
-            avg_gains[i] = (avg_gains[i-1] * (period - 1) + gains[i-1]) / period
-            avg_losses[i] = (avg_losses[i-1] * (period - 1) + losses[i-1]) / period
-
-        rs = avg_gains / (avg_losses + 1e-10)  # Avoid division by zero
-        rsi = 100 - (100 / (1 + rs))
-
-        return rsi
+        """
+        RSI series. The arithmetic lives in analysis/indicators so the rule
+        engine evaluates exactly what the chat reports. Warm-up bars come back
+        as 0.0 here rather than NaN, which is what callers of this method have
+        always been handed.
+        """
+        return np.nan_to_num(indicator_math.rsi(prices, period), nan=0.0)
 
     @staticmethod
     def _get_rsi_signal(rsi_value: float) -> str:
@@ -169,17 +158,8 @@ class MarketDataService:
 
     @staticmethod
     def _calculate_ema(prices: np.ndarray, period: int) -> np.ndarray:
-        """Calculate EMA indicator"""
-        ema = np.zeros(len(prices))
-        multiplier = 2 / (period + 1)
-
-        # Start with SMA for first value
-        ema[period - 1] = np.mean(prices[:period])
-
-        for i in range(period, len(prices)):
-            ema[i] = (prices[i] - ema[i-1]) * multiplier + ema[i-1]
-
-        return ema
+        """EMA series; see _calculate_rsi for why this delegates."""
+        return np.nan_to_num(indicator_math.ema(prices, period), nan=0.0)
 
     @staticmethod
     def _calculate_macd(
@@ -188,15 +168,13 @@ class MarketDataService:
         slow_period: int = 26,
         signal_period: int = 9
     ) -> tuple:
-        """Calculate MACD indicator"""
-        ema_fast = MarketDataService._calculate_ema(prices, fast_period)
-        ema_slow = MarketDataService._calculate_ema(prices, slow_period)
-
-        macd_line = ema_fast - ema_slow
-        signal_line = MarketDataService._calculate_ema(macd_line, signal_period)
-        histogram = macd_line - signal_line
-
-        return macd_line, signal_line, histogram
+        """MACD line, signal line, histogram; see _calculate_rsi for why this delegates."""
+        line, signal, hist = indicator_math.macd(prices, fast_period, slow_period, signal_period)
+        return (
+            np.nan_to_num(line, nan=0.0),
+            np.nan_to_num(signal, nan=0.0),
+            np.nan_to_num(hist, nan=0.0),
+        )
 
     @staticmethod
     def _get_macd_signal(macd_line: float, signal_line: float) -> str:

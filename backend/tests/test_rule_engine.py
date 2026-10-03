@@ -334,3 +334,78 @@ class TestEvaluateRule:
             rule(), candles([100, 123.5]), patterns=[pattern()], dry_run=True
         )
         assert signal.price == 123.5
+
+
+# --- sequence rules ----------------------------------------------------------
+
+
+def _sequence_rule(**over):
+    base = {
+        "id": "00000000-0000-0000-0000-00000000seq1",
+        "owner_key": "0xabc",
+        "agent": "sequence",
+        "symbol": "BTCUSDT",
+        "timeframe": "1h",
+        "params": {
+            "agent": "sequence",
+            "steps": [{"type": "candle", "shape": "doji", "max_body_pct": 10}],
+            "within_bars": 3,
+            "lookback": 300,
+        },
+        "persist_bars": 0,
+        "cooldown_secs": 0,
+        "pending": None,
+        "last_candle_time": None,
+        "last_fired_at": None,
+    }
+    base.update(over)
+    return base
+
+
+def _doji_bars(n, doji_last=True):
+    out = candles([100.0 + i for i in range(n)])
+    for c in out:
+        c["open"] = c["close"] - 2.0
+        c["high"] = c["close"] + 3.0
+        c["low"] = c["open"] - 3.0
+    if doji_last:
+        out[-1]["open"] = out[-1]["close"] - 0.01
+    return out
+
+
+async def test_sequence_rule_fires_on_a_doji_closing_bar(monkeypatch):
+    async def no_exists(_key):
+        return False
+
+    monkeypatch.setattr(RuleEventRepository, "exists", no_exists)
+    signal, blocked = await RuleEngine.evaluate_rule(
+        _sequence_rule(), _doji_bars(20), dry_run=True
+    )
+    assert blocked is None
+    assert signal is not None
+    assert signal.agent == "sequence"
+    assert signal.provisional is False
+    assert signal.direction == "neutral"
+    assert signal.identity.startswith("seq:")
+    assert signal.evidence["summary"] == "doji"
+
+
+async def test_sequence_rule_does_not_fire_without_the_shape():
+    signal, blocked = await RuleEngine.evaluate_rule(
+        _sequence_rule(), _doji_bars(20, doji_last=False), dry_run=True
+    )
+    assert signal is None
+    assert blocked == BLOCKED_NO_MATCH
+
+
+async def test_sequence_identity_is_the_matched_bar_times(monkeypatch):
+    """Two sweeps over the same closed bar must agree, or dedup cannot work."""
+    async def no_exists(_key):
+        return False
+
+    monkeypatch.setattr(RuleEventRepository, "exists", no_exists)
+    bars = _doji_bars(20)
+    a, _ = await RuleEngine.evaluate_rule(_sequence_rule(), bars, dry_run=True)
+    b, _ = await RuleEngine.evaluate_rule(_sequence_rule(), bars, dry_run=True)
+    assert a.identity == b.identity == f"seq:{bars[-1]['time']}"
+    assert a.dedup_key() == b.dedup_key()

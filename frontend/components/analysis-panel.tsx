@@ -33,6 +33,7 @@ import {
   deleteRule,
   listEvents,
   listRules,
+  RULES_CHANGED_EVENT,
   testRule,
   updateRule,
   type LevelEvent,
@@ -212,6 +213,17 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
   // Keyed on the token, not the symbol: the channel carries this owner's fires
   // for every pair, and it reconnects when the session changes.
   useStrategySocket(session?.token ?? null, handleSignal, refresh, invalidate)
+
+  // The chat can arm a rule too. It announces rather than reaching in here.
+  useEffect(() => {
+    if (status !== "ready") return
+    const onChanged = () => {
+      void refresh()
+      setTab("armed")
+    }
+    window.addEventListener(RULES_CHANGED_EVENT, onChanged)
+    return () => window.removeEventListener(RULES_CHANGED_EVENT, onChanged)
+  }, [refresh, status])
 
   useEffect(() => {
     if (tab === "fired") setUnseen(0)
@@ -571,7 +583,9 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
             Rules are evaluated server-side on closed candles only, and must hold for one
             further candle before firing — so a pattern that repaints away never alerts.
             Alerts only; nothing here places a trade. Rules are private to your wallet
-            address and follow it to any browser you sign in from.
+            address and follow it to any browser you sign in from. For candle-and-indicator
+            sequences, ask the assistant — e.g. "alert me when a doji forms and RSI(14)
+            crosses above 30".
           </p>
         </TabsContent>
 
@@ -666,7 +680,11 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
                     <Bell
                       className={cn(
                         "h-3.5 w-3.5 shrink-0",
-                        event.direction === "bullish" ? "text-emerald-500" : "text-red-500",
+                        event.direction === "bullish"
+                          ? "text-emerald-500"
+                          : event.direction === "bearish"
+                            ? "text-red-500"
+                            : "text-muted-foreground",
                       )}
                     />
                     <div className="min-w-0 flex-1">
@@ -688,6 +706,7 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
                         <span className="font-mono">{Number(event.price).toLocaleString()}</span>
                         {event.evidence?.strength && ` · ${event.evidence.strength} level`}
                         {event.evidence?.kind && ` · ${event.evidence.kind} ${event.evidence.state}`}
+                        {event.evidence?.summary && ` · ${event.evidence.summary}`}
                         {event.evidence?.confidence != null &&
                           ` · ${event.evidence.confidence}% confidence`}
                       </p>

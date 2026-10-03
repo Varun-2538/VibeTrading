@@ -72,7 +72,7 @@ def _not_found() -> HTTPException:
 async def rule_schema() -> Dict[str, Any]:
     """The vocabulary the rule builder offers, mirroring /api/analysis/strictness."""
     return {
-        "agents": ["pattern", "liquidity"],
+        "agents": ["pattern", "liquidity", "sequence"],
         "kinds": list(KINDS),
         "states": list(PATTERN_STATES),
         "strictness": list(PRESETS),
@@ -129,7 +129,7 @@ async def create_rule(
         timeframe=request.timeframe,
         params=request.params.model_dump(),
         cooldown_secs=request.cooldown_secs,
-        persist_bars=request.persist_bars,
+        persist_bars=request.resolved_persist_bars(),
     )
 
 

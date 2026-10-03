@@ -259,6 +259,15 @@ export default function ArchitecturePage() {
         never computes a level or a pattern, so a bad generation cannot corrupt
         the analysis — the worst it can do is describe it clumsily.
       </p>
+      <p>
+        It has one other job: reading a sentence like "alert me when a doji
+        forms and RSI(14) crosses above 30" into a rule draft. Even there it
+        only proposes. The draft is validated by the same schema the API
+        enforces, so an invented indicator is refused rather than armed, and
+        nothing is armed until the user confirms the card. The engine that then
+        evaluates the rule every minute is deterministic and never calls the
+        model.
+      </p>
 
       <h2>Who owns a rule</h2>
       <p>
@@ -312,7 +321,7 @@ export default function ArchitecturePage() {
 
       <h2>Testing</h2>
       <p>
-        133 tests. Pattern fixtures are built from line segments so the geometry
+        176 tests. Pattern fixtures are built from line segments so the geometry
         is known exactly and assertions can be made on prices rather than on
         "something was found". A good number of those tests exist because a real
         chart disagreed with the detector and the disagreement turned out to be

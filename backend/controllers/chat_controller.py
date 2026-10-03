@@ -7,6 +7,8 @@ from typing import Optional, List, Dict, Any
 from agents.orchestrator import OrchestratorAgent
 from agents.liquidation_agent import LiquidationAgent
 from agents.indicator_agent import IndicatorAgent
+from agents.rule_parser import LLMBusy, RuleParseError, draft_rule
+from analysis.sequence import describe_steps
 from services.market_data_service import MarketDataService
 from services.candle_service import CandleService
 from analysis.patterns import detect_double_patterns
@@ -91,9 +93,23 @@ PATTERN_PHRASES = (
 )
 
 
+# Asking to be told when something happens. Checked before every other intent:
+# "alert me when RSI crosses 30" mentions an indicator and "notify me at
+# support" mentions a level, and both would otherwise be answered as a question
+# about the current value instead of a request for a rule.
+ALERT_PHRASES = (
+    'alert', 'notify', 'every time', 'everytime', 'whenever', 'each time',
+    'tell me when', 'let me know when', 'ping me', 'warn me', 'remind me when',
+    'give me an alert',
+)
+
+
 def detect_query_intent(message: str) -> str:
     """Detect what the user is asking about"""
     message_lower = message.lower()
+
+    if any(phrase in message_lower for phrase in ALERT_PHRASES):
+        return 'create_alert'
 
     # Checked before liquidity: "is a double bottom forming at that support?"
     # is a question about the pattern, and the levels branch would otherwise
@@ -137,6 +153,47 @@ async def ask_question(request: ChatRequest):
 
         # Detect query intent
         intent = detect_query_intent(message)
+
+        # A rule draft. The model reads the sentence; the rule schema decides
+        # whether the result is a rule; nothing is armed until the user clicks
+        # the card this returns. Touches no market data, so it sits above the
+        # price lookup like the pattern branch does.
+        if intent == 'create_alert':
+            try:
+                draft = await draft_rule(message, symbol, request.timeframe or "1h")
+            except RuleParseError as exc:
+                return ChatResponse(response=str(exc), symbol=symbol)
+            except LLMBusy as exc:
+                return ChatResponse(response=str(exc), symbol=symbol)
+
+            summary = describe_steps(draft.params.model_dump()["steps"])
+            within = draft.params.within_bars
+            response_text = (
+                f"Here's the rule I read from that:
+
+"
+                f"**{draft.symbol} · {draft.timeframe}** — {summary}, "
+                f"each step within {within} bar{'s' if within != 1 else ''} of the last.
+
+"
+                f"Arm it below and I'll alert you the moment it completes on a closed candle. "
+                f"Nothing is armed until you do."
+            )
+            return ChatResponse(
+                response=response_text,
+                symbol=draft.symbol,
+                data={
+                    "rule_draft": {
+                        "name": draft.name,
+                        "symbol": draft.symbol,
+                        "timeframe": draft.timeframe,
+                        "params": draft.params.model_dump(),
+                        "cooldown_secs": draft.cooldown_secs,
+                        "persist_bars": draft.resolved_persist_bars(),
+                    },
+                    "summary": summary,
+                },
+            )
 
         # Patterns are answered before the database is touched. Everything this
         # branch needs is in the candles, and the price lookup below reads the

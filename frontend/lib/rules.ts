@@ -9,7 +9,7 @@ import {
 } from "@/lib/api"
 import { getToken } from "@/lib/session"
 
-export type RuleAgent = "pattern" | "liquidity"
+export type RuleAgent = "pattern" | "liquidity" | "sequence"
 export type LevelSide = "support" | "resistance"
 export type LevelEvent = "approach" | "break"
 export type Strength = "weak" | "medium" | "strong"
@@ -34,7 +34,57 @@ export interface LiquidityRuleParams {
   lookback: number
 }
 
-export type RuleParams = PatternRuleParams | LiquidityRuleParams
+export interface CandleStep {
+  type: "candle"
+  shape: "doji"
+  max_body_pct?: number
+}
+
+export interface IndicatorStep {
+  type: "indicator"
+  indicator: "rsi"
+  period: number
+  cross: "above" | "below"
+  level: number
+}
+
+export type SequenceStep = CandleStep | IndicatorStep
+
+/** Steps in order, the last one landing on the newest closed bar. */
+export interface SequenceRuleParams {
+  agent: "sequence"
+  steps: SequenceStep[]
+  within_bars: number
+  lookback?: number
+}
+
+export type RuleParams = PatternRuleParams | LiquidityRuleParams | SequenceRuleParams
+
+/**
+ * What the chat proposes after reading a sentence. Identical in shape to
+ * CreateRuleInput on purpose: arming it is one createRule call, with nothing
+ * for the client to reinterpret.
+ */
+export interface RuleDraft {
+  name: string
+  symbol: string
+  timeframe: Timeframe
+  params: RuleParams
+  cooldown_secs: number
+  persist_bars: number
+}
+
+/**
+ * Fired by whoever creates a rule outside the Strategy panel (the chat), so
+ * the panel's Armed tab can refetch without the two being wired together.
+ */
+export const RULES_CHANGED_EVENT = "vt:rules-changed"
+
+export function announceRulesChanged(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(RULES_CHANGED_EVENT))
+  }
+}
 
 export interface Rule {
   id: string

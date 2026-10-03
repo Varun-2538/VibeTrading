@@ -4,8 +4,14 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Send, Sparkles, X, Loader2, Check, XIcon } from "lucide-react"
+import { Send, Sparkles, X, Loader2, Check, XIcon, Bell } from "lucide-react"
 import { API_BASE } from "@/lib/api"
+import {
+  announceRulesChanged,
+  createRule,
+  UnauthorizedError,
+  type RuleDraft,
+} from "@/lib/rules"
 
 interface LiquidityLevel {
   price: number
@@ -20,6 +26,14 @@ interface LiquidityData {
   resistance_levels: LiquidityLevel[]
 }
 
+/** A rule the assistant read from a sentence, waiting for the user to arm it. */
+interface DraftCard {
+  draft: RuleDraft
+  summary: string
+  status: "pending" | "arming" | "armed" | "dismissed"
+  error?: string
+}
+
 interface Message {
   id: string
   role: "user" | "assistant"
@@ -27,6 +41,7 @@ interface Message {
   symbol?: string
   liquidityData?: LiquidityData
   showActions?: boolean
+  ruleDraft?: DraftCard
 }
 
 interface ChatPanelProps {
@@ -85,6 +100,13 @@ export default function ChatPanel({ onClose, currentSymbol, onSymbolChange, onMa
       // Check if response contains liquidity data
       const hasLiquidityData = data.data && (data.data.support_levels || data.data.resistance_levels)
 
+      // A drafted rule rides in data.rule_draft. It is shown, not armed: the
+      // model may have misread the sentence, and the card is where that gets
+      // caught.
+      const ruleDraft: DraftCard | undefined = data.data?.rule_draft
+        ? { draft: data.data.rule_draft, summary: data.data.summary ?? "", status: "pending" }
+        : undefined
+
       // Add AI response
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -93,6 +115,7 @@ export default function ChatPanel({ onClose, currentSymbol, onSymbolChange, onMa
         symbol: data.symbol,
         liquidityData: hasLiquidityData ? data.data : undefined,
         showActions: hasLiquidityData, // Show Accept/Reject buttons if liquidity data exists
+        ruleDraft,
       }
 
       setMessages((prev) => [...prev, aiMessage])
@@ -126,6 +149,35 @@ export default function ChatPanel({ onClose, currentSymbol, onSymbolChange, onMa
       setMessages((prev) =>
         prev.map((m) => (m.id === messageId ? { ...m, showActions: false } : m))
       )
+    }
+  }
+
+  const patchDraft = (messageId: string, patch: Partial<DraftCard>) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId && m.ruleDraft ? { ...m, ruleDraft: { ...m.ruleDraft, ...patch } } : m,
+      ),
+    )
+  }
+
+  const handleArmDraft = async (messageId: string) => {
+    const message = messages.find((m) => m.id === messageId)
+    if (!message?.ruleDraft) return
+
+    patchDraft(messageId, { status: "arming", error: undefined })
+    try {
+      await createRule(message.ruleDraft.draft)
+      patchDraft(messageId, { status: "armed" })
+      // The Strategy panel owns the Armed tab; tell it something changed.
+      announceRulesChanged()
+    } catch (err) {
+      const text =
+        err instanceof UnauthorizedError
+          ? "Sign in with your wallet in the Strategy panel first, then arm this."
+          : err instanceof Error
+            ? err.message
+            : "Could not arm this rule"
+      patchDraft(messageId, { status: "pending", error: text })
     }
   }
 
@@ -174,6 +226,58 @@ export default function ChatPanel({ onClose, currentSymbol, onSymbolChange, onMa
                     )}
                     <div className="text-sm leading-relaxed whitespace-pre-line">{message.content}</div>
                   </div>
+
+                  {/* A drafted alert rule. Arm is the only way it becomes real. */}
+                  {message.role === "assistant" && message.ruleDraft && message.ruleDraft.status !== "dismissed" && (
+                    <div className="mt-3 rounded-lg border border-border bg-card px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <Bell className="h-3.5 w-3.5 shrink-0 text-primary" />
+                        <span className="text-xs font-medium text-foreground">
+                          {message.ruleDraft.draft.name}
+                        </span>
+                        <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+                          {message.ruleDraft.draft.symbol} · {message.ruleDraft.draft.timeframe}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                        {message.ruleDraft.summary}
+                        {message.ruleDraft.draft.params.agent === "sequence" &&
+                          ` · each step within ${message.ruleDraft.draft.params.within_bars} bars`}
+                      </p>
+                      {message.ruleDraft.error && (
+                        <p className="mt-1.5 text-[11px] text-destructive">{message.ruleDraft.error}</p>
+                      )}
+                      {message.ruleDraft.status === "armed" ? (
+                        <p className="mt-2 flex items-center gap-1 text-[11px] text-emerald-500">
+                          <Check className="h-3 w-3" /> Armed — see the Strategy panel
+                        </p>
+                      ) : (
+                        <div className="mt-2 flex gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => handleArmDraft(message.id)}
+                            disabled={message.ruleDraft.status === "arming"}
+                            className="h-8 flex-1 text-xs"
+                          >
+                            {message.ruleDraft.status === "arming" ? (
+                              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Bell className="mr-1 h-3.5 w-3.5" />
+                            )}
+                            Arm rule
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => patchDraft(message.id, { status: "dismissed" })}
+                            className="h-8 flex-1 text-xs"
+                          >
+                            Dismiss
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Accept/Reject Buttons for Liquidity Levels */}
                   {message.role === "assistant" && message.showActions && message.liquidityData && (

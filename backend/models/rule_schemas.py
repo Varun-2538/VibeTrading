@@ -7,13 +7,15 @@ produces a rule that is accepted and then silently never fires, which is the
 worst possible failure for an alert you are relying on.
 """
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from analysis.candles import DEFAULT_DOJI_BODY_PCT
 from analysis.levels import MAX_LEVELS_PER_SIDE  # noqa: F401  (kept for callers)
 from analysis.patterns import DEFAULT_SCALE, KINDS, PRESETS, SCALES, SOURCES
+from analysis.sequence import DEFAULT_WITHIN_BARS
 
 # Ordered weakest to strongest, so "at least medium" is a slice of this list.
 STRENGTH_ORDER = ("weak", "medium", "strong")
@@ -68,7 +70,60 @@ class LiquidityRuleParams(BaseModel):
     lookback: int = Field(default=500, ge=50, le=1000)
 
 
-RuleParams = Union[PatternRuleParams, LiquidityRuleParams]
+class CandleStep(BaseModel):
+    """One bar has a shape. Settled at close; cannot repaint."""
+
+    type: Literal["candle"] = "candle"
+    shape: Literal["doji"] = "doji"
+    # Body as a percentage of the bar's high-low range.
+    max_body_pct: float = Field(default=DEFAULT_DOJI_BODY_PCT, gt=0, le=50)
+
+
+class IndicatorStep(BaseModel):
+    """An indicator crosses a level on a bar."""
+
+    type: Literal["indicator"] = "indicator"
+    indicator: Literal["rsi"] = "rsi"
+    period: int = Field(default=14, ge=2, le=200)
+    cross: Literal["above", "below"] = "above"
+    level: float = Field(default=30.0, ge=0, le=100)
+
+
+SequenceStep = Union[CandleStep, IndicatorStep]
+
+
+class SequenceRuleParams(BaseModel):
+    """
+    Fires when the steps occur in order, the last one on the newest closed bar.
+
+    "Doji, then RSI(14) crosses above 30, within 3 bars" is two steps and a
+    window. Because every step is settled at candle close, sequence rules do
+    not need the persistence wait that pattern rules do - see RuleCreate.
+    """
+
+    agent: Literal["sequence"] = "sequence"
+    steps: List[Annotated[SequenceStep, Field(discriminator="type")]] = Field(
+        min_length=1, max_length=4
+    )
+    within_bars: int = Field(default=DEFAULT_WITHIN_BARS, ge=1, le=50)
+    lookback: int = Field(default=300, ge=50, le=1000)
+
+    def model_post_init(self, _context: Any) -> None:
+        # Pydantic picks the step model from `type`, so a bad `type` is already
+        # a 422 by here. What it cannot check is that the lookback leaves room
+        # for the longest indicator warm-up plus the window.
+        longest = max(
+            (s.period for s in self.steps if isinstance(s, IndicatorStep)), default=0
+        )
+        needed = longest + self.within_bars * len(self.steps) + 2
+        if self.lookback < needed:
+            raise ValueError(
+                f"lookback {self.lookback} is too short for these steps; "
+                f"need at least {needed} bars"
+            )
+
+
+RuleParams = Union[PatternRuleParams, LiquidityRuleParams, SequenceRuleParams]
 
 
 class RuleCreate(BaseModel):
@@ -77,7 +132,14 @@ class RuleCreate(BaseModel):
     timeframe: str = "1h"
     params: RuleParams = Field(discriminator="agent")
     cooldown_secs: int = Field(default=900, ge=0, le=86_400)
-    persist_bars: int = Field(default=1, ge=0, le=5)
+    # None means "the right default for this agent": one extra close for
+    # patterns, which can repaint, and none for sequences, which cannot.
+    persist_bars: Optional[int] = Field(default=None, ge=0, le=5)
+
+    def resolved_persist_bars(self) -> int:
+        if self.persist_bars is not None:
+            return self.persist_bars
+        return 0 if self.params.agent == "sequence" else 1
 
 
 class RuleUpdate(BaseModel):
