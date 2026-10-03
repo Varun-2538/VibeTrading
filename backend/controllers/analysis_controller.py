@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
 
 from analysis.scene import build_scene
+from analysis.patterns_big import ALL_KINDS, detect_all_patterns
 from analysis.patterns import (
     DEFAULT_SCALE,
     KINDS,
@@ -94,7 +95,7 @@ async def analyse_patterns(request: PatternRequest) -> Dict[str, Any]:
         # Detect everything, then show the top slice. Reporting both counts is
         # what makes the strictness control legible: on a long window the cap
         # can otherwise mask a real difference between the presets.
-        all_found = detect_double_patterns(
+        all_found = detect_all_patterns(
             visible,
             strictness=request.strictness,
             kinds=tuple(request.kinds),
@@ -128,7 +129,7 @@ async def list_strictness() -> Dict[str, List[str]]:
     """The strictness presets this deployment offers."""
     return {
         "strictness": list(PRESETS),
-        "kinds": list(KINDS),
+        "kinds": list(ALL_KINDS),
         "sources": list(SOURCES),
         "scales": list(SCALES),
     }

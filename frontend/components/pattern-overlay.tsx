@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { IChartApi, ISeriesApi, SeriesType, UTCTimestamp } from "lightweight-charts"
-import { patternPoints, type Pattern, type PatternState } from "@/lib/api"
+import { patternPoints, type Pattern, type PatternState, PATTERN_BULLISH, type PatternKind } from "@/lib/api"
 
 /*
  * Pattern geometry drawn over the chart canvas.
@@ -18,8 +18,16 @@ import { patternPoints, type Pattern, type PatternState } from "@/lib/api"
  * then painted over by the chart.
  */
 
-const W_COLOUR = "#3987e5" // same blue as support: a W resolves upward
-const M_COLOUR = "#d95926" // same orange as resistance: an M resolves downward
+/** Chronological indices of the pivots that define the neckline, per kind. */
+const NECK_INDICES: Partial<Record<PatternKind, Set<number>>> = {
+  W: new Set([1]),
+  M: new Set([1]),
+  HS: new Set([1, 3]),
+  IHS: new Set([1, 3]),
+}
+
+const BULL_COLOUR = "#3987e5" // same blue as support: resolves upward
+const BEAR_COLOUR = "#d95926" // same orange as resistance: resolves downward
 
 /**
  * How firmly each state is drawn.
@@ -104,7 +112,8 @@ export default function PatternOverlay({ chart, series, patterns }: PatternOverl
         if (coords.some((c) => c.x === null || c.y === null)) return null
 
         const style = STATE_STYLE[pattern.state]
-        const colour = pattern.kind === "W" ? W_COLOUR : M_COLOUR
+        const bullish = PATTERN_BULLISH[pattern.kind]
+        const colour = bullish ? BULL_COLOUR : BEAR_COLOUR
         const annotated =
           pattern.state !== "confirmed" ? pattern.state === "approaching" : index === primaryConfirmed
         const neckY = y(pattern.neckline)
@@ -113,11 +122,14 @@ export default function PatternOverlay({ chart, series, patterns }: PatternOverl
         const legs = coords.map((c) => `${c.x},${c.y}`).join(" ")
         const firstX = coords[0].x as number
         const lastX = coords[coords.length - 1].x as number
-        const apexY = coords[1].y as number
+        // The label sits off the pattern's most extreme point: the top of an
+        // M or H&S, the bottom of a W, an inverse H&S or a cup.
+        const ys = coords.map((c) => c.y as number)
+        const apexY = bullish ? Math.max(...ys) : Math.min(...ys)
 
         return (
           <g key={`${pattern.kind}-${points[0].time}-${index}`} opacity={style.opacity}>
-            {/* The legs of the W or M */}
+            {/* The legs of the pattern, through its pivots in order */}
             <polyline
               points={legs}
               fill="none"
@@ -127,9 +139,11 @@ export default function PatternOverlay({ chart, series, patterns }: PatternOverl
               strokeLinejoin="round"
             />
 
-            {/* Shoulders */}
+            {/* Pivots. The neckline pivots are the line, not the dots: for a
+                W/M that is the middle point, for a head and shoulders the
+                two troughs. */}
             {coords.map((c, i) =>
-              i === 1 ? null : (
+              NECK_INDICES[pattern.kind]?.has(i) ? null : (
                 <circle key={i} cx={c.x as number} cy={c.y as number} r={3} fill={colour} />
               ),
             )}
@@ -194,7 +208,7 @@ export default function PatternOverlay({ chart, series, patterns }: PatternOverl
             {annotated && (
               <text
                 x={(firstX + lastX) / 2}
-                y={apexY + (pattern.kind === "W" ? -8 : 16)}
+                y={apexY + (bullish ? 16 : -8)}
                 fill={colour}
                 fontSize={11}
                 fontWeight={600}
