@@ -169,13 +169,9 @@ async def ask_question(request: ChatRequest):
             summary = describe_steps(draft.params.model_dump()["steps"])
             within = draft.params.within_bars
             response_text = (
-                f"Here's the rule I read from that:
-
-"
+                f"Here's the rule I read from that:\n\n"
                 f"**{draft.symbol} · {draft.timeframe}** — {summary}, "
-                f"each step within {within} bar{'s' if within != 1 else ''} of the last.
-
-"
+                f"each step within {within} bar{'s' if within != 1 else ''} of the last.\n\n"
                 f"Arm it below and I'll alert you the moment it completes on a closed candle. "
                 f"Nothing is armed until you do."
             )
