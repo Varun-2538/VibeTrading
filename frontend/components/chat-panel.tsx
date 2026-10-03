@@ -42,7 +42,7 @@ export default function ChatPanel({ onClose, currentSymbol, onSymbolChange, onMa
       id: "1",
       role: "assistant",
       content:
-        "Hello! I'm your AI trading assistant powered by Cerebras AI. Ask me about:\n\n• Liquidity levels (support & resistance)\n• Technical indicators (RSI, MACD, EMA)\n• Trading strategies\n• Cryptocurrency analysis\n\nAvailable: BTCUSDT, ETHUSDT, BNBUSDT, SOLUSDT, XRPUSDT, ADAUSDT, DOGEUSDT, DOTUSDT, AVAXUSDT",
+        "Hello! I'm your AI trading assistant. Ask me about:\n\n• Liquidity levels (support & resistance)\n• Technical indicators (RSI, MACD, EMA)\n• Trading strategies\n• Cryptocurrency analysis\n\nAvailable: BTCUSDT, ETHUSDT, BNBUSDT, SOLUSDT, XRPUSDT, ADAUSDT, DOGEUSDT, DOTUSDT, AVAXUSDT",
     },
   ])
   const [input, setInput] = useState("")
@@ -227,7 +227,7 @@ export default function ChatPanel({ onClose, currentSymbol, onSymbolChange, onMa
           </Button>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          Powered by Cerebras AI • Try: "Show me liquidity levels for Bitcoin"
+          Try: "Show me liquidity levels for Bitcoin"
         </p>
         {/* The assistant writes in the register of advice, so the disclaimer
             belongs here rather than only in the footer of another page. */}

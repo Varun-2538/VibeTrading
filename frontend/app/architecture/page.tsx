@@ -172,7 +172,7 @@ function Diagram() {
           <Box x={315} y={128} w={180} h={48} title="Caddy 2" sub="automatic TLS" />
           <Box x={315} y={200} w={180} h={52} title="FastAPI" sub="Python 3.11" accent />
           <Box x={315} y={276} w={180} h={48} title="analysis/" sub="pure Python, no ML" />
-          <Box x={315} y={336} w={180} h={44} title="agents/" sub="Cerebras — chat only" />
+          <Box x={315} y={336} w={180} h={44} title="agents/" sub="Groq — chat only" />
 
           <Box x={540} y={200} w={180} h={52} title="TimescaleDB" sub="candles, annotations" />
           <Box x={540} y={276} w={180} h={48} title="Redis 7" sub="hot-path cache" />

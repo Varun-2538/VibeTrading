@@ -292,16 +292,19 @@ export default function PriceChart({
 
     const connect = () => {
       if (disposed) return
-      socket = new WebSocket(
+      // Held locally as well as on `socket`: by the time this connection's
+      // handlers fire, `socket` may already point at a replacement.
+      const ws = new WebSocket(
         `wss://stream.binance.com:9443/ws/${selected.toLowerCase()}@kline_${timeframe}`,
       )
+      socket = ws
 
-      socket.onopen = () => {
+      ws.onopen = () => {
         attempts = 0
         setLive(true)
       }
 
-      socket.onmessage = (event) => {
+      ws.onmessage = (event) => {
         let k: any
         try {
           k = JSON.parse(event.data)?.k
@@ -326,10 +329,14 @@ export default function PriceChart({
         setSpot(Number(k.c))
       }
 
-      socket.onerror = () => socket?.close()
-      socket.onclose = () => {
+      // Close this socket, not whichever one `socket` currently holds.
+      ws.onerror = () => ws.close()
+      ws.onclose = () => {
+        // A superseded socket must not report the live state. Its close event
+        // can arrive after the replacement is already streaming, which showed
+        // "offline" in the header while prices kept ticking.
+        if (disposed || socket !== ws) return
         setLive(false)
-        if (disposed) return
         attempts += 1
         retry = setTimeout(connect, Math.min(30000, 1000 * 2 ** attempts))
       }

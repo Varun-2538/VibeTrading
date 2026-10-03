@@ -36,7 +36,7 @@ export default function PrivacyPage() {
       <h3>Chat messages</h3>
       <p>
         When you type a question to the assistant, that text is sent to our
-        server and on to Cerebras, which runs the language model that answers
+        server and on to Groq, which runs the language model that answers
         it. Please do not put anything sensitive or personally identifying into
         the chat box — there is no reason the app needs it, and treating it as a
         private channel would be a mistake.
@@ -65,7 +65,7 @@ export default function PrivacyPage() {
           browser is not talking to them directly.
         </li>
         <li>
-          <strong>Cerebras</strong> — runs the language model behind the chat
+          <strong>Groq</strong> — runs the language model behind the chat
           assistant. Receives the text of your chat messages.
         </li>
         <li>
