@@ -229,3 +229,30 @@ async def backfill(
         await repo.trim(symbol, timeframe, floor)
 
     return BackfillResult(symbol.upper(), timeframe, pages, bars, error)
+
+
+async def topup_all(
+    *,
+    client: Any,
+    now_ms: Optional[int] = None,
+    pairs: Tuple[str, ...] = PAIRS,
+    timeframes: Tuple[str, ...] = tuple(TIMEFRAME_MS),
+    run=None,
+) -> List[BackfillResult]:
+    """
+    Every pair and timeframe, one series at a time.
+
+    Sequential on purpose: the worker shares a small VM and an IP's Binance
+    weight with the live API. The first run on an empty table is the full
+    backfill (minutes); every run after that fetches about one page per series.
+    """
+    run = run or backfill
+    now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
+    results: List[BackfillResult] = []
+    for symbol in pairs:
+        for timeframe in timeframes:
+            try:
+                results.append(await run(symbol, timeframe, client=client, now_ms=now_ms))
+            except Exception as exc:  # one broken series must not stop the rest
+                results.append(BackfillResult(symbol, timeframe, 0, 0, error=str(exc)))
+    return results
