@@ -70,6 +70,11 @@ describe("Android wrapper configuration", () => {
     // Play re-signs the uploaded bundle, so the app on a user's device carries
     // a different fingerprint from the one it was built with. Both must appear
     // in the site's assetlinks.json or verification fails for everyone.
+    //
+    // The console's fingerprints are not proof of what a device receives: the
+    // 1.2 build Play delivered was signed with FC:8A:C6:EB..., which the console
+    // pages did not show. Read the real one from an installed copy:
+    //   adb shell dumpsys package club.vibetrading.app | grep Signatures
     const site = JSON.parse(
       readFileSync(
         fileURLToPath(new URL("../public/.well-known/assetlinks.json", import.meta.url)),
