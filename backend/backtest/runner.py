@@ -9,12 +9,13 @@ worker's heartbeat keeps beating.
 """
 import asyncio
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from backtest.metrics import trade_period
 from backtest.replay import first_index, replay_range, tape_key
 from backtest.signals import distinct_setups, signals_from_tape
 from backtest.study import study
+from backtest.tuning import plan_for, tune
 from models.backtest_schemas import BacktestCreate, required_bars
 from services.history_service import TIMEFRAME_MS
 
@@ -40,6 +41,27 @@ def _repos(jobs, history):
 
         history = HistoryRepository
     return jobs, history
+
+
+# A tuned result is the best of many tries; an untuned one is a single
+# measurement. Either way the unseen period is the honest half, and a large
+# drop from seen to unseen is the signature of a setting fitted to noise.
+OVERFIT_RATIO = 0.5
+
+
+def report_flags(trades: Dict[str, Any], *, tuned: bool) -> List[str]:
+    flags = ["tuned"] if tuned else []
+    seen = trades["seen"].get("expectancy_r")
+    unseen = trades["unseen"].get("expectancy_r")
+    if seen is not None and unseen is not None and seen > 0 and unseen < seen * OVERFIT_RATIO:
+        flags.append("likely_overfit")
+    return flags
+
+
+def _setting(chosen: Dict[str, Any]):
+    from backtest.tuning import Setting
+
+    return Setting(chosen["filters"], chosen["stop_atr"], chosen["target_r"], chosen["max_bars"])
 
 
 async def run_job(
@@ -103,21 +125,47 @@ async def _run(job, jobs, history, clock, started, chunk, to_thread) -> Dict[str
     replay_seconds = clock() - replay_started
 
     await _checkpoint(job, jobs, "studying", 1.0, clock, started)
+    tuning: Optional[Dict[str, Any]] = None
+    active_params, active_plan = params, request.exit
+
+    if request.tune:
+        await _checkpoint(job, jobs, "tuning", 0.0, clock, started)
+        def run_tuning() -> Dict[str, Any]:
+            return tune(
+                candles[: split + 1], tape, params, request.exit,
+                neutral=request.neutral,
+                start=start,
+                split=split,
+                grid=request.grid,
+                timeframe_ms=TIMEFRAME_MS[timeframe],
+                persist_bars=rule.resolved_persist_bars(),
+                cooldown_secs=rule.cooldown_secs,
+            )
+
+        tuning = await to_thread(run_tuning)
+        active_params = {**params, **tuning["chosen"]["filters"]}
+        active_plan = plan_for(request.exit, _setting(tuning["chosen"]))
+        await _checkpoint(job, jobs, "studying", 1.0, clock, started)
+
     fires = signals_from_tape(
-        tape, candles, params,
+        tape, candles, active_params,
         timeframe_ms=TIMEFRAME_MS[timeframe],
         persist_bars=rule.resolved_persist_bars(),
         cooldown_secs=rule.cooldown_secs,
         start=start, end=end,
     )
     setups = distinct_setups(fires)
+    trades = {
+        "seen": trade_period(candles, setups, start, split, active_plan, request.neutral, TIMEFRAME_MS[timeframe]),
+        "unseen": trade_period(candles, setups, split, end, active_plan, request.neutral, TIMEFRAME_MS[timeframe]),
+    }
 
-    return {
+    report: Dict[str, Any] = {
         "meta": {
             "symbol": symbol,
             "timeframe": timeframe,
             "name": rule.name,
-            "params": params,
+            "params": active_params,
             "neutral": request.neutral,
             "split": request.split,
             "bars": end - start,
@@ -127,12 +175,13 @@ async def _run(job, jobs, history, clock, started, chunk, to_thread) -> Dict[str
             "split_time": int(candles[split]["time"]),
             "tape_cached": cached,
             "replay_seconds": round(replay_seconds, 1),
-            "exit": request.exit.model_dump(),
+            "exit": active_plan.model_dump(),
         },
         "signals": {"fires": len(fires), "setups": len(setups)},
         "study": study(candles, setups, start=start, split=split, end=end, neutral=request.neutral),
-        "trades": {
-            "seen": trade_period(candles, setups, start, split, request.exit, request.neutral, TIMEFRAME_MS[timeframe]),
-            "unseen": trade_period(candles, setups, split, end, request.exit, request.neutral, TIMEFRAME_MS[timeframe]),
-        },
+        "trades": trades,
+        "flags": report_flags(trades, tuned=request.tune),
     }
+    if tuning is not None:
+        report["tuning"] = tuning
+    return report

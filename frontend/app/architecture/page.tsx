@@ -121,7 +121,7 @@ function Diagram() {
           viewBox="0 0 760 430"
           className="w-full min-w-[680px]"
           role="img"
-          aria-label="Request flow: the browser talks to Next.js on Vercel and to the API behind Caddy on Google Compute Engine, which reads TimescaleDB and Redis; live prices stream from the exchange directly to the browser."
+          aria-label="Request flow: the browser talks to Next.js on Vercel and to the API behind Caddy on Google Compute Engine, which reads TimescaleDB and Redis alongside a low-priority backtest worker; live prices stream from the exchange directly to the browser."
         >
           <defs>
             <marker
@@ -176,6 +176,7 @@ function Diagram() {
 
           <Box x={540} y={200} w={180} h={52} title="TimescaleDB" sub="candles, annotations" />
           <Box x={540} y={276} w={180} h={48} title="Redis 7" sub="hot-path cache" />
+          <Box x={540} y={336} w={180} h={44} title="backtester" sub="replays, low priority" />
 
           {/* Exchange */}
           <Box x={540} y={20} w={180} h={52} title="Binance" sub="public REST + WS" />
@@ -192,6 +193,8 @@ function Diagram() {
           <Arrow x1={495} y1={226} x2={538} y2={226} />
           <Arrow x1={495} y1={244} x2={538} y2={294} />
           <Arrow x1={630} y1={72} x2={630} y2={198} label="candles" />
+          {/* The worker reads and writes history and jobs, and nothing reads it. */}
+          <Arrow x1={630} y1={334} x2={630} y2={256} label="history · jobs" />
           <Arrow x1={540} y1={32} x2={212} y2={32} label="live ticks (WebSocket)" dashed />
         </svg>
       </div>
@@ -208,7 +211,7 @@ export default function ArchitecturePage() {
     <DocShell wide>
       <h1>Architecture</h1>
       <p className="lede">
-        A small, boring, legible stack. One virtual machine, four containers, a
+        A small, boring, legible stack. One virtual machine, five containers, a
         static frontend, and an analysis layer with no machine learning in it.
       </p>
 
@@ -224,7 +227,8 @@ export default function ArchitecturePage() {
       <p>
         Everything else runs in Docker Compose on a single Google Compute Engine{" "}
         <code>e2-small</code> in <code>asia-south1-a</code>: Caddy terminating
-        TLS, a FastAPI service, TimescaleDB, and Redis. One machine is genuinely
+        TLS, a FastAPI service, TimescaleDB, Redis, and a worker that keeps candle
+        history current and runs backtests. One machine is genuinely
         enough at this stage, and pretending otherwise would mean paying for
         idle capacity.
       </p>
@@ -288,6 +292,17 @@ export default function ArchitecturePage() {
         the next double bottom to confirm, not only this one. Nothing is armed
         until you arm it.
       </p>
+      <p>
+        Backtests run in their own container at a quarter of the API&apos;s CPU
+        weight, so a replay can never delay a live alert. A replay walks each
+        closed bar through the same matchers the alert engine uses, with only the
+        bars up to that point in view, and records every candidate before
+        filtering; that tape is cached, so trying many filter and exit
+        combinations costs seconds rather than a fresh replay each time. Tuning
+        only ever sees history up to the seen/unseen boundary. The single setting
+        it picks is then measured once on the unseen remainder, and the report
+        always says how many settings were tried.
+      </p>
 
       <h2>Who owns a rule</h2>
       <p>
@@ -341,7 +356,7 @@ export default function ArchitecturePage() {
 
       <h2>Testing</h2>
       <p>
-        308 tests. Pattern fixtures are built from line segments so the geometry
+        425 tests. Pattern fixtures are built from line segments so the geometry
         is known exactly and assertions can be made on prices rather than on
         "something was found". A good number of those tests exist because a real
         chart disagreed with the detector and the disagreement turned out to be

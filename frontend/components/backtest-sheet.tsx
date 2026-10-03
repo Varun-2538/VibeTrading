@@ -14,11 +14,14 @@ import {
   canBeNeutral,
   cancelBacktest,
   createBacktest,
+  DEFAULT_GRID,
   equityLines,
   fmtPct,
   fmtR,
   getBacktest,
   markable,
+  overfit,
+  settingLabel,
   showTradesOnChart,
   tradeMarks,
   tradeVerdict,
@@ -31,6 +34,7 @@ import {
   type PeriodStudy,
   type TradePeriod,
   type TradeRow,
+  type TuningReport,
 } from "@/lib/backtests"
 import { UnauthorizedError } from "@/lib/rules"
 import { cn } from "@/lib/utils"
@@ -236,17 +240,60 @@ function TradeList({
   )
 }
 
+function TuningCard({ tuning }: { tuning: TuningReport }) {
+  return (
+    <section className="space-y-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 className="text-xs font-semibold text-foreground">Tuned on seen data</h3>
+        <span className="font-mono text-[10px] text-muted-foreground">{tuning.tried} settings tried</span>
+      </div>
+      <p className="text-[11px] text-foreground">Best: {settingLabel(tuning.chosen)}</p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-[11px]">
+          <thead className="text-muted-foreground">
+            <tr className="text-left">
+              <th className="py-1 pr-2 font-normal">Setting (seen)</th>
+              <th className="py-1 pr-2 font-normal">Trades</th>
+              <th className="py-1 pr-2 font-normal">Per trade</th>
+              <th className="py-1 font-normal">Drawdown</th>
+            </tr>
+          </thead>
+          <tbody className="font-mono">
+            {tuning.top.map((row, i) => (
+              <tr key={i} className="border-t border-border">
+                <td className="py-1 pr-2 font-sans">{settingLabel(row.settings)}</td>
+                <td className="py-1 pr-2">{row.trades}</td>
+                <td className="py-1 pr-2">{fmtR(row.expectancy_r)}</td>
+                <td className="py-1">{fmtPct(row.max_drawdown_pct)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[10px] leading-relaxed text-muted-foreground">
+        Ranked by {tuning.objective}, needing at least {tuning.min_trades} trades.
+        {!tuning.qualified && " No setting reached that, so the one with the most trades was taken."} Only the chosen
+        setting was run on unseen data — running the runners-up there would make unseen a second tuning set.
+      </p>
+    </section>
+  )
+}
+
 export default function BacktestSheet({
   rule,
   open,
   onOpenChange,
+  jobId,
 }: {
   rule: BacktestRule | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Reopen a finished or running backtest instead of setting up a new one. */
+  jobId?: string
 }) {
   const [neutral, setNeutral] = useState<Neutral>("skip")
   const [split, setSplit] = useState(0.7)
+  const [tune, setTune] = useState(true)
   const [exitPlan, setExitPlan] = useState<ExitPlan>(DEFAULT_EXIT)
   const [tradesPeriod, setTradesPeriod] = useState<"unseen" | "seen">("unseen")
   const [job, setJob] = useState<Backtest | null>(null)
@@ -263,19 +310,36 @@ export default function BacktestSheet({
     }
   }, [open])
 
-  const jobId = job?.id
+
+  // Reopening: load the job this sheet was given.
+  useEffect(() => {
+    if (!open || !jobId) return
+    let cancelled = false
+    getBacktest(jobId)
+      .then((loaded) => {
+        if (!cancelled) setJob(loaded)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load that backtest")
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, jobId])
+
+  const currentJobId = job?.id
   const running = job !== null && ACTIVE_STATUSES.includes(job.status)
   useEffect(() => {
-    if (!jobId || !running) return
+    if (!currentJobId || !running) return
     const timer = setInterval(async () => {
       try {
-        setJob(await getBacktest(jobId))
+        setJob(await getBacktest(currentJobId))
       } catch (err) {
         setError(err instanceof Error ? err.message : "Lost track of the backtest")
       }
     }, POLL_MS)
     return () => clearInterval(timer)
-  }, [jobId, running])
+  }, [currentJobId, running])
 
   if (!rule) return null
   const supported = (BACKTEST_TIMEFRAMES as readonly string[]).includes(rule.timeframe)
@@ -287,7 +351,7 @@ export default function BacktestSheet({
     setStarting(true)
     setError(null)
     try {
-      const { id } = await createBacktest(rule, { neutral, split, exit: exitPlan })
+      const { id } = await createBacktest(rule, { neutral, split, exit: exitPlan, tune, grid: DEFAULT_GRID })
       setJob(await getBacktest(id))
     } catch (err) {
       setError(
@@ -339,7 +403,7 @@ export default function BacktestSheet({
         <div className="space-y-4 px-4 pb-6">
           {!supported && <p className="text-xs text-muted-foreground">Backtests run on 5m, 15m, 1h and 1d charts.</p>}
 
-          {supported && job === null && (
+          {supported && job === null && !jobId && (
             <div className="space-y-3">
               <p className="text-xs leading-relaxed text-muted-foreground">
                 Replays this rule over stored history exactly as the live alert would have run, measures what price
@@ -370,6 +434,22 @@ export default function BacktestSheet({
                   <NumberField label="Slippage %" value={exitPlan.slippage_pct} step={0.01} onChange={(v) => setExit({ slippage_pct: Math.max(0, v) })} />
                   <NumberField label="Risk per trade %" value={exitPlan.risk_pct} step={0.25} onChange={(v) => setExit({ risk_pct: v > 0 ? v : DEFAULT_EXIT.risk_pct })} />
                 </div>
+              </div>
+              <div className="space-y-1">
+                <span className="text-[11px] text-muted-foreground">Tuning</span>
+                <div className="flex gap-1.5">
+                  <Button size="sm" variant={tune ? "default" : "outline"} className="h-7 flex-1 text-xs" onClick={() => setTune(true)}>
+                    Tune on seen data
+                  </Button>
+                  <Button size="sm" variant={!tune ? "default" : "outline"} className="h-7 flex-1 text-xs" onClick={() => setTune(false)}>
+                    Use my plan as is
+                  </Button>
+                </div>
+                <p className="text-[10px] leading-relaxed text-muted-foreground">
+                  {tune
+                    ? "Tries a grid of stops, targets and holding times on the seen part of history, then runs only the best one on the unseen part. The report says how many were tried."
+                    : "Runs the exit plan above on both periods, with nothing selected after the fact."}
+                </p>
               </div>
               <div className="space-y-1">
                 <span className="text-[11px] text-muted-foreground">Seen / unseen split</span>
@@ -414,6 +494,13 @@ export default function BacktestSheet({
                 {tradeVerdict(report) && <p>{tradeVerdict(report)}</p>}
               </div>
 
+              {overfit(report) && (
+                <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-500">
+                  Unseen came in far below seen. That is what a setting fitted to the seen data looks like; treat the
+                  unseen numbers as the honest ones.
+                </p>
+              )}
+              {report.tuning && <TuningCard tuning={report.tuning} />}
               {report.trades && (
                 <section className="space-y-3">
                   <h3 className="text-xs font-semibold text-foreground">Trading it</h3>
