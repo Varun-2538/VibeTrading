@@ -106,3 +106,32 @@ async def test_the_report_carries_trades_for_both_periods():
     assert report["meta"]["exit"]["max_bars"] == 20
     seen = report["trades"]["seen"]
     assert seen["trades"] > 0 and seen["equity"][0][1] == 1.0
+
+
+TUNED = {**REQUEST, "tune": True, "grid": {"stop_atr": [1, 2], "target_r": [1, 2], "max_bars": [10, 20]}}
+
+
+async def test_a_tuned_job_reports_what_it_tried_and_uses_the_winner():
+    jobs = FakeJobs()
+    report = await runner.run_job({"id": "t1", "request": TUNED}, jobs=jobs, history=FakeHistory(doji_series(1200)),
+                                  chunk=300, to_thread=direct)
+    tuning = report["tuning"]
+    assert tuning["tried"] == 8 and len(tuning["top"]) == 5
+    assert "tuned" in report["flags"]
+    chosen = tuning["chosen"]
+    assert (report["meta"]["exit"]["stop_atr"], report["meta"]["exit"]["max_bars"]) == (chosen["stop_atr"], chosen["max_bars"])
+    assert report["meta"]["exit"]["stop_pct"] is None
+    assert [s for s, _ in jobs.progress].count("tuning") >= 1
+
+
+async def test_an_untuned_job_has_no_tuning_section():
+    report = await runner.run_job(job(), jobs=FakeJobs(), history=FakeHistory(doji_series(900)), chunk=300, to_thread=direct)
+    assert "tuning" not in report and "tuned" not in report["flags"]
+
+
+def test_overfit_flag_reads_seen_against_unseen():
+    assert "likely_overfit" in runner.report_flags({"seen": {"expectancy_r": 0.4}, "unseen": {"expectancy_r": 0.1}}, tuned=True)
+    assert "likely_overfit" in runner.report_flags({"seen": {"expectancy_r": 0.4}, "unseen": {"expectancy_r": -0.2}}, tuned=False)
+    assert "likely_overfit" not in runner.report_flags({"seen": {"expectancy_r": 0.4}, "unseen": {"expectancy_r": 0.35}}, tuned=True)
+    assert "likely_overfit" not in runner.report_flags({"seen": {"expectancy_r": -0.1}, "unseen": {"expectancy_r": -0.5}}, tuned=False)
+    assert "likely_overfit" not in runner.report_flags({"seen": {"expectancy_r": None}, "unseen": {"expectancy_r": None}}, tuned=True)
