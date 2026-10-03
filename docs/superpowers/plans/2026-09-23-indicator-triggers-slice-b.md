@@ -927,7 +927,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 **Files:** Modify `frontend/components/analysis-panel.tsx`
 
-**Interfaces:** The Build tab's rule-type select gains **Signal**. Choosing it shows a trigger select (grouped by Indicators, Candles, Structure) and the chosen trigger's fields, rendered from `TRIGGERS`. Arm calls `createRule(signalRule(...))` with the panel's current symbol and timeframe. Pattern and liquidity are untouched.
+**Interfaces:** The Build tab's rule-type select gains **Signal**. Choosing it shows a trigger select (grouped by Indicators, Candles, Structure) and the chosen trigger's fields, rendered from `TRIGGERS`. Arm goes through the panel's existing `createRule` call, with `params` from `signalParams` and `persist_bars: 0`. Pattern and liquidity are untouched.
 
 - [ ] **Step 1: Implement**
 
@@ -1077,6 +1077,6 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - [ ] **Step 1:** Backend and frontend suites green, `next build` clean, secret scan clean.
 - [ ] **Step 2:** Push `feature/indicator-triggers-ui`, open a PR, merge to main, push GitLab.
 - [ ] **Step 3: Deploy** — `sudo git pull --ff-only` on the VM if the deploy key is in place, otherwise a bundle; rebuild and restart `backend` and `backtester`; both healthy. Run the build detached (`setsid nohup … > /tmp/deploy.log`), because the SSH session drops on long builds.
-- [ ] **Step 4: Verify the panel's own payload arms.** For three triggers (`ema_cross`, `bollinger_squeeze`, `vwap_cross` with the week anchor), `POST /api/rules` with exactly the body `signalRule` produces — including its computed `lookback` — and expect 201, then `POST /api/rules/{id}/test` and expect no error, then delete. This is the check that the browser's warm-up arithmetic agrees with the server's.
+- [ ] **Step 4: Verify the panel's own payload arms.** For three triggers (`ema_cross`, `bollinger_squeeze`, `vwap_cross` with the week anchor), `POST /api/rules` with exactly the params `signalParams` produces — including its computed `lookback` — and expect 201, then `POST /api/rules/{id}/test` and expect no error, then delete. This is the check that the browser's warm-up arithmetic agrees with the server's.
 - [ ] **Step 5: Verify the assistant sees and offers them.** `POST /api/scene` for BTCUSDT 1h and confirm `indicators` holds `stoch`, `bollinger`, `vwap`, `volume`, `atr`, and that the serialised scene is under 5,200 bytes. Then `POST /api/chat/ask` with "do you see a MACD cross, a squeeze, or a volume spike?" and confirm the findings come back with `subscribe` drafts whose step types match what was asked about.
 - [ ] **Step 6: Browser** (for the user to confirm): Strategy → Build → **Signal** lists the triggers grouped, the fields change with the trigger, and Arm creates a rule that appears in Armed.
