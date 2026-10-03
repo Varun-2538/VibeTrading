@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any
 from agents.orchestrator import OrchestratorAgent
 from agents.liquidation_agent import LiquidationAgent
 from agents.indicator_agent import IndicatorAgent
-from agents.rule_parser import LLMBusy, RuleParseError, draft_rule
+from agents.rule_parser import LLMBusy, RuleParseError, describe_draft, draft_rule
 from agents import chart_fellow
 from analysis.scene import build_scene
 from analysis.sequence import describe_steps
@@ -197,12 +197,10 @@ async def ask_question(request: ChatRequest):
             except LLMBusy as exc:
                 return ChatResponse(response=str(exc), symbol=symbol)
 
-            summary = describe_steps(draft.params.model_dump()["steps"])
-            within = draft.params.within_bars
+            summary = describe_draft(draft)
             response_text = (
                 f"Here's the rule I read from that:\n\n"
-                f"**{draft.symbol} · {draft.timeframe}** — {summary}, "
-                f"each step within {within} bar{'s' if within != 1 else ''} of the last.\n\n"
+                f"**{draft.symbol} · {draft.timeframe}** — {summary}.\n\n"
                 f"Arm it below and I'll alert you the moment it completes on a closed candle. "
                 f"Nothing is armed until you do."
             )
