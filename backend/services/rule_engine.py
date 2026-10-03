@@ -25,12 +25,15 @@ from repositories.rule_repository import RuleEventRepository, RuleRepository
 from services.actions import ACTIONS
 from services.candle_service import CandleService, CandleFetchError, UnknownTimeframe
 
-# Reasons a matching signal still did not fire. Surfaced by the test endpoint so
-# a user can tell "my rule is wrong" from "my rule already fired".
-BLOCKED_NO_MATCH = "no_match"
-BLOCKED_PERSISTENCE = "persistence"
-BLOCKED_COOLDOWN = "cooldown"
-BLOCKED_DEDUP = "dedup"
+from services.rule_decision import (  # noqa: F401  (BLOCKED_* are re-exported)
+    BLOCKED_COOLDOWN,
+    BLOCKED_DEDUP,
+    BLOCKED_NO_MATCH,
+    BLOCKED_PERSISTENCE,
+    decide,
+    pending_dict,
+    state_from_rule,
+)
 
 
 @dataclass
@@ -260,10 +263,20 @@ class RuleEngine:
         else:
             return None, BLOCKED_NO_MATCH
 
+        identity = matched[0] if matched is not None else None
+        decision = decide(
+            state_from_rule(rule),
+            identity,
+            candle_time,
+            persist_bars=int(rule["persist_bars"] or 0),
+            cooldown_secs=int(rule["cooldown_secs"] or 0),
+            now=datetime.now(timezone.utc),
+        )
+        if not dry_run:
+            # Also clears a half-built streak when the setup is gone.
+            await RuleRepository.set_pending(rule["id"], pending_dict(decision.state), candle_time)
+
         if matched is None:
-            if not dry_run:
-                # Drop any half-built persistence streak: the setup is gone.
-                await RuleRepository.set_pending(rule["id"], None, candle_time)
             return None, BLOCKED_NO_MATCH
 
         identity, direction, provisional, evidence = matched
@@ -280,41 +293,8 @@ class RuleEngine:
             evidence=evidence,
         )
 
-        # Persistence: count consecutive closed bars showing the same setup.
-        persist_bars = int(rule["persist_bars"] or 0)
-        seen = 1
-        if persist_bars:
-            pending = rule.get("pending") or {}
-            last_seen = rule.get("last_candle_time")
-            same_setup = pending.get("identity") == identity
-            advanced = last_seen is None or last_seen < candle_time
-
-            if same_setup and advanced:
-                seen = int(pending.get("seen", 1)) + 1
-            elif same_setup and not advanced:
-                # Re-evaluating a bar already counted; don't inflate the streak.
-                seen = int(pending.get("seen", 1))
-
-            if not dry_run:
-                await RuleRepository.set_pending(
-                    rule["id"],
-                    {"identity": identity, "seen": seen},
-                    candle_time,
-                )
-
-            if seen <= persist_bars:
-                return signal, BLOCKED_PERSISTENCE
-        elif not dry_run:
-            await RuleRepository.set_pending(
-                rule["id"], {"identity": identity, "seen": seen}, candle_time
-            )
-
-        cooldown = int(rule["cooldown_secs"] or 0)
-        last_fired = rule.get("last_fired_at")
-        if cooldown and last_fired:
-            elapsed = (datetime.now(timezone.utc) - last_fired).total_seconds()
-            if elapsed < cooldown:
-                return signal, BLOCKED_COOLDOWN
+        if decision.blocked is not None:
+            return signal, decision.blocked
 
         if dry_run and await RuleEventRepository.exists(signal.dedup_key()):
             return signal, BLOCKED_DEDUP
