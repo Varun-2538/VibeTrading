@@ -1,8 +1,7 @@
-from langchain_cerebras import ChatCerebras
 from langchain_core.messages import HumanMessage, SystemMessage
 from typing import Dict, Any
 from datetime import datetime
-from config.settings import settings
+from agents.llm import make_llm
 from mcp_server.client import mcp_client
 import json
 
@@ -14,9 +13,7 @@ class LiquidationAgent:
     """
 
     def __init__(self):
-        self.llm = ChatCerebras(
-            api_key=settings.cerebras_api_key,
-            model="gemma-4-31b",  # Fast model for specialized task
+        self.llm = make_llm(
             temperature=0.3,  # More deterministic for technical analysis
             max_tokens=1500
         )
@@ -135,6 +132,18 @@ Task: Analyze these levels and identify the most significant liquidation zones w
                 "liquidation_zones": [],
                 "analysis_summary": analysis_text
             }
+
+        # The model echoes the levels back and invents or drops fields; keep the
+        # computed ones and stamp the side each list represents. Its contribution
+        # is the zone synthesis and the narrative, not the price levels.
+        analysis_result['support_levels'] = [
+            {**level, 'type': 'support'}
+            for level in liquidation_data.get('support_levels', [])
+        ]
+        analysis_result['resistance_levels'] = [
+            {**level, 'type': 'resistance'}
+            for level in liquidation_data.get('resistance_levels', [])
+        ]
 
         # Add metadata
         analysis_result['timestamp'] = datetime.utcnow()

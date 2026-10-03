@@ -1,8 +1,7 @@
-from langchain_cerebras import ChatCerebras
 from langchain_core.messages import HumanMessage, SystemMessage
 from typing import Dict, Any
 from datetime import datetime
-from config.settings import settings
+from agents.llm import make_llm
 from mcp_server.client import mcp_client
 import json
 
@@ -14,9 +13,7 @@ class IndicatorAgent:
     """
 
     def __init__(self):
-        self.llm = ChatCerebras(
-            api_key=settings.cerebras_api_key,
-            model="gemma-4-31b",  # Fast model for specialized task
+        self.llm = make_llm(
             temperature=0.3,  # More deterministic for technical analysis
             max_tokens=1500
         )
@@ -161,6 +158,10 @@ Task: Analyze these indicators to determine:
                 "confidence": "medium",
                 "analysis_summary": analysis_text
             }
+
+        # The model echoes the indicator block back and can null out or invent
+        # values; keep the computed ones so strategy logic reads real numbers.
+        analysis_result['indicators'] = indicators
 
         # Add metadata
         analysis_result['timestamp'] = datetime.utcnow()

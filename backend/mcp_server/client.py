@@ -17,7 +17,7 @@ class MCPClient:
     async def connect(self):
         """Connect to MCP server"""
         # env=None would hand the subprocess a minimal environment, stripping
-        # CEREBRAS_API_KEY and the database settings - the server then fails its
+        # LLM_API_KEY and the database settings - the server then fails its
         # config validation and exits, surfacing here as "Connection closed".
         # Inherit our own environment so it is configured the same way we are.
         server_params = StdioServerParameters(

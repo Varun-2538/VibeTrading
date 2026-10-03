@@ -46,7 +46,9 @@ services:
       dockerfile: Dockerfile.mcp
     container_name: tradesmart-mcp-server
     environment:
-      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.groq.com/openai/v1}
+      - LLM_MODEL=${LLM_MODEL:-openai/gpt-oss-120b}
       - DATABASE_URL=postgresql://${TIMESCALE_USER:-tradesmart}:${TIMESCALE_PASSWORD:-tradesmart123}@timescaledb:5432/tradesmart
       - TIMESCALE_HOST=timescaledb
       - TIMESCALE_PORT=5432
@@ -72,7 +74,9 @@ services:
       dockerfile: Dockerfile
     container_name: tradesmart-backend
     environment:
-      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.groq.com/openai/v1}
+      - LLM_MODEL=${LLM_MODEL:-openai/gpt-oss-120b}
       - DATABASE_URL=postgresql://${TIMESCALE_USER:-tradesmart}:${TIMESCALE_PASSWORD:-tradesmart123}@timescaledb:5432/tradesmart
       - TIMESCALE_HOST=timescaledb
       - TIMESCALE_PORT=5432

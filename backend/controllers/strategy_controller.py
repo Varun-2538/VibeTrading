@@ -49,8 +49,12 @@ async def build_strategy(request: StrategyBuildRequest):
             risk_tolerance=request.risk_tolerance
         )
 
-        # Parse strategy
-        strategy_data = result['strategy']
+        # Parse strategy - both the model's JSON and the deterministic fallback
+        # echo symbol/timeframe back, which would collide with ours below.
+        strategy_data = {
+            k: v for k, v in result['strategy'].items()
+            if k not in ('symbol', 'timeframe')
+        }
         strategy = TradingStrategy(
             symbol=request.symbol,
             timeframe=request.timeframe,

@@ -139,7 +139,7 @@ class TradingStrategy(BaseModel):
     risk_management: RiskManagement
     reasoning: str
     confidence_score: float = Field(..., ge=0, le=1)
-    created_at: datetime
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class StrategyBuildResponse(BaseModel):

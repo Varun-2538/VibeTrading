@@ -3,8 +3,10 @@ from typing import Optional
 
 
 class Settings(BaseSettings):
-    # Cerebras API
-    cerebras_api_key: str
+    # LLM - any OpenAI-compatible endpoint (Groq, Cerebras, OpenAI, ...)
+    llm_api_key: str
+    llm_base_url: str = "https://api.groq.com/openai/v1"
+    llm_model: str = "openai/gpt-oss-120b"
 
     # Database
     database_url: str

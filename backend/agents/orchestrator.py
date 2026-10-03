@@ -1,8 +1,7 @@
-from langchain_cerebras import ChatCerebras
 from langchain_core.messages import HumanMessage, SystemMessage
 from typing import Dict, Any
 from datetime import datetime
-from config.settings import settings
+from agents.llm import make_llm
 from agents.liquidation_agent import LiquidationAgent
 from agents.indicator_agent import IndicatorAgent
 from mcp_server.client import mcp_client
@@ -17,9 +16,7 @@ class OrchestratorAgent:
     """
 
     def __init__(self):
-        self.llm = ChatCerebras(
-            api_key=settings.cerebras_api_key,
-            model="gemma-4-31b",  # Model for orchestration
+        self.llm = make_llm(
             temperature=0.7,  # More creative for strategy synthesis
             max_tokens=2500
         )

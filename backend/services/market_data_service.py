@@ -87,10 +87,12 @@ class MarketDataService:
         if not ohlc_data:
             return {}
 
-        closes = np.array([candle['close'] for candle in ohlc_data])
-        highs = np.array([candle['high'] for candle in ohlc_data])
-        lows = np.array([candle['low'] for candle in ohlc_data])
-        volumes = np.array([candle['volume'] for candle in ohlc_data])
+        # Postgres NUMERIC arrives as Decimal; without an explicit dtype numpy
+        # builds object arrays and the indicator math dies mixing Decimal with float.
+        closes = np.array([candle['close'] for candle in ohlc_data], dtype=float)
+        highs = np.array([candle['high'] for candle in ohlc_data], dtype=float)
+        lows = np.array([candle['low'] for candle in ohlc_data], dtype=float)
+        volumes = np.array([candle['volume'] for candle in ohlc_data], dtype=float)
 
         indicators = {}
 

@@ -9,7 +9,7 @@ pydantic-settings
 
 # AI & Agents
 langchain
-langchain-cerebras
+langchain-openai
 langchain-core
 
 # MCP
