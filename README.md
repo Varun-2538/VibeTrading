@@ -141,6 +141,24 @@ geometry is known exactly and assertions are made on prices rather than on
 "something was found". Several tests exist because a real chart disagreed with
 the detector — those regressions are documented in the test docstrings.
 
+### Android app
+
+The Play Store app is a Trusted Web Activity: Chrome rendering
+`app.vibetrading.club` full-screen. Nothing is duplicated; a deploy to Vercel
+updates the app.
+
+```bash
+npm install -g @bubblewrap/cli && bubblewrap doctor   # installs JDK 17 + Android SDK on first run
+cd android
+bubblewrap build          # asks for the upload keystore password; the JDK's bin must be on PATH
+adb install app-release-signed.apk
+```
+
+Bump `appVersionCode` in `android/twa-manifest.json` and run `bubblewrap update`
+before each upload to Play. `frontend/public/.well-known/assetlinks.json` must
+list both the upload key and the Play App Signing key, or Chrome shows a URL
+bar. Frontend unit tests: `cd frontend && npm test`.
+
 ---
 
 ## API
@@ -185,6 +203,8 @@ frontend/
   app/              Next.js App Router — landing, /app, legal pages
   components/       price-chart, pattern-overlay, chat-panel
   lib/api.ts        typed API client
+android/            Trusted Web Activity project (Bubblewrap); twa-manifest.json is the source of truth
+store/              Play Store listing assets
 docs/superpowers/   design specs written before each slice
 ```
 

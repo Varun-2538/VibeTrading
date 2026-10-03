@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "club.vibetrading.app",
+        "sha256_cert_fingerprints": ["CB:1B:27:EF:9A:51:18:34:4B:24:C9:FE:80:B8:5B:D2:13:F0:A6:9D:91:C5:4E:43:BC:E8:8A:6E:03:01:13:5F"]
+      }
+    }]
