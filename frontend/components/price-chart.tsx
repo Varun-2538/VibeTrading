@@ -532,14 +532,13 @@ export default function PriceChart({
   }, [liquidityData, selected])
 
   // Clear drawings when the underlying series changes out from under them.
+  // Assistant and backtest marks belong to the page, which clears the ones
+  // that no longer apply; clearing them here would also wipe trades a report
+  // just switched the chart to show.
   useEffect(() => {
     setLevels([])
     setPatterns([])
     setPatternTotal(0)
-    onClearMarks?.()
-    // onClearMarks is a stable page callback; listing it would re-run this on
-    // every render of the page and wipe drawings the user just asked for.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, timeframe])
 
   /* -------------------------------------------------------- draw the lines */
@@ -950,7 +949,7 @@ export default function PriceChart({
             />
           )}
           {marks.length > 0 && (
-            <MarkOverlay chart={chartRef.current} series={seriesRef.current} marks={marks} />
+            <MarkOverlay chart={chartRef.current} series={seriesRef.current} marks={marks} loading={loading} />
           )}
           {loading && (
             <div className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-muted-foreground">

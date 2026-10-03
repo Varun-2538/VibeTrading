@@ -36,9 +36,11 @@ interface MarkOverlayProps {
   chart: IChartApi | null
   series: ISeriesApi<SeriesType> | null
   marks: Mark[]
+  /** True while the chart is loading candles; markers are recomputed when it finishes. */
+  loading?: boolean
 }
 
-export default function MarkOverlay({ chart, series, marks }: MarkOverlayProps) {
+export default function MarkOverlay({ chart, series, marks, loading = false }: MarkOverlayProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const priceLines = useRef<IPriceLine[]>([])
   const markers = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
@@ -64,8 +66,12 @@ export default function MarkOverlay({ chart, series, marks }: MarkOverlayProps) 
         }),
       )
 
+    // A marker whose bar is not loaded would be snapped to the nearest bar by
+    // the plugin - drawing a trade on the wrong candle. Draw only loaded bars.
+    const loaded = new Set(series.data().map((d) => d.time as number))
     const barMarks: SeriesMarker<Time>[] = marks
       .filter((m): m is Extract<Mark, { type: "bar" }> => m.type === "bar")
+      .filter((m) => loaded.has(m.time / 1000))
       .map(
         (m): SeriesMarker<Time> => ({
           time: (m.time / 1000) as UTCTimestamp,
@@ -88,7 +94,7 @@ export default function MarkOverlay({ chart, series, marks }: MarkOverlayProps) 
       markers.current?.detach()
       markers.current = null
     }
-  }, [series, marks])
+  }, [series, marks, loading])
 
   // SVG drawings re-read their coordinates whenever the view moves.
   useEffect(() => {

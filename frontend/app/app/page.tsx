@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import PriceChart from "@/components/price-chart"
 import ChatPanel from "@/components/chat-panel"
 import AnalysisPanel from "@/components/analysis-panel"
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { BarChart3, CandlestickChart, MessageSquare, Sparkles } from "lucide-react"
 import type { LiquidityData, Timeframe } from "@/lib/api"
 import type { Mark, PatternSettings, Viewport } from "@/lib/marks"
+import { TRADE_MARKS_EVENT, type TradeMarksDetail } from "@/lib/backtests"
 
 /*
  * Two layouts, one tree.
@@ -34,6 +35,8 @@ const REGIONS: { id: CompactRegion; label: string; Icon: typeof CandlestickChart
   { id: "analysis", label: "Analysis", Icon: BarChart3 },
   { id: "chat", label: "Assistant", Icon: Sparkles },
 ]
+
+const NO_MARKS: Mark[] = []
 
 export default function TradingDashboard() {
   const [isChatOpen, setIsChatOpen] = useState(true)
@@ -60,7 +63,34 @@ export default function TradingDashboard() {
   })
   // Drawings the assistant was asked to make. Already grounded server-side.
   const [marks, setMarks] = useState<Mark[]>([])
-  const clearMarks = useCallback(() => setMarks([]), [])
+  // Trades a backtest report asked to draw, tied to the pair and timeframe
+  // they happened on: drawn only while the chart shows that series.
+  const [tradeMarks, setTradeMarks] = useState<TradeMarksDetail | null>(null)
+  const clearMarks = useCallback(() => {
+    setMarks([])
+    setTradeMarks(null)
+  }, [])
+
+  useEffect(() => {
+    const onTrades = (event: Event) => {
+      const detail = (event as CustomEvent<TradeMarksDetail>).detail
+      setCurrentSymbol(detail.symbol)
+      setTimeframe(detail.timeframe as Timeframe)
+      setTradeMarks(detail)
+      setRegion("chart")
+    }
+    window.addEventListener(TRADE_MARKS_EVENT, onTrades)
+    return () => window.removeEventListener(TRADE_MARKS_EVENT, onTrades)
+  }, [])
+
+  const shownTradeMarks =
+    tradeMarks && tradeMarks.symbol === currentSymbol && tradeMarks.timeframe === timeframe
+      ? (tradeMarks.marks as Mark[])
+      : NO_MARKS
+  const chartMarks = useMemo(
+    () => (shownTradeMarks.length ? [...marks, ...shownTradeMarks] : marks),
+    [marks, shownTradeMarks],
+  )
 
   const handleChatResize = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -154,7 +184,7 @@ export default function TradingDashboard() {
             onClearLevels={() => setMarkedLevels(null)}
             onViewportChange={setViewport}
             onPatternSettingsChange={setPatternSettings}
-            marks={marks}
+            marks={chartMarks}
             onClearMarks={clearMarks}
           />
         </div>
