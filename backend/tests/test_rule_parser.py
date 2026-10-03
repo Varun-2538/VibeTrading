@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from agents.rule_parser import RuleParseError, parse_draft
+from agents.rule_parser import RuleParseError, describe_draft, parse_draft
 
 GOOD = {
     "name": "BTC doji + RSI",
@@ -147,3 +147,36 @@ def test_describe_draft_covers_both_forms():
 
     pat = parse_draft(json.dumps({"symbol": "ETHUSDT", "params": {"kinds": ["IHS"], "min_confidence": 60}}), None, "4h")
     assert describe_draft(pat) == "inverse head and shoulders confirmed, confidence at least 60%"
+
+
+def test_a_draft_may_use_the_new_indicator_steps():
+    raw = json.dumps({
+        "name": "MACD cross", "symbol": "ETHUSDT", "timeframe": "15m",
+        "params": {"agent": "sequence", "within_bars": 3, "lookback": 300,
+                   "steps": [{"type": "macd_cross", "against": "signal", "cross": "above"}]},
+    })
+    draft = parse_draft(raw, "BTCUSDT", "1h")
+    assert draft.params.agent == "sequence"
+    assert draft.params.steps[0].type == "macd_cross"
+    assert "MACD crosses above its signal line" in describe_draft(draft)
+
+
+def test_a_draft_chaining_a_squeeze_and_a_breakout_is_valid():
+    raw = json.dumps({
+        "name": "squeeze break", "symbol": "BTCUSDT", "timeframe": "1h",
+        "params": {"agent": "sequence", "within_bars": 5, "lookback": 400,
+                   "steps": [{"type": "bollinger_squeeze"},
+                             {"type": "bollinger", "band": "upper", "cross": "above"}]},
+    })
+    draft = parse_draft(raw, "BTCUSDT", "1h")
+    assert [s.type for s in draft.params.steps] == ["bollinger_squeeze", "bollinger"]
+
+
+def test_the_prompt_teaches_every_step_type():
+    from agents.rule_parser import SYSTEM_PROMPT
+    from models.rule_schemas import STEP_TYPES
+
+    for kind in STEP_TYPES:
+        assert kind in SYSTEM_PROMPT, kind
+    for word in ("VWAP", "squeeze", "volume", "stochastic", "MACD", "EMA"):
+        assert word.lower() in SYSTEM_PROMPT.lower(), word
