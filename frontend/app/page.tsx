@@ -403,7 +403,7 @@ export default function Landing() {
                   className="font-mono text-[11px] uppercase tracking-[0.2em]"
                   style={{ color: "var(--vt-ink-faint)" }}
                 >
-                  Founders
+                  {FOUNDERS.length > 1 ? "Founders" : "Founder"}
                 </p>
                 <ul className="mt-5 grid gap-4 sm:grid-cols-2">
                   {FOUNDERS.map((f) => (

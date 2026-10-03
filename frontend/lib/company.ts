@@ -33,11 +33,12 @@ export const FOUNDERS: readonly Founder[] = [
     title: "Co-founder",
     linkedin: "https://www.linkedin.com/in/varun2534/",
   },
-  {
-    name: "Vidhi Singh",
-    title: "Co-founder",
-    linkedin: "https://www.linkedin.com/in/vidhisingh14/",
-  },
+  // Held back from the site for now; restore by uncommenting.
+  // {
+  //   name: "Vidhi Singh",
+  //   title: "Co-founder",
+  //   linkedin: "https://www.linkedin.com/in/vidhisingh14/",
+  // },
 ]
 
 /** A sentence naming the founders, for prose that has to say who runs this. */

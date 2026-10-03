@@ -162,8 +162,8 @@ export default function PrivacyPage() {
 
       <h2>Contact</h2>
       <p>
-        VibeTrading is operated by its founders, {FOUNDERS_SENTENCE}, while the
-        company is being incorporated. Privacy questions go to{" "}
+        VibeTrading is operated by {FOUNDERS_SENTENCE} while the company is
+        being incorporated. Privacy questions go to{" "}
         <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
       </p>
     </>
