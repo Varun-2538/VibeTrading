@@ -98,3 +98,11 @@ async def test_a_job_past_its_time_limit_fails():
     await runner.run_job(job(), jobs=jobs, history=FakeHistory(doji_series(900)), chunk=200,
                          to_thread=direct, clock=lambda: next(ticks))
     assert jobs.failed.startswith("timeout")
+
+
+async def test_the_report_carries_trades_for_both_periods():
+    report = await runner.run_job(job(), jobs=FakeJobs(), history=FakeHistory(doji_series(900)), chunk=200, to_thread=direct)
+    assert set(report["trades"]) == {"seen", "unseen"}
+    assert report["meta"]["exit"]["max_bars"] == 20
+    seen = report["trades"]["seen"]
+    assert seen["trades"] > 0 and seen["equity"][0][1] == 1.0
