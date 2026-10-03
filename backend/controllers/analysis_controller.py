@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
 
+from analysis.scene import build_scene
 from analysis.patterns import (
     DEFAULT_SCALE,
     KINDS,
@@ -150,6 +151,36 @@ async def analyse_levels(request: WindowRequest) -> Dict[str, Any]:
             limit=request.limit,
         )
     except UnknownTimeframe as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except CandleFetchError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@router.post("/scene")
+async def scene(request: PatternRequest) -> Dict[str, Any]:
+    """
+    Everything the detectors see in the window, as the chat assistant sees it.
+
+    This is the assistant's entire view of the chart - it never gets pixels. It
+    is exposed so "what did the model actually see" is one request away, and so
+    the scene can be tested without a model in the loop.
+    """
+    try:
+        candles = await CandleService.get_candles(
+            request.symbol, request.timeframe, request.limit
+        )
+        visible = CandleService.window(candles, request.frm, request.to)
+        return build_scene(
+            visible,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            strictness=request.strictness,
+            source=request.source,
+            scale=request.scale,
+        )
+    except UnknownTimeframe as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except CandleFetchError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))

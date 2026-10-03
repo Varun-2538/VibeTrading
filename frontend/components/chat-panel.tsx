@@ -1,11 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Send, Sparkles, X, Loader2, Check, XIcon, Bell } from "lucide-react"
-import { API_BASE } from "@/lib/api"
+import { Send, Sparkles, X, Loader2, Check, XIcon, Bell, Eye, EyeOff, MapPin } from "lucide-react"
+import { API_BASE, type Timeframe } from "@/lib/api"
+import { markKey, type ChatTurn, type FellowAnswer, type Mark, type PatternSettings, type Viewport } from "@/lib/marks"
 import {
   announceRulesChanged,
   createRule,
@@ -42,6 +43,8 @@ interface Message {
   liquidityData?: LiquidityData
   showActions?: boolean
   ruleDraft?: DraftCard
+  /** The chart fellow's structured answer: what it saw, and what it could draw. */
+  fellow?: FellowAnswer
 }
 
 interface ChatPanelProps {
@@ -49,19 +52,69 @@ interface ChatPanelProps {
   currentSymbol?: string
   onSymbolChange?: (symbol: string) => void
   onMarkLevels?: (data: { symbol: string; liquidityData: LiquidityData }) => void
+  /** The chart's timeframe, window and detector settings: what "the chart" means right now. */
+  timeframe?: Timeframe
+  viewport?: Viewport | null
+  patternSettings?: PatternSettings
+  /** Marks the user toggled on, for the chart to draw. */
+  onMarks?: (marks: Mark[]) => void
 }
 
-export default function ChatPanel({ onClose, currentSymbol, onSymbolChange, onMarkLevels }: ChatPanelProps) {
+/** The last few exchanges, trimmed. Sent with each question; never stored. */
+const HISTORY_TURNS = 8
+const HISTORY_CHARS = 300
+
+export default function ChatPanel({
+  onClose,
+  currentSymbol,
+  onSymbolChange,
+  onMarkLevels,
+  timeframe = "1h",
+  viewport,
+  patternSettings,
+  onMarks,
+}: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
       role: "assistant",
       content:
-        "Hello! I'm your AI trading assistant. Ask me about:\n\n• Liquidity levels (support & resistance)\n• Technical indicators (RSI, MACD, EMA)\n• Trading strategies\n• Cryptocurrency analysis\n\nAvailable: BTCUSDT, ETHUSDT, BNBUSDT, SOLUSDT, XRPUSDT, ADAUSDT, DOGEUSDT, DOTUSDT, AVAXUSDT",
+        "I'm looking at the same chart you are. Ask what you'd ask a trader next to you: do you see support here, a double bottom, a doji, an RSI cross? I'll say what I see and what I don't, and mark it on the chart if you want.\n\nFor alerts: \"alert me when a doji forms and RSI(14) crosses above 30\".\n\nAvailable: BTCUSDT, ETHUSDT, BNBUSDT, SOLUSDT, XRPUSDT, ADAUSDT, DOGEUSDT, DOTUSDT, AVAXUSDT",
     },
   ])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  // Which findings are drawn, by mark key. Reset when the chart moves to a
+  // different symbol or timeframe, because the chart clears its drawings then.
+  const [marked, setMarked] = useState<Map<string, Mark>>(new Map())
+
+  useEffect(() => {
+    setMarked(new Map())
+  }, [currentSymbol, timeframe])
+
+  useEffect(() => {
+    onMarks?.(Array.from(marked.values()))
+  }, [marked, onMarks])
+
+  const history = useMemo((): ChatTurn[] => {
+    return messages
+      .filter((m) => m.id !== "1")
+      .slice(-HISTORY_TURNS)
+      .map((m) => ({ role: m.role, content: m.content.slice(0, HISTORY_CHARS) }))
+  }, [messages])
+
+  const toggleFinding = (marks: Mark[]) => {
+    setMarked((prev) => {
+      const next = new Map(prev)
+      const keys = marks.map(markKey)
+      const allOn = keys.every((k) => next.has(k))
+      keys.forEach((key, i) => {
+        if (allOn) next.delete(key)
+        else next.set(key, marks[i])
+      })
+      return next
+    })
+  }
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return
@@ -87,7 +140,12 @@ export default function ChatPanel({ onClose, currentSymbol, onSymbolChange, onMa
         body: JSON.stringify({
           message: userInput,
           symbol: currentSymbol,
-          timeframe: "1h",
+          timeframe,
+          // What is on screen. With this present, the server answers from the
+          // detectors' view of exactly these candles.
+          window: viewport ?? undefined,
+          pattern_settings: patternSettings,
+          history,
         }),
       })
 
@@ -116,6 +174,7 @@ export default function ChatPanel({ onClose, currentSymbol, onSymbolChange, onMa
         liquidityData: hasLiquidityData ? data.data : undefined,
         showActions: hasLiquidityData, // Show Accept/Reject buttons if liquidity data exists
         ruleDraft,
+        fellow: data.data?.fellow ?? undefined,
       }
 
       setMessages((prev) => [...prev, aiMessage])
@@ -129,7 +188,7 @@ export default function ChatPanel({ onClose, currentSymbol, onSymbolChange, onMa
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: "Sorry, I encountered an error. Please make sure backend is running on http://localhost:8000",
+        content: "I couldn't reach the analysis service just now. Try again in a moment.",
       }
       setMessages((prev) => [...prev, errorMessage])
     } finally {
@@ -226,6 +285,77 @@ export default function ChatPanel({ onClose, currentSymbol, onSymbolChange, onMa
                     )}
                     <div className="text-sm leading-relaxed whitespace-pre-line">{message.content}</div>
                   </div>
+
+                  {/* What the fellow saw, one line per thing asked, each drawable. */}
+                  {message.role === "assistant" && message.fellow && message.fellow.findings.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {message.fellow.findings.map((f, i) => {
+                        const keys = f.marks.map(markKey)
+                        const on = keys.length > 0 && keys.every((k) => marked.has(k))
+                        return (
+                          <div
+                            key={i}
+                            className="flex items-start gap-2 rounded-md border border-border bg-card px-2.5 py-1.5"
+                          >
+                            {f.present ? (
+                              <Eye className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                            ) : (
+                              <EyeOff className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 text-xs">
+                                <span className={f.present ? "font-medium text-foreground" : "text-muted-foreground"}>
+                                  {f.label}
+                                </span>
+                                {f.present && f.confidence > 0 && (
+                                  <span className="font-mono text-[10px] text-muted-foreground">
+                                    {Math.round(f.confidence)}%
+                                  </span>
+                                )}
+                                {!f.grounded && (
+                                  <span
+                                    className="text-[10px] text-amber-500"
+                                    title="Some marks were dropped: the detectors did not find them on this window."
+                                  >
+                                    unverified
+                                  </span>
+                                )}
+                              </div>
+                              {f.why && <p className="text-[11px] leading-snug text-muted-foreground">{f.why}</p>}
+                            </div>
+                            {f.present && f.marks.length > 0 && (
+                              <Button
+                                size="sm"
+                                variant={on ? "default" : "outline"}
+                                onClick={() => toggleFinding(f.marks)}
+                                className="h-6 shrink-0 gap-1 px-2 text-[11px]"
+                                aria-pressed={on}
+                              >
+                                <MapPin className="h-3 w-3" />
+                                {on ? "Marked" : "Mark"}
+                              </Button>
+                            )}
+                          </div>
+                        )
+                      })}
+                      {message.fellow.not_visible.length > 0 && (
+                        <p className="px-1 text-[11px] text-muted-foreground">
+                          Can&apos;t see yet: {message.fellow.not_visible.join(", ").replace(/_/g, " ")}
+                        </p>
+                      )}
+                      {message.fellow.findings.some((f) => f.present && f.marks.length > 0) && (
+                        <button
+                          onClick={() => {
+                            const all = message.fellow?.findings.filter((f) => f.present).flatMap((f) => f.marks) ?? []
+                            toggleFinding(all)
+                          }}
+                          className="px-1 text-[11px] text-primary underline-offset-2 hover:underline"
+                        >
+                          Mark everything it sees
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   {/* A drafted alert rule. Arm is the only way it becomes real. */}
                   {message.role === "assistant" && message.ruleDraft && message.ruleDraft.status !== "dismissed" && (
@@ -331,7 +461,7 @@ export default function ChatPanel({ onClose, currentSymbol, onSymbolChange, onMa
           </Button>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          Try: "Show me liquidity levels for Bitcoin"
+          Try: "do you see support or a double bottom forming here?"
         </p>
         {/* The assistant writes in the register of advice, so the disclaimer
             belongs here rather than only in the footer of another page. */}

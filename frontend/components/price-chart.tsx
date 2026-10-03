@@ -24,7 +24,9 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { Layers, SlidersHorizontal } from "lucide-react"
+import MarkOverlay from "@/components/mark-overlay"
 import PatternOverlay from "@/components/pattern-overlay"
+import type { Mark, PatternSettings, Viewport } from "@/lib/marks"
 import {
   PATTERN_SCALES,
   SOURCES,
@@ -117,6 +119,15 @@ interface PriceChartProps {
   /** Levels pushed from chat via "Mark on Chart". */
   liquidityData?: { symbol: string; liquidityData: LiquidityData } | null
   onClearLevels?: () => void
+  /**
+   * The on-screen window and the detector settings, reported upward so the
+   * chat can ask about exactly what is drawn. Null while nothing is on screen.
+   */
+  onViewportChange?: (viewport: Viewport | null) => void
+  onPatternSettingsChange?: (settings: PatternSettings) => void
+  /** What the chat fellow asked to draw. Already checked against the detectors. */
+  marks?: Mark[]
+  onClearMarks?: () => void
 }
 
 export default function PriceChart({
@@ -126,6 +137,10 @@ export default function PriceChart({
   onTimeframeChange,
   liquidityData,
   onClearLevels,
+  onViewportChange,
+  onPatternSettingsChange,
+  marks = [],
+  onClearMarks,
 }: PriceChartProps) {
   const selected = symbol || "BTCUSDT"
   const setTimeframe = onTimeframeChange
@@ -165,6 +180,7 @@ export default function PriceChart({
   const analysisAbort = useRef<AbortController | null>(null)
   const patternTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const patternAbort = useRef<AbortController | null>(null)
+  const viewportTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   /* ---------------------------------------------------------------- chart */
 
@@ -480,6 +496,30 @@ export default function PriceChart({
     }
   }, [showPatterns, detectPatterns])
 
+  // Report the window on screen upward, once each pan settles. Gated on the
+  // data having loaded so the first report is a real window, not null.
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart || loading || error || !onViewportChange) return
+
+    const onRangeChange = () => {
+      if (viewportTimer.current) clearTimeout(viewportTimer.current)
+      viewportTimer.current = setTimeout(() => onViewportChange(visibleWindow()), 250)
+    }
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange)
+    onRangeChange()
+
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRangeChange)
+      if (viewportTimer.current) clearTimeout(viewportTimer.current)
+    }
+  }, [loading, error, selected, timeframe, onViewportChange, visibleWindow])
+
+  useEffect(() => {
+    onPatternSettingsChange?.({ strictness, source, scale })
+  }, [strictness, source, scale, onPatternSettingsChange])
+
   // Levels pushed from chat replace whatever is on the chart.
   useEffect(() => {
     if (!liquidityData || liquidityData.symbol !== selected) return
@@ -496,6 +536,10 @@ export default function PriceChart({
     setLevels([])
     setPatterns([])
     setPatternTotal(0)
+    onClearMarks?.()
+    // onClearMarks is a stable page callback; listing it would re-run this on
+    // every render of the page and wipe drawings the user just asked for.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, timeframe])
 
   /* -------------------------------------------------------- draw the lines */
@@ -663,6 +707,23 @@ export default function PriceChart({
             setLevels([])
             onClearLevels?.()
           }}
+        >
+          Clear
+        </Button>
+      ),
+    })
+  }
+
+  if (marks.length > 0) {
+    controlGroups.push({
+      key: "clear-marks",
+      label: "Assistant marks",
+      node: (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-9 shrink-0 text-xs lg:h-7"
+          onClick={() => onClearMarks?.()}
         >
           Clear
         </Button>
@@ -887,6 +948,9 @@ export default function PriceChart({
               series={seriesRef.current}
               patterns={patterns}
             />
+          )}
+          {marks.length > 0 && (
+            <MarkOverlay chart={chartRef.current} series={seriesRef.current} marks={marks} />
           )}
           {loading && (
             <div className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-muted-foreground">

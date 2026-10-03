@@ -43,6 +43,15 @@ export default function PrivacyPage() {
         the chat box — there is no reason the app needs it, and treating it as a
         private channel would be a mistake.
       </p>
+      <p>
+        So the assistant can talk about the chart you are looking at, each
+        question also carries the pair, timeframe and time window on your screen,
+        plus what our own detectors found in it — levels, patterns, candle
+        shapes, indicator readings. That is market data, not data about you.
+        The last few exchanges in the conversation are sent along for context;
+        they live in your browser and are gone when you close the tab. We do
+        not store chat on our server.
+      </p>
       <h3>Your wallet address, if you build strategy rules</h3>
       <p>
         Strategy rules are private to whoever created them, so that feature needs

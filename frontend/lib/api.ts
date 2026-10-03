@@ -34,7 +34,7 @@ export async function fetchOHLC(
   return res.json()
 }
 
-export const TIMEFRAMES = ["1m", "5m", "15m", "1h", "1d"] as const
+export const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1d"] as const
 export type Timeframe = (typeof TIMEFRAMES)[number]
 
 /** A candle from /api/candles. `time` is the open time in unix milliseconds. */

@@ -8,7 +8,13 @@ from agents.orchestrator import OrchestratorAgent
 from agents.liquidation_agent import LiquidationAgent
 from agents.indicator_agent import IndicatorAgent
 from agents.rule_parser import LLMBusy, RuleParseError, draft_rule
+from agents import chart_fellow
+from analysis.scene import build_scene
 from analysis.sequence import describe_steps
+from models.fellow_schemas import ChatTurn, PatternSettings, Viewport
+from services.cache_service import cache_service
+import hashlib
+import json
 from services.market_data_service import MarketDataService
 from services.candle_service import CandleService
 from analysis.patterns import detect_double_patterns
@@ -31,6 +37,13 @@ class ChatRequest(BaseModel):
     message: str
     symbol: Optional[str] = None
     timeframe: Optional[str] = "1h"
+    # The chart's on-screen window. When present, ordinary questions are
+    # answered by the chart fellow from the detectors' view of exactly these
+    # candles, instead of by the keyword branches below.
+    window: Optional[Viewport] = None
+    pattern_settings: Optional[PatternSettings] = None
+    # The last few exchanges, kept by the browser. Never stored here.
+    history: List[ChatTurn] = []
 
 
 class ChatResponse(BaseModel):
@@ -247,6 +260,12 @@ async def ask_question(request: ChatRequest):
                 data={"patterns": patterns, "current_price": current_price},
             )
 
+        # The chart fellow answers anything that is not an alert request or an
+        # explicit strategy build, from the scene for the window on screen. The
+        # keyword branches below remain for clients that send no window.
+        if request.window is not None and intent != 'trading_strategy':
+            return await _ask_fellow(request, symbol)
+
         # Get current price
         ohlc_data = await OHLCRepository.get_ohlc_data(symbol, request.timeframe, limit=1)
         if not ohlc_data:
@@ -423,6 +442,59 @@ async def ask_question(request: ChatRequest):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
+
+
+SCENE_CACHE_SECONDS = 20
+
+
+async def _scene_for(request: ChatRequest, symbol: str) -> Dict[str, Any]:
+    """
+    The scene for the request's window, cached briefly.
+
+    A follow-up question a few seconds later is about the same screen; there
+    is no reason to run every detector again for it.
+    """
+    settings = request.pattern_settings or PatternSettings()
+    timeframe = request.timeframe or "1h"
+    key_src = json.dumps(
+        [symbol, timeframe, request.window.frm, request.window.to,
+         settings.strictness, settings.source, settings.scale],
+        separators=(",", ":"),
+    )
+    key = "scene:" + hashlib.sha1(key_src.encode()).hexdigest()
+
+    cached = await cache_service.get(key)
+    if isinstance(cached, dict):
+        return cached
+
+    candles = await CandleService.get_candles(symbol, timeframe, 1000)
+    visible = CandleService.window(candles, request.window.frm, request.window.to)
+    scene = build_scene(
+        visible,
+        symbol=symbol,
+        timeframe=timeframe,
+        strictness=settings.strictness,
+        source=settings.source,
+        scale=settings.scale,
+    )
+    await cache_service.set(key, scene, SCENE_CACHE_SECONDS)
+    return scene
+
+
+async def _ask_fellow(request: ChatRequest, symbol: str) -> ChatResponse:
+    scene = await _scene_for(request, symbol)
+    try:
+        answer = await chart_fellow.answer(request.message, scene, request.history)
+    except chart_fellow.FellowError as exc:
+        return ChatResponse(response=str(exc), symbol=symbol)
+    except chart_fellow.LLMBusy as exc:
+        return ChatResponse(response=str(exc), symbol=symbol)
+
+    return ChatResponse(
+        response=answer.reply_md,
+        symbol=symbol,
+        data={"fellow": answer.model_dump(by_alias=True)},
+    )
 
 
 @router.get("/symbols")
