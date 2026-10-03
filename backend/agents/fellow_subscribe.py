@@ -35,7 +35,7 @@ from models.fellow_schemas import (
     Polyline,
     Subscription,
 )
-from models.rule_schemas import RuleCreate
+from models.rule_schemas import RuleCreate, step_warmup
 
 
 def _near(a: float, b: float) -> bool:
@@ -140,19 +140,123 @@ def _structure_event(finding: Finding, scene: Dict[str, Any]) -> Optional[Dict[s
     return None
 
 
-def _rsi_cross(finding: Finding, scene: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    rsi = (scene.get("indicators") or {}).get("rsi") or {}
-    crosses = rsi.get("recent_crosses") or []
-    if not crosses:
-        return None
+# The indicator a label is talking about, when it marked nothing usable.
+INDICATOR_WORDS = (
+    ("rsi", ("rsi",)),
+    ("ema", ("ema", "moving average", "golden cross", "death cross")),
+    ("macd", ("macd",)),
+    ("stoch", ("stoch",)),
+    ("bollinger_squeeze", ("squeeze", "coil", "tightening")),
+    ("bollinger", ("bollinger", "band")),
+    ("vwap", ("vwap",)),
+    ("volume", ("volume",)),
+    ("atr", ("atr", "range expansion", "wide bar", "volatility")),
+)
+
+
+def _named_indicator(label: str) -> Optional[str]:
+    text = _norm(label)
+    for name, words in INDICATOR_WORDS:
+        if any(word in text for word in words):
+            return name
+    return None
+
+
+def _indicator_step(finding: Finding, scene: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    The rule step an indicator finding subscribes to.
+
+    Resolved from what the finding marked where possible - a bar time or a
+    price the scene reported - and from its label otherwise, but only ever
+    against an indicator the scene actually holds. An indicator the detectors
+    did not report cannot be alerted on, however confidently the model named it.
+    """
+    ind = scene.get("indicators") or {}
     times = set(_bar_times(finding))
-    for c in crosses:
-        if int(c["t"]) in times:
-            return {"period": int(rsi.get("period", 14)), **c}
-    # Unmarked: only when the finding is plainly about RSI. EMA and MACD
-    # crosses have no rule step, so they must not borrow an RSI alert.
-    if "rsi" in _norm(finding.label):
-        return {"period": int(rsi.get("period", 14)), **crosses[0]}
+    prices = _line_prices(finding)
+
+    rsi = ind.get("rsi") or {}
+    for cross in rsi.get("recent_crosses") or []:
+        if int(cross["t"]) in times:
+            return {"type": "indicator", "indicator": "rsi", "period": int(rsi.get("period", 14)),
+                    "cross": cross["dir"], "level": float(cross["level"])}
+
+    ema = ind.get("ema") or {}
+    cross = ema.get("recent_cross")
+    if cross and int(cross["t"]) in times:
+        return {"type": "ema_cross", "fast": 20, "slow": 50,
+                "cross": "above" if cross["dir"] == "bullish" else "below"}
+
+    macd = ind.get("macd") or {}
+    cross = macd.get("recent_cross")
+    if cross and int(cross["t"]) in times:
+        return {"type": "macd_cross", "fast": 12, "slow": 26, "signal": 9, "against": "signal",
+                "cross": "above" if cross["dir"] == "bullish" else "below"}
+
+    stoch = ind.get("stoch") or {}
+    for cross in stoch.get("recent_crosses") or []:
+        if int(cross["t"]) in times:
+            if cross["level"] == "d":
+                return {"type": "stoch_cross", "against": "d", "cross": cross["dir"]}
+            return {"type": "stoch_cross", "against": "level", "level": float(cross["level"]),
+                    "cross": cross["dir"]}
+
+    bands = ind.get("bollinger") or {}
+    for cross in bands.get("recent_crosses") or []:
+        if int(cross["t"]) in times:
+            return {"type": "bollinger", "band": cross["band"], "cross": cross["dir"],
+                    "period": 20, "std": 2.0}
+    for band in ("upper", "lower"):
+        if bands.get(band) is not None and any(_near(p, float(bands[band])) for p in prices):
+            return {"type": "bollinger", "band": band,
+                    "cross": "above" if band == "upper" else "below", "period": 20, "std": 2.0}
+
+    vwap = ind.get("vwap") or {}
+    if vwap:
+        for cross in vwap.get("recent_crosses") or []:
+            if int(cross["t"]) in times:
+                return {"type": "vwap_cross", "anchor": vwap.get("anchor", "day"), "cross": cross["dir"]}
+        if vwap.get("value") is not None and any(_near(p, float(vwap["value"])) for p in prices):
+            return {"type": "vwap_cross", "anchor": vwap.get("anchor", "day"), "cross": "above"}
+
+    volume = ind.get("volume") or {}
+    if any(int(t) in times for t in volume.get("spikes") or []):
+        return {"type": "volume_spike", "multiple": 2.0, "period": 20}
+
+    atr = ind.get("atr") or {}
+    if any(int(t) in times for t in atr.get("recent") or []):
+        return {"type": "atr_expansion", "multiple": 2.0, "period": 14}
+
+    # Nothing matched what it marked; fall back to the words, still requiring
+    # the scene to hold that indicator.
+    named = _named_indicator(finding.label)
+    if named == "rsi" and rsi.get("recent_crosses"):
+        first = rsi["recent_crosses"][0]
+        return {"type": "indicator", "indicator": "rsi", "period": int(rsi.get("period", 14)),
+                "cross": first["dir"], "level": float(first["level"])}
+    if named == "ema" and ema:
+        direction = ema.get("recent_cross", {}).get("dir") or ema.get("stack") or "bullish"
+        return {"type": "ema_cross", "fast": 20, "slow": 50,
+                "cross": "above" if direction == "bullish" else "below"}
+    if named == "macd" and macd:
+        direction = macd.get("recent_cross", {}).get("dir", "bullish")
+        return {"type": "macd_cross", "fast": 12, "slow": 26, "signal": 9, "against": "signal",
+                "cross": "above" if direction == "bullish" else "below"}
+    if named == "stoch" and stoch:
+        state = stoch.get("state")
+        if state == "overbought":
+            return {"type": "stoch_cross", "against": "level", "level": 80.0, "cross": "below"}
+        return {"type": "stoch_cross", "against": "level", "level": 20.0, "cross": "above"}
+    if named == "bollinger_squeeze" and bands:
+        return {"type": "bollinger_squeeze", "period": 20, "std": 2.0, "lookback": 120}
+    if named == "bollinger" and bands:
+        return {"type": "bollinger", "band": "upper", "cross": "above", "period": 20, "std": 2.0}
+    if named == "vwap" and vwap:
+        return {"type": "vwap_cross", "anchor": vwap.get("anchor", "day"), "cross": "above"}
+    if named == "volume" and volume:
+        return {"type": "volume_spike", "multiple": 2.0, "period": 20}
+    if named == "atr" and atr:
+        return {"type": "atr_expansion", "multiple": 2.0, "period": 14}
     return None
 
 
@@ -174,7 +278,10 @@ def _level(finding: Finding, scene: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 def _sequence(steps: List[Dict[str, Any]]) -> Dict[str, Any]:
-    return {"agent": "sequence", "steps": steps}
+    # A squeeze needs its whole window plus the Bollinger period; the schema
+    # refuses a lookback that cannot cover the step, so compute it here.
+    needed = max(step_warmup(s) for s in steps) + 3 * len(steps) + 2
+    return {"agent": "sequence", "steps": steps, "lookback": max(300, needed)}
 
 
 def _draft(finding: Finding, scene: Dict[str, Any], settings: PatternSettings) -> Optional[Dict[str, Any]]:
@@ -225,20 +332,14 @@ def _draft(finding: Finding, scene: Dict[str, Any], settings: PatternSettings) -
         }
 
     if finding.kind == "indicator":
-        cross = _rsi_cross(finding, scene)
-        if not cross:
+        step = _indicator_step(finding, scene)
+        if not step:
             return None
-        step = {
-            "type": "indicator",
-            "indicator": "rsi",
-            "period": cross["period"],
-            "cross": cross["dir"],
-            "level": float(cross["level"]),
-        }
+        said = describe_steps([step])
         return {
-            "name": f"{symbol} {describe_steps([step])}",
+            "name": f"{symbol} {said}",
             "params": _sequence([step]),
-            "summary": f"Alert when {describe_steps([step])} on {where}",
+            "summary": f"Alert when {said} on {where}",
         }
 
     if finding.kind == "level":
