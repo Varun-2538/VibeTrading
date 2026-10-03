@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { CONTACT_EMAIL } from "@/lib/contact"
+import { FOUNDERS_SENTENCE } from "@/lib/company"
 
 export const metadata: Metadata = {
   title: "Privacy — VibeTrading",
@@ -154,15 +155,15 @@ export default function PrivacyPage() {
 
       <h2>Changes</h2>
       <p>
-        If this policy changes we will update the date at the top. The project
-        is small enough that we will not pretend to run a formal notification
+        If this policy changes we will update the date at the top. The team is
+        small enough that we will not pretend to run a formal notification
         process.
       </p>
 
       <h2>Contact</h2>
       <p>
-        VibeTrading is an independent project, not an incorporated company.
-        Privacy questions go to{" "}
+        VibeTrading is operated by its founders, {FOUNDERS_SENTENCE}, while the
+        company is being incorporated. Privacy questions go to{" "}
         <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
       </p>
     </>
