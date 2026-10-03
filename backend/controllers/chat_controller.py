@@ -117,6 +117,24 @@ ALERT_PHRASES = (
 )
 
 
+def route(intent: str, has_window: bool) -> str:
+    """
+    Which path answers a message: 'alert', 'fellow', 'strategy' or 'legacy'.
+
+    Pure, so the order can be pinned by a test. The fellow takes everything a
+    windowed client sends except alert requests and explicit strategy builds -
+    in particular it takes pattern and level questions, which the legacy
+    keyword branches would otherwise claim first.
+    """
+    if intent == 'create_alert':
+        return 'alert'
+    if intent == 'trading_strategy':
+        return 'strategy'
+    if has_window:
+        return 'fellow'
+    return 'legacy'
+
+
 def detect_query_intent(message: str) -> str:
     """Detect what the user is asking about"""
     message_lower = message.lower()
@@ -204,6 +222,14 @@ async def ask_question(request: ChatRequest):
                 },
             )
 
+        # The chart fellow answers anything that is not an alert request or an
+        # explicit strategy build, from the scene for the window on screen. It
+        # must come before the keyword branches: "double bottom" would otherwise
+        # be claimed by the pattern branch and never reach it. Those branches
+        # remain for clients that send no window.
+        if route(intent, request.window is not None) == 'fellow':
+            return await _ask_fellow(request, symbol)
+
         # Patterns are answered before the database is touched. Everything this
         # branch needs is in the candles, and the price lookup below reads the
         # ohlc_data table, so routing through it would make pattern questions
@@ -259,12 +285,6 @@ async def ask_question(request: ChatRequest):
                 symbol=symbol,
                 data={"patterns": patterns, "current_price": current_price},
             )
-
-        # The chart fellow answers anything that is not an alert request or an
-        # explicit strategy build, from the scene for the window on screen. The
-        # keyword branches below remain for clients that send no window.
-        if request.window is not None and intent != 'trading_strategy':
-            return await _ask_fellow(request, symbol)
 
         # Get current price
         ohlc_data = await OHLCRepository.get_ohlc_data(symbol, request.timeframe, limit=1)
