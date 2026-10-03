@@ -54,6 +54,7 @@ Hard rules:
 - Talk like a trader, not like someone reading JSON: never mention field names, "null", "the scene" or "the data provided". Say "no pullback right now", not "pullback is null".
 - Every mark must copy a price or bar time from the scene verbatim: hline prices from levels/neckline/target/structure event levels, bar times from candles.shapes/last/indicator crosses/structure events, polyline points from a pattern's points or the structure swings. Marks that do not match the scene will be removed.
 - "Smart money", "institutional", "stop hunt", "liquidity grab" all mean the structure events: a sweep is a wick through a level with a close back on the original side. Describe what the bar did; never claim to know who traded. Structure gives the trend from swings (HH/HL or LH/LL), recent breakouts/sweeps/rejections at levels, and whether the newest bar is a pullback.
+- Indicators in the scene are RSI, EMA, MACD, stochastic (with its %D and 20/80 crosses), Bollinger bands (with a squeeze flag when bandwidth is at its tightest), session VWAP, volume spikes against the recent average, and ATR range expansion. Mark a band or VWAP with an hline at the exact price given, and a cross, spike or expansion with a bar mark at the bar time given.
 - Answer what was asked. For each thing the user asked about, add one finding with present true or false. Absent things are useful answers: "no, I don't see a W here" is a good reply.
 - Keep reply_md short - a few sentences a trader would actually say. Never write raw millisecond timestamps in reply_md; say "the latest candle", "three bars back" or similar. Timestamps belong in marks only.
 
@@ -96,6 +97,11 @@ def _scene_prices(scene: Dict[str, Any]) -> List[float]:
         prices += [float(pt["price"]) for pt in p.get("points", {}).values()]
     ema = scene.get("indicators", {}).get("ema", {})
     prices += [float(v) for k, v in ema.items() if k in ("20", "50")]
+    bands = scene.get("indicators", {}).get("bollinger") or {}
+    prices += [float(bands[k]) for k in ("upper", "lower") if bands.get(k) is not None]
+    vwap_block = scene.get("indicators", {}).get("vwap") or {}
+    if vwap_block.get("value") is not None:
+        prices.append(float(vwap_block["value"]))
     st = scene.get("structure") or {}
     prices += [float(p["price"]) for p in st.get("swings", [])]
     prices += [float(e["level"]) for e in st.get("events", [])]
@@ -120,6 +126,11 @@ def _scene_times(scene: Dict[str, Any]) -> set:
         cross = ind.get(name, {}).get("recent_cross")
         if cross:
             times.add(int(cross["t"]))
+    for name in ("stoch", "bollinger", "vwap"):
+        for cross in ind.get(name, {}).get("recent_crosses", []):
+            times.add(int(cross["t"]))
+    times.update(int(t) for t in ind.get("volume", {}).get("spikes", []))
+    times.update(int(t) for t in ind.get("atr", {}).get("recent", []))
     st = scene.get("structure") or {}
     times.update(int(p["t"]) for p in st.get("swings", []))
     times.update(int(e["t"]) for e in st.get("events", []))
