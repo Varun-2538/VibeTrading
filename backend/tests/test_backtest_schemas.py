@@ -47,3 +47,11 @@ def test_split_is_bounded(split):
 def test_an_invalid_rule_is_rejected_by_the_rule_schema():
     with pytest.raises(ValidationError):
         BacktestCreate(rule={**RULE, "params": {"agent": "sequence", "steps": []}})
+
+
+def test_exit_plan_defaults_and_needs_a_stop():
+    body = BacktestCreate(rule=RULE)
+    assert (body.exit.stop_atr, body.exit.target_r, body.exit.max_bars, body.exit.fee_pct) == (1.5, 2.0, 20, 0.1)
+    assert (body.exit.slippage_pct, body.exit.risk_pct, body.exit.exit_on_opposite) == (0.02, 1.0, False)
+    with pytest.raises(ValidationError, match="needs a stop"):
+        BacktestCreate(rule=RULE, exit={"stop_atr": None})
