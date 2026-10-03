@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { AlertCircle, Bell, Loader2, Plus, Trash2, Wallet, Zap } from "lucide-react"
+import { AlertCircle, Bell, FlaskConical, Loader2, Plus, Trash2, Wallet, Zap } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -49,6 +49,8 @@ import { useSession, type SessionStatus } from "@/hooks/use-session"
 import { useStrategySocket } from "@/hooks/use-strategy-socket"
 import { ARBITRUM_NAME, shortAddress } from "@/lib/wallet"
 import { cn } from "@/lib/utils"
+import BacktestSheet from "@/components/backtest-sheet"
+import type { BacktestRule } from "@/lib/backtests"
 
 interface AnalysisPanelProps {
   symbol: string
@@ -152,6 +154,7 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [testing, setTesting] = useState<string | null>(null)
+  const [backtestRule, setBacktestRule] = useState<BacktestRule | null>(null)
   const [testResult, setTestResult] = useState<{ id: string; message: string } | null>(null)
 
   // Builder state. Symbol and timeframe come from the chart; everything else is
@@ -630,6 +633,16 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
                       </p>
                     </div>
                     <Button
+                      onClick={() => setBacktestRule(rule)}
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 gap-1 px-2 text-[11px]"
+                      title="Backtest this rule on stored history"
+                    >
+                      <FlaskConical className="h-3 w-3" />
+                      Backtest
+                    </Button>
+                    <Button
                       onClick={() => handleTest(rule)}
                       disabled={testing === rule.id}
                       variant="ghost"
@@ -724,6 +737,13 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
           )}
         </TabsContent>
       </Tabs>
+      <BacktestSheet
+        rule={backtestRule}
+        open={backtestRule !== null}
+        onOpenChange={(next) => {
+          if (!next) setBacktestRule(null)
+        }}
+      />
     </div>
   )
 }

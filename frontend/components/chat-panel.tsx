@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Send, Sparkles, X, Loader2, Check, XIcon, Bell, Eye, EyeOff, MapPin } from "lucide-react"
+import { Send, Sparkles, X, Loader2, Check, XIcon, Bell, Eye, EyeOff, FlaskConical, MapPin } from "lucide-react"
 import { API_BASE, type Timeframe } from "@/lib/api"
 import { markKey, type ChatTurn, type FellowAnswer, type Mark, type PatternSettings, type Viewport } from "@/lib/marks"
 import {
@@ -13,6 +13,8 @@ import {
   UnauthorizedError,
   type RuleDraft,
 } from "@/lib/rules"
+import BacktestSheet from "@/components/backtest-sheet"
+import type { BacktestRule } from "@/lib/backtests"
 
 interface LiquidityLevel {
   price: number
@@ -87,6 +89,7 @@ export default function ChatPanel({
   // Which findings are drawn, by mark key. Reset when the chart moves to a
   // different symbol or timeframe, because the chart clears its drawings then.
   const [marked, setMarked] = useState<Map<string, Mark>>(new Map())
+  const [backtestRule, setBacktestRule] = useState<BacktestRule | null>(null)
 
   useEffect(() => {
     setMarked(new Map())
@@ -437,6 +440,15 @@ export default function ChatPanel({
                           <Button
                             size="sm"
                             variant="outline"
+                            onClick={() => setBacktestRule(message.ruleDraft!.draft)}
+                            className="h-8 flex-1 text-xs"
+                          >
+                            <FlaskConical className="mr-1 h-3.5 w-3.5" />
+                            Backtest
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
                             onClick={() => patchDraft(message.id, { status: "dismissed" })}
                             className="h-8 flex-1 text-xs"
                           >
@@ -517,6 +529,13 @@ export default function ChatPanel({
           </a>
         </p>
       </div>
+      <BacktestSheet
+        rule={backtestRule}
+        open={backtestRule !== null}
+        onOpenChange={(next) => {
+          if (!next) setBacktestRule(null)
+        }}
+      />
     </div>
   )
 }

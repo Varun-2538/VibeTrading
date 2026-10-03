@@ -251,3 +251,7 @@ export const BLOCKED_REASON: Record<BlockedBy, string> = {
   cooldown: "Matched, but still inside the cooldown window",
   dedup: "Already fired for this candle",
 }
+
+
+/** Shared with the backtest client, which authenticates the same way. */
+export { headers as authHeaders, fail as failResponse }
