@@ -3,6 +3,6 @@
       "target": {
         "namespace": "android_app",
         "package_name": "club.vibetrading.app",
-        "sha256_cert_fingerprints": ["CB:1B:27:EF:9A:51:18:34:4B:24:C9:FE:80:B8:5B:D2:13:F0:A6:9D:91:C5:4E:43:BC:E8:8A:6E:03:01:13:5F"]
+        "sha256_cert_fingerprints": ["CB:1B:27:EF:9A:51:18:34:4B:24:C9:FE:80:B8:5B:D2:13:F0:A6:9D:91:C5:4E:43:BC:E8:8A:6E:03:01:13:5F", "5C:ED:8E:1D:D1:7F:20:B4:83:52:D1:50:B5:D4:43:39:F5:33:4C:FF:69:18:C5:62:81:1D:7B:35:D6:D3:AC:2C"]
       }
     }]
