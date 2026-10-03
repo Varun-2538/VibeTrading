@@ -7,7 +7,10 @@ and must survive Binance rate limits and restarts halfway through. The SQL
 lives in repositories.history_repository; everything here is testable without
 a database.
 """
+import asyncio
 from typing import Any, Dict, List, Optional, Tuple
+
+import httpx
 
 PAIRS: Tuple[str, ...] = (
     "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
@@ -85,3 +88,70 @@ def missing_bars(first_ms: int, last_ms: int, bars: int, timeframe: str) -> int:
         return 0
     expected = (last_ms - first_ms) // _step(timeframe) + 1
     return max(0, expected - bars)
+
+
+BINANCE_KLINES = "https://api.binance.com/api/v3/klines"
+PAGE_LIMIT = 1000
+MAX_ATTEMPTS = 5
+# Binance uses 418 once an IP has ignored 429s; both carry Retry-After.
+RATE_LIMITED = (418, 429)
+
+
+class HistoryFetchError(RuntimeError):
+    """A page could not be fetched after retries, or the request was invalid."""
+
+
+async def fetch_page(
+    client: Any,
+    symbol: str,
+    timeframe: str,
+    start_ms: int,
+    *,
+    now_ms: int,
+    sleep=asyncio.sleep,
+) -> List[Dict[str, Any]]:
+    """
+    One page of up to 1000 closed candles starting at start_ms.
+
+    Rate limits wait for as long as Binance asks. Server errors and network
+    failures back off exponentially. A 4xx other than a rate limit means the
+    request itself is wrong, so retrying would only burn weight.
+    """
+    params = {
+        "symbol": symbol.upper(),
+        "interval": timeframe,
+        "startTime": start_ms,
+        "limit": PAGE_LIMIT,
+    }
+    last_error = "no attempt made"
+    for attempt in range(MAX_ATTEMPTS):
+        try:
+            response = await client.get(BINANCE_KLINES, params=params)
+        except httpx.HTTPError as exc:
+            last_error = f"network error: {exc}"
+            await sleep(float(2 ** attempt))
+            continue
+
+        if response.status_code == 200:
+            rows = response.json()
+            if not isinstance(rows, list):
+                raise HistoryFetchError(f"Unexpected kline response for {symbol} {timeframe}")
+            return parse_klines(rows, now_ms)
+
+        if response.status_code in RATE_LIMITED:
+            last_error = f"rate limited ({response.status_code})"
+            await sleep(float(response.headers.get("Retry-After", 60)))
+            continue
+
+        if response.status_code >= 500:
+            last_error = f"server error {response.status_code}"
+            await sleep(float(2 ** attempt))
+            continue
+
+        raise HistoryFetchError(
+            f"Binance refused {symbol} {timeframe} ({response.status_code}): {response.text[:200]}"
+        )
+
+    raise HistoryFetchError(
+        f"Gave up on {symbol} {timeframe} from {start_ms} after {MAX_ATTEMPTS} attempts: {last_error}"
+    )
