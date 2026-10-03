@@ -9,6 +9,7 @@ from agents.liquidation_agent import LiquidationAgent
 from agents.indicator_agent import IndicatorAgent
 from agents.rule_parser import LLMBusy, RuleParseError, describe_draft, draft_rule
 from agents import chart_fellow
+from agents.fellow_subscribe import attach_subscriptions
 from analysis.scene import build_scene
 from analysis.sequence import describe_steps
 from models.fellow_schemas import ChatTurn, PatternSettings, Viewport
@@ -507,6 +508,11 @@ async def _ask_fellow(request: ChatRequest, symbol: str) -> ChatResponse:
         return ChatResponse(response=str(exc), symbol=symbol)
     except chart_fellow.LLMBusy as exc:
         return ChatResponse(response=str(exc), symbol=symbol)
+
+    # Level two: what the fellow sees, offered as an alert. Built from the
+    # scene with the same detector settings as the chart, so the alert watches
+    # for what the overlay draws.
+    attach_subscriptions(answer, scene, request.pattern_settings)
 
     return ChatResponse(
         response=answer.reply_md,

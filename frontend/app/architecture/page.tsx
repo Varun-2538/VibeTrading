@@ -279,6 +279,15 @@ export default function ArchitecturePage() {
         facts answered your question. You can see precisely what it saw at{" "}
         <code>POST /api/scene</code>.
       </p>
+      <p>
+        Anything it sees can become an alert. The alert is not written by the
+        model either: the server follows the finding back to the detector entry
+        it marked — that sweep, that engulfing candle, that level — and builds
+        the rule from it, which must then pass the same validation as a rule you
+        build by hand. It watches for the kind of thing, not the one instance:
+        the next double bottom to confirm, not only this one. Nothing is armed
+        until you arm it.
+      </p>
 
       <h2>Who owns a rule</h2>
       <p>
@@ -332,7 +341,7 @@ export default function ArchitecturePage() {
 
       <h2>Testing</h2>
       <p>
-        286 tests. Pattern fixtures are built from line segments so the geometry
+        307 tests. Pattern fixtures are built from line segments so the geometry
         is known exactly and assertions can be made on prices rather than on
         "something was found". A good number of those tests exist because a real
         chart disagreed with the detector and the disagreement turned out to be

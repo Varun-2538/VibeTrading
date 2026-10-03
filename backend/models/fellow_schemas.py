@@ -5,7 +5,7 @@ Validated with the same discipline as rule drafts: the model proposes JSON,
 this schema decides whether it is an answer. A mark the schema cannot type is
 not drawn; a finding without a kind from the vocabulary is not shown.
 """
-from typing import Annotated, List, Literal, Optional, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -57,6 +57,17 @@ class Box(BaseModel):
 Mark = Annotated[Union[HLine, BarMark, Polyline, Box], Field(discriminator="type")]
 
 
+class Subscription(BaseModel):
+    """
+    The alert a finding can be armed as: a rule draft in RuleCreate's shape,
+    and one line saying what it watches for. Built by the server from the
+    scene, never by the model.
+    """
+
+    summary: str
+    draft: Dict[str, Any]
+
+
 class Finding(BaseModel):
     """
     One thing the user asked about, answered present or not.
@@ -73,6 +84,8 @@ class Finding(BaseModel):
     why: str = Field(default="", max_length=300)
     marks: List[Mark] = Field(default_factory=list, max_length=12)
     grounded: bool = True
+    # Server-only, like grounded: the guard clears whatever the model put here.
+    subscribe: Optional[Subscription] = None
 
 
 class FellowAnswer(BaseModel):

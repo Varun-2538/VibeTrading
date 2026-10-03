@@ -7,6 +7,8 @@
  * for the window on screen. The chart draws them without re-checking.
  */
 
+import type { RuleDraft } from "@/lib/rules"
+
 export interface HLineMark {
   type: "hline"
   price: number
@@ -48,6 +50,12 @@ export interface Finding {
   marks: Mark[]
   /** False when the server dropped marks the detectors could not vouch for. */
   grounded: boolean
+  /**
+   * The alert this finding can be armed as, built by the server from the
+   * detector entry it points at. Null when there is nothing the rules engine
+   * can watch for.
+   */
+  subscribe?: { summary: string; draft: RuleDraft } | null
 }
 
 export interface FellowAnswer {
