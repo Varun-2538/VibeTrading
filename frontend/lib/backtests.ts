@@ -351,3 +351,18 @@ export function tradeVerdict(report: BacktestReport): string | null {
     `(seen: ${fmtR(seen.expectancy_r)} per trade)${note}`
   )
 }
+
+export interface BacktestSummary {
+  id: string
+  status: BacktestStatus
+  progress: number
+  created_at: string | null
+  error: string | null
+  request?: { rule?: { name?: string; symbol?: string; timeframe?: string } }
+}
+
+export async function listBacktests(): Promise<BacktestSummary[]> {
+  const res = await fetch(`${API_BASE}/api/backtests`, { headers: authHeaders() })
+  if (!res.ok) await failResponse(res, "Could not load your backtests")
+  return res.json()
+}
