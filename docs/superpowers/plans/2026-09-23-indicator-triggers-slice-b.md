@@ -410,11 +410,23 @@ def test_a_band_finding_becomes_a_bollinger_step_and_a_squeeze_becomes_a_squeeze
     assert squeeze.draft["params"]["steps"][0]["type"] == "bollinger_squeeze"
 
 
-def test_a_vwap_finding_keeps_the_anchor_the_scene_used():
-    scene = scene_with(vwap={"anchor": "day", "value": 60_750.0, "side": "above",
-                             "recent_crosses": [{"dir": "above", "t": T0 + 92 * H}]})
-    sub = subscription_for(finding("indicator", "VWAP", [{"type": "hline", "price": 60_750.0}]), scene)
-    assert sub.draft["params"]["steps"][0] == {"type": "vwap_cross", "anchor": "day", "cross": "above"}
+def test_a_vwap_finding_keeps_the_anchor_and_watches_the_side_it_is_not_on():
+    # Marking the VWAP line says "this line matters", not which way. The event
+    # worth an alert is the crossing away from where price already sits: above
+    # VWAP, that is losing it; below it, reclaiming it.
+    above = scene_with(vwap={"anchor": "day", "value": 60_750.0, "side": "above", "recent_crosses": []})
+    sub = subscription_for(finding("indicator", "VWAP", [{"type": "hline", "price": 60_750.0}]), above)
+    assert sub.draft["params"]["steps"][0] == {"type": "vwap_cross", "anchor": "day", "cross": "below"}
+
+    below = scene_with(vwap={"anchor": "week", "value": 60_750.0, "side": "below", "recent_crosses": []})
+    reclaim = subscription_for(finding("indicator", "VWAP", [{"type": "hline", "price": 60_750.0}]), below)
+    assert reclaim.draft["params"]["steps"][0] == {"type": "vwap_cross", "anchor": "week", "cross": "above"}
+
+    # A marked cross still wins: it says which way it went.
+    crossed = scene_with(vwap={"anchor": "day", "value": 60_750.0, "side": "above",
+                               "recent_crosses": [{"dir": "above", "t": T0 + 92 * H}]})
+    marked = subscription_for(finding("indicator", "VWAP", [{"type": "bar", "time": T0 + 92 * H}]), crossed)
+    assert marked.draft["params"]["steps"][0]["cross"] == "above"
 
 
 def test_volume_and_range_findings_become_their_steps():

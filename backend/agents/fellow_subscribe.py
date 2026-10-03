@@ -162,37 +162,48 @@ def _named_indicator(label: str) -> Optional[str]:
     return None
 
 
-def _indicator_step(finding: Finding, scene: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """
-    The rule step an indicator finding subscribes to.
-
-    Resolved from what the finding marked where possible - a bar time or a
-    price the scene reported - and from its label otherwise, but only ever
-    against an indicator the scene actually holds. An indicator the detectors
-    did not report cannot be alerted on, however confidently the model named it.
-    """
-    ind = scene.get("indicators") or {}
-    times = set(_bar_times(finding))
-    prices = _line_prices(finding)
-
+def _rsi_step(ind, times, prices, named):
     rsi = ind.get("rsi") or {}
-    for cross in rsi.get("recent_crosses") or []:
+    crosses = rsi.get("recent_crosses") or []
+    period = int(rsi.get("period", 14))
+    for cross in crosses:
         if int(cross["t"]) in times:
-            return {"type": "indicator", "indicator": "rsi", "period": int(rsi.get("period", 14)),
+            return {"type": "indicator", "indicator": "rsi", "period": period,
                     "cross": cross["dir"], "level": float(cross["level"])}
+    if named and crosses:
+        first = crosses[0]
+        return {"type": "indicator", "indicator": "rsi", "period": period,
+                "cross": first["dir"], "level": float(first["level"])}
+    return None
 
+
+def _ema_step(ind, times, prices, named):
     ema = ind.get("ema") or {}
     cross = ema.get("recent_cross")
     if cross and int(cross["t"]) in times:
         return {"type": "ema_cross", "fast": 20, "slow": 50,
                 "cross": "above" if cross["dir"] == "bullish" else "below"}
+    if named and ema:
+        direction = (cross or {}).get("dir") or ema.get("stack") or "bullish"
+        return {"type": "ema_cross", "fast": 20, "slow": 50,
+                "cross": "above" if direction == "bullish" else "below"}
+    return None
 
+
+def _macd_step(ind, times, prices, named):
     macd = ind.get("macd") or {}
     cross = macd.get("recent_cross")
     if cross and int(cross["t"]) in times:
         return {"type": "macd_cross", "fast": 12, "slow": 26, "signal": 9, "against": "signal",
                 "cross": "above" if cross["dir"] == "bullish" else "below"}
+    if named and macd:
+        direction = (cross or {}).get("dir", "bullish")
+        return {"type": "macd_cross", "fast": 12, "slow": 26, "signal": 9, "against": "signal",
+                "cross": "above" if direction == "bullish" else "below"}
+    return None
 
+
+def _stoch_step(ind, times, prices, named):
     stoch = ind.get("stoch") or {}
     for cross in stoch.get("recent_crosses") or []:
         if int(cross["t"]) in times:
@@ -200,8 +211,26 @@ def _indicator_step(finding: Finding, scene: Dict[str, Any]) -> Optional[Dict[st
                 return {"type": "stoch_cross", "against": "d", "cross": cross["dir"]}
             return {"type": "stoch_cross", "against": "level", "level": float(cross["level"]),
                     "cross": cross["dir"]}
+    if named and stoch:
+        if stoch.get("state") == "overbought":
+            return {"type": "stoch_cross", "against": "level", "level": 80.0, "cross": "below"}
+        return {"type": "stoch_cross", "against": "level", "level": 20.0, "cross": "above"}
+    return None
 
+
+def _squeeze_step(ind, times, prices, named):
     bands = ind.get("bollinger") or {}
+    if not bands:
+        return None
+    if named or bands.get("squeeze"):
+        return {"type": "bollinger_squeeze", "period": 20, "std": 2.0, "lookback": 120}
+    return None
+
+
+def _bollinger_step(ind, times, prices, named):
+    bands = ind.get("bollinger") or {}
+    if not bands:
+        return None
     for cross in bands.get("recent_crosses") or []:
         if int(cross["t"]) in times:
             return {"type": "bollinger", "band": cross["band"], "cross": cross["dir"],
@@ -210,53 +239,91 @@ def _indicator_step(finding: Finding, scene: Dict[str, Any]) -> Optional[Dict[st
         if bands.get(band) is not None and any(_near(p, float(bands[band])) for p in prices):
             return {"type": "bollinger", "band": band,
                     "cross": "above" if band == "upper" else "below", "period": 20, "std": 2.0}
-
-    vwap = ind.get("vwap") or {}
-    if vwap:
-        for cross in vwap.get("recent_crosses") or []:
-            if int(cross["t"]) in times:
-                return {"type": "vwap_cross", "anchor": vwap.get("anchor", "day"), "cross": cross["dir"]}
-        if vwap.get("value") is not None and any(_near(p, float(vwap["value"])) for p in prices):
-            return {"type": "vwap_cross", "anchor": vwap.get("anchor", "day"), "cross": "above"}
-
-    volume = ind.get("volume") or {}
-    if any(int(t) in times for t in volume.get("spikes") or []):
-        return {"type": "volume_spike", "multiple": 2.0, "period": 20}
-
-    atr = ind.get("atr") or {}
-    if any(int(t) in times for t in atr.get("recent") or []):
-        return {"type": "atr_expansion", "multiple": 2.0, "period": 14}
-
-    # Nothing matched what it marked; fall back to the words, still requiring
-    # the scene to hold that indicator.
-    named = _named_indicator(finding.label)
-    if named == "rsi" and rsi.get("recent_crosses"):
-        first = rsi["recent_crosses"][0]
-        return {"type": "indicator", "indicator": "rsi", "period": int(rsi.get("period", 14)),
-                "cross": first["dir"], "level": float(first["level"])}
-    if named == "ema" and ema:
-        direction = ema.get("recent_cross", {}).get("dir") or ema.get("stack") or "bullish"
-        return {"type": "ema_cross", "fast": 20, "slow": 50,
-                "cross": "above" if direction == "bullish" else "below"}
-    if named == "macd" and macd:
-        direction = macd.get("recent_cross", {}).get("dir", "bullish")
-        return {"type": "macd_cross", "fast": 12, "slow": 26, "signal": 9, "against": "signal",
-                "cross": "above" if direction == "bullish" else "below"}
-    if named == "stoch" and stoch:
-        state = stoch.get("state")
-        if state == "overbought":
-            return {"type": "stoch_cross", "against": "level", "level": 80.0, "cross": "below"}
-        return {"type": "stoch_cross", "against": "level", "level": 20.0, "cross": "above"}
-    if named == "bollinger_squeeze" and bands:
-        return {"type": "bollinger_squeeze", "period": 20, "std": 2.0, "lookback": 120}
-    if named == "bollinger" and bands:
+    if named:
+        crosses = bands.get("recent_crosses") or []
+        if crosses:
+            return {"type": "bollinger", "band": crosses[0]["band"], "cross": crosses[0]["dir"],
+                    "period": 20, "std": 2.0}
         return {"type": "bollinger", "band": "upper", "cross": "above", "period": 20, "std": 2.0}
-    if named == "vwap" and vwap:
-        return {"type": "vwap_cross", "anchor": vwap.get("anchor", "day"), "cross": "above"}
-    if named == "volume" and volume:
+    return None
+
+
+def _vwap_step(ind, times, prices, named):
+    vwap = ind.get("vwap") or {}
+    if not vwap:
+        return None
+    anchor = vwap.get("anchor", "day")
+    for cross in vwap.get("recent_crosses") or []:
+        if int(cross["t"]) in times:
+            return {"type": "vwap_cross", "anchor": anchor, "cross": cross["dir"]}
+    if vwap.get("value") is not None and any(_near(p, float(vwap["value"])) for p in prices):
+        # Sitting under VWAP, the thing worth waiting for is a reclaim.
+        return {"type": "vwap_cross", "anchor": anchor,
+                "cross": "above" if vwap.get("side") == "below" else "below"}
+    if named:
+        return {"type": "vwap_cross", "anchor": anchor,
+                "cross": "above" if vwap.get("side") == "below" else "below"}
+    return None
+
+
+def _volume_step(ind, times, prices, named):
+    volume = ind.get("volume") or {}
+    if not volume:
+        return None
+    if any(int(t) in times for t in volume.get("spikes") or []) or named:
         return {"type": "volume_spike", "multiple": 2.0, "period": 20}
-    if named == "atr" and atr:
+    return None
+
+
+def _atr_step(ind, times, prices, named):
+    atr = ind.get("atr") or {}
+    if not atr:
+        return None
+    if any(int(t) in times for t in atr.get("recent") or []) or named:
         return {"type": "atr_expansion", "multiple": 2.0, "period": 14}
+    return None
+
+
+# In the order a mark is searched when the label names nothing.
+INDICATOR_RESOLVERS = (
+    ("rsi", _rsi_step),
+    ("ema", _ema_step),
+    ("macd", _macd_step),
+    ("stoch", _stoch_step),
+    ("bollinger", _bollinger_step),
+    ("bollinger_squeeze", _squeeze_step),
+    ("vwap", _vwap_step),
+    ("volume", _volume_step),
+    ("atr", _atr_step),
+)
+
+
+def _indicator_step(finding: Finding, scene: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    The rule step an indicator finding subscribes to.
+
+    The label decides which indicator this is about - it is the model's own
+    statement of subject - and the marks fill in the details: which level was
+    crossed, which band, which way. Only when the label names no indicator do
+    the marks choose one, and either way the scene must actually hold it. A
+    finding about the bands once came back with an RSI alert because its bar
+    happened to be an RSI cross too; the label settles that now.
+    """
+    ind = scene.get("indicators") or {}
+    times = set(_bar_times(finding))
+    prices = _line_prices(finding)
+    named = _named_indicator(finding.label)
+
+    if named is not None:
+        for name, resolve in INDICATOR_RESOLVERS:
+            if name == named:
+                return resolve(ind, times, prices, True)
+        return None
+
+    for _, resolve in INDICATOR_RESOLVERS:
+        step = resolve(ind, times, prices, False)
+        if step is not None:
+            return step
     return None
 
 
