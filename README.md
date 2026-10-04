@@ -56,6 +56,25 @@ vault — 26 hours for crypto, 96 for US equities, never more than a 4-day ceili
 Over a weekend every swap is priced against the last market answer, so a move
 beyond the owner's slippage makes a swap refuse rather than fill badly.
 
+### A real trade, on mainnet, closed by a stranger
+
+One position in an NVDA vault on Robinhood Chain, on Sunday 2026-10-04 - with the
+stock market closed and NVDA's Chainlink feed 36 hours old, inside the stock
+market's 96-hour rule. The entry was sent by hand with the executor's key (in
+production a rule's signal sends it); the exit was pushed by a wallet that is
+neither the owner nor us, with our executor not involved.
+
+| Step | Who | Transaction |
+|---|---|---|
+| Vault deployed for NVDA, disclosure hash stored | owner | [`0x97a0…2b50`](https://robinhoodchain.blockscout.com/tx/0x97a072142e53020abef128429f3627e34b1d96f6b943ead1e0f5a089f50e2b50) |
+| **Open**: 2 USDG → 0.008519 NVDA at $235.00; stop $211.50, target $282.00, 10-minute deadline written into the vault | executor (operator) | [`0x5b59…df0d`](https://robinhoodchain.blockscout.com/tx/0x5b593eb33990944d8ae1f56c1e06fa993f87fe4809c19b8f3dc442fce955df0d) |
+| An early `closeIfExpired` / `closeIfStopped` from the stranger | stranger | refused by the vault: `NotTriggered()` |
+| **Close** on expiry: 0.008519 NVDA → 1.998682 USDG; **1 USDG bounty** paid to the caller | stranger | [`0x6cf8…1c5b`](https://robinhoodchain.blockscout.com/tx/0x6cf82b8fcb8f6448544f621fad837c5d830d7d1eca942c45a5df42993e8a1c5b) |
+
+Vault: [`0x99a0…99a5`](https://robinhoodchain.blockscout.com/address/0x99a038f8335ADfb5332aCB8e4c520FaCCf8b99a5). The
+round trip cost 0.0013 USDG in pool fees on 2 USDG; the bounty is what the
+permissionless exit costs, and it went to whoever pushed the button.
+
 ### How it was tested
 
 - `contracts/`: 30 offline tests, mostly refusals — the operator cannot withdraw,
