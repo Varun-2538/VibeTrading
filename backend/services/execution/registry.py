@@ -42,10 +42,16 @@ def _rpc_url(info: ChainInfo) -> str:
     return getattr(settings, f"{info.key}_rpc_url")
 
 
+def _fallback_url(info: ChainInfo) -> str:
+    from config import settings
+
+    return getattr(settings, f"{info.key}_rpc_fallback_url", "") or ""
+
+
 def chain(info: ChainInfo) -> Chain:
     """One client per chain for the process: a fresh TLS handshake per call is not free."""
     if info.key not in _chains:
-        _chains[info.key] = Chain(_rpc_url(info), info.chain_id)
+        _chains[info.key] = Chain(_rpc_url(info), info.chain_id, fallback_url=_fallback_url(info))
     return _chains[info.key]
 
 

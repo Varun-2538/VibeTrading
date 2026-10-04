@@ -163,3 +163,72 @@ class TestReceipt:
         with pytest.raises(VenueUnknown) as exc:
             await chain.wait_for_receipt("0xabc123", attempts=2, interval=0)
         assert "0xabc123" in str(exc.value)
+
+
+PRIMARY = "https://primary.example/rpc"
+FALLBACK = "https://fallback.example/rpc"
+
+
+def two_nodes(primary: List[Any], fallback: List[Any]):
+    """A primary and a fallback node, each answering from its own script."""
+    seen: List[str] = []
+    queues = {PRIMARY: list(primary), FALLBACK: list(fallback)}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        seen.append(url)
+        body = __import__("json").loads(request.content)
+        answer = queues[url].pop(0) if queues[url] else {"result": None}
+        if callable(answer):
+            answer = answer()
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], **answer})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    return Chain(PRIMARY, 4663, client=client, fallback_url=FALLBACK), seen
+
+
+def _down():
+    raise httpx.ConnectError("primary unreachable")
+
+
+class TestFallback:
+    async def test_a_read_the_primary_cannot_answer_is_asked_of_the_fallback(self):
+        chain, seen = two_nodes([_down, _down, _down], [{"result": "0x2a"}])
+        assert await chain.gas_price() == 42
+        assert seen.count(FALLBACK) == 1
+
+    async def test_a_healthy_primary_never_touches_the_fallback(self):
+        chain, seen = two_nodes([{"result": "0x2a"}], [])
+        assert await chain.gas_price() == 42
+        assert FALLBACK not in seen
+
+    async def test_a_revert_is_an_answer_and_is_not_re_asked(self):
+        data = next(k for k, v in VAULT_ERRORS.items() if v == "NotTriggered")
+        chain, seen = two_nodes([{"error": {"message": "execution reverted", "data": data}}], [])
+        with pytest.raises(VenueRejected):
+            await chain.call("0x" + "11" * 20, "0x")
+        assert FALLBACK not in seen
+
+    async def test_a_send_the_primary_could_not_confirm_goes_to_the_fallback_once(self):
+        chain, seen = two_nodes([{"error": {"message": "rate limited"}}], [{"result": "0x" + "ab" * 32}])
+        assert await chain.send_raw("0xdead") == "0x" + "ab" * 32
+        assert seen == [PRIMARY, FALLBACK]
+
+    async def test_a_send_the_fallback_already_has_is_already_broadcast_not_a_new_trade(self):
+        chain, _ = two_nodes([{"error": {"message": "timeout"}}], [{"error": {"message": "already known"}}])
+        with pytest.raises(AlreadyBroadcast):
+            await chain.send_raw("0xdead")
+
+    async def test_already_known_on_the_primary_is_not_offered_to_the_fallback(self):
+        chain, seen = two_nodes([{"error": {"message": "nonce too low"}}], [])
+        with pytest.raises(AlreadyBroadcast):
+            await chain.send_raw("0xdead")
+        assert FALLBACK not in seen
+
+    async def test_both_nodes_down_is_still_unknown(self):
+        chain, _ = two_nodes([{"error": {"message": "down"}}], [{"error": {"message": "also down"}}])
+        with pytest.raises(VenueUnknown, match="fallback"):
+            await chain.send_raw("0xdead")
+
+    def test_the_same_url_twice_is_no_fallback(self):
+        assert Chain(PRIMARY, 4663, fallback_url=PRIMARY).fallback_url is None
