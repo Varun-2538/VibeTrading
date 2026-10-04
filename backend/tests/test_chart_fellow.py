@@ -279,3 +279,20 @@ def test_a_pattern_marked_by_its_neckline_alone_gets_its_shape_drawn():
     shapes = [m for m in a.findings[0].marks if m.type == "polyline"]
     assert len(shapes) == 1
     assert len(shapes[0].points) >= 3
+
+
+def test_a_pattern_that_played_out_is_drawn_whatever_was_asked():
+    scene = json.loads(json.dumps(SCENE))
+    scene["patterns"][0]["target_hit"] = True
+    scene["patterns"][0]["state"] = "confirmed"
+    a = parse_answer(answer_with([]), scene)
+    done = [f for f in a.findings if "completed" in f.label]
+    assert len(done) == 1
+    assert any(m.type == "polyline" for m in done[0].marks)
+
+
+def test_field_names_are_said_in_words():
+    raw = json.loads(answer_with([]))
+    raw["reply_md"] = "Both Ws in the scene have target_hit true."
+    a = parse_answer(json.dumps(raw), SCENE)
+    assert "target_hit" not in a.reply_md and "scene" not in a.reply_md

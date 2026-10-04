@@ -21,11 +21,14 @@ from openai import RateLimitError
 from pydantic import ValidationError
 
 from agents.llm import make_llm
+import re
+
 from models.fellow_schemas import (
     BarMark,
     Box,
     ChatTurn,
     FellowAnswer,
+    Finding,
     HLine,
     Polyline,
     PolylinePoint,
@@ -214,7 +217,61 @@ def ground(answer: FellowAnswer, scene: Dict[str, Any]) -> Tuple[FellowAnswer, i
                 kept.insert(0, shape)
         finding.marks = kept
 
+    _add_completed(answer, scene)
     return answer, dropped
+
+
+def _add_completed(answer: FellowAnswer, scene: Dict[str, Any]) -> None:
+    """
+    Every pattern on screen that already played out is drawn, labelled as done,
+    whatever was asked: a W that broke its neckline and reached its target is
+    the evidence that the next one is worth watching.
+    """
+    drawn = {
+        (pt.time, pt.price)
+        for f in answer.findings
+        for m in f.marks
+        if isinstance(m, Polyline)
+        for pt in m.points
+    }
+    for p in scene.get("patterns", []):
+        if not p.get("target_hit") or len(answer.findings) >= 12:
+            continue
+        pts = sorted(p.get("points", {}).values(), key=lambda pt: int(pt["t"]))
+        if len(pts) < 2 or all((int(pt["t"]), float(pt["price"])) in drawn for pt in pts):
+            continue
+        name = "double bottom" if p["kind"] == "W" else "double top"
+        answer.findings.append(
+            Finding(
+                kind="pattern",
+                label=f"{p['kind']} ({name}) completed - hit target",
+                present=True,
+                confidence=float(p.get("confidence", 0)),
+                why=f"Broke its {p['neckline']} neckline and reached its {p['target']} target.",
+                marks=[
+                    Polyline(
+                        points=[PolylinePoint(time=int(pt["t"]), price=float(pt["price"])) for pt in pts][:8],
+                        label=f"{p['kind']} completed ✓",
+                    ),
+                    HLine(price=float(p["target"]), label=f"{p['kind']} target hit"),
+                ],
+            )
+        )
+
+
+# The model is told never to read its input aloud; when it does anyway, say it
+# the way a trader would.
+_FIELD_TALK = [
+    (re.compile(r"target_hit\s*(?:=|:)?\s*true", re.I), "hit its target"),
+    (re.compile(r"(?:in|from) the scene", re.I), "on the chart"),
+    (re.compile(r"the scene", re.I), "the chart"),
+]
+
+
+def _plain(text: str) -> str:
+    for pattern, said in _FIELD_TALK:
+        text = pattern.sub(said, text)
+    return text
 
 
 def _pattern_for(marks: List[Any], scene: Dict[str, Any]) -> "Polyline | None":
@@ -251,6 +308,9 @@ def parse_answer(raw: str, scene: Dict[str, Any]) -> FellowAnswer:
         raise FellowError(f"I couldn't put that answer together ({first.get('msg')}).")
 
     answer, dropped = ground(answer, scene)
+    answer.reply_md = _plain(answer.reply_md)
+    for f in answer.findings:
+        f.why = _plain(f.why)
     if dropped:
         answer.reply_md += (
             f"\n\n_({dropped} mark{'s' if dropped != 1 else ''} left off: "
