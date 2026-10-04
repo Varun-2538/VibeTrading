@@ -24,7 +24,7 @@ from analysis import structure as market_structure
 
 # List caps. Raising these costs tokens on every question.
 MAX_LEVELS_PER_SIDE = 5
-MAX_PATTERNS = 5
+MAX_PATTERNS = 4
 MAX_SHAPES = 6
 MAX_CROSSES = 3
 LAST_BARS = 5
@@ -117,7 +117,8 @@ def _patterns(
     # screen, not the newest wiggle at the right edge. And one per stretch of the
     # chart: a W nested inside a bigger W is the same W to the eye, and three of
     # them would fill the list while a clear one elsewhere is left out.
-    found.sort(key=lambda p: -abs(p["neckline"] - p["target"]))
+    # W and M before the larger shapes: they are what gets asked about by name.
+    found.sort(key=lambda p: (p["kind"] not in ("W", "M"), -abs(p["neckline"] - p["target"])))
     span = lambda p: (min(pt["index"] for pt in p["points"].values()), max(pt["index"] for pt in p["points"].values()))
     kept: List[Dict[str, Any]] = []
     for p in found:

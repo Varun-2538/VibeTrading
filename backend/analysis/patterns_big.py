@@ -156,6 +156,10 @@ def _head_shoulders(
         l1 = (max if inverse else min)(left, key=lambda t: trough_px[t])
         l2 = (max if inverse else min)(right, key=lambda t: trough_px[t])
         n1, n2 = trough_px[l1], trough_px[l2]
+        # The head is a hill between the troughs, not a one-bar spike pressed
+        # against one of them.
+        if min(head - l1, l2 - head) < 0.2 * (l2 - l1):
+            continue
         if abs(n2 - n1) > NECK_TOL_FACTOR * preset.tol * unit:
             continue
         neckline = (n1 + n2) / 2.0
