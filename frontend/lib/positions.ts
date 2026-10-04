@@ -146,3 +146,38 @@ export function useOpenPositions(owner: string | undefined | null): {
 
   return { positions, refresh }
 }
+
+/**
+ * Whether `owner` has deployed a vault for `market`: true, false, or null while
+ * unknown (no wallet, or the chain has not answered). Arming is a permission on our
+ * server and needs no vault; a trade does, so the arm screen says so.
+ */
+export function useHasVault(owner: string | undefined | null, market: string | null): boolean | null {
+  const [has, setHas] = useState<boolean | null>(null)
+  useEffect(() => {
+    setHas(null)
+    const m = VAULT_MARKETS.find((v) => v.market === market)
+    if (!owner || !m) return
+    const factory = DEPLOYED_FACTORY[m.chainId]
+    const client = getPublicClient(wagmiConfig, { chainId: m.chainId as 42161 | 4663 })
+    if (!factory || !client) return
+    let alive = true
+    void (async () => {
+      try {
+        const vault = (await client.readContract({
+          address: factory,
+          abi: FACTORY_ABI,
+          functionName: "vaultOf",
+          args: [owner as Address, m.asset],
+        })) as Address
+        if (alive) setHas(vault !== ZERO)
+      } catch {
+        // Unknown rather than "no": a quiet RPC is not a missing vault.
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [owner, market])
+  return has
+}
