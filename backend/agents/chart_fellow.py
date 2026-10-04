@@ -28,6 +28,7 @@ from models.fellow_schemas import (
     FellowAnswer,
     HLine,
     Polyline,
+    PolylinePoint,
 )
 
 # A marked price must sit this close to a scene price to count as the same.
@@ -204,9 +205,31 @@ def ground(answer: FellowAnswer, scene: Dict[str, Any]) -> Tuple[FellowAnswer, i
                 dropped += 1
         if len(kept) < len(finding.marks):
             finding.grounded = False
+        # A pattern marked by its neckline alone is two flat lines the eye cannot
+        # place. Draw the letter itself, from the scene, whenever the model left
+        # it out.
+        if finding.kind == "pattern" and not any(isinstance(m, Polyline) for m in kept):
+            shape = _pattern_for(kept, scene)
+            if shape is not None:
+                kept.insert(0, shape)
         finding.marks = kept
 
     return answer, dropped
+
+
+def _pattern_for(marks: List[Any], scene: Dict[str, Any]) -> "Polyline | None":
+    """The scene pattern whose neckline or target one of these lines sits on."""
+    lines = [m.price for m in marks if isinstance(m, HLine)]
+    for p in scene.get("patterns", []):
+        refs = (float(p["neckline"]), float(p["target"]))
+        if any(_near(price, refs) for price in lines):
+            pts = sorted(p.get("points", {}).values(), key=lambda pt: int(pt["t"]))
+            if len(pts) >= 2:
+                return Polyline(
+                    points=[PolylinePoint(time=int(pt["t"]), price=float(pt["price"])) for pt in pts][:8],
+                    label=f"{p['kind']} {p.get('state', '')}".strip()[:40],
+                )
+    return None
 
 
 # --- parsing -----------------------------------------------------------------

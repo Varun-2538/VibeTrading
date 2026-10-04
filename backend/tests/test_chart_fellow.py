@@ -272,3 +272,10 @@ def test_the_prompt_names_the_new_indicators():
 
     for word in ("stochastic", "Bollinger", "squeeze", "VWAP", "volume", "ATR"):
         assert word.lower() in SYSTEM_PROMPT.lower(), word
+
+
+def test_a_pattern_marked_by_its_neckline_alone_gets_its_shape_drawn():
+    a = parse_answer(answer_with([{"type": "hline", "price": 61_900.0, "label": "neckline"}], kind="pattern"), SCENE)
+    shapes = [m for m in a.findings[0].marks if m.type == "polyline"]
+    assert len(shapes) == 1
+    assert len(shapes[0].points) >= 3
