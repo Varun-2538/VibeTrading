@@ -1199,9 +1199,12 @@ export default function PriceChart({
         {/* Chart */}
         <div className="relative min-w-0 flex-1">
           <div ref={containerRef} className="absolute inset-0" />
-          <div className="pointer-events-none absolute left-2 right-16 top-2 z-20 lg:top-10">
-            <IndicatorBar specs={indicators} onChange={setIndicators} />
-          </div>
+          {/* A stock chart covers this one and has its own bar; two would stack. */}
+          {!stockView && (
+            <div className="pointer-events-none absolute left-2 right-16 top-2 z-20 lg:top-10">
+              <IndicatorBar specs={indicators} onChange={setIndicators} />
+            </div>
+          )}
           {chartStyle === "candle" && (hovered ?? latest) && (
             <div className="pointer-events-none absolute left-2 top-2 z-10 hidden items-center gap-3 rounded bg-background/85 px-2 py-1 font-mono text-[11px] text-muted-foreground backdrop-blur lg:flex">
               {(["open", "high", "low", "close"] as const).map((k) => (
