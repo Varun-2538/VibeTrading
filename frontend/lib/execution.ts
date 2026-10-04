@@ -61,6 +61,11 @@ export interface PreflightResult {
   passed: boolean
   reasons: string[]
   evidence: Record<string, unknown>
+  /** Failed on quality alone: the owner may arm it anyway, having read why. */
+  overridable?: boolean
+  /** On an armed policy: it was armed against this advice. */
+  overridden?: boolean
+  overridden_at?: string
 }
 
 export interface ArmedPolicy {
@@ -183,6 +188,8 @@ export interface ArmRequest {
   neutral?: "skip" | "long" | "short"
   max_notional_usd?: number
   thresholds?: { min_expectancy_r?: number; max_drawdown_pct?: number }
+  /** Arm despite a quality failure. The server refuses it for anything else. */
+  override?: boolean
 }
 
 function armBody(request: ArmRequest) {
@@ -196,6 +203,7 @@ function armBody(request: ArmRequest) {
     },
     backtest_job_id: request.backtest_job_id,
     thresholds: request.thresholds,
+    override: request.override ?? false,
   })
 }
 
