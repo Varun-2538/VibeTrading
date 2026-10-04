@@ -27,6 +27,7 @@ def serialize(job: Dict[str, Any]) -> Dict[str, Any]:
         "id": str(job["id"]),
         "status": job["status"],
         "progress": float(job.get("progress") or 0),
+        "rule_id": str(job["rule_id"]) if job.get("rule_id") else None,
         "created_at": _iso(job.get("created_at")),
         "started_at": _iso(job.get("started_at")),
         "finished_at": _iso(job.get("finished_at")),

@@ -19,7 +19,7 @@ JOB_COLUMNS = """
     request, report, error
 """
 SUMMARY_COLUMNS = """
-    id, created_at, started_at, finished_at, status, progress, request, error
+    id, rule_id, created_at, started_at, finished_at, status, progress, request, error
 """
 
 

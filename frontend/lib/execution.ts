@@ -100,6 +100,20 @@ export interface ExecutionHealth {
 export const MARKETS = ["WETH/USDC", "WBTC/USDC"] as const
 export type Market = (typeof MARKETS)[number]
 
+/**
+ * The market a rule would trade in, from the symbol it watches.
+ *
+ * Null for everything else, and that is most of the pairs the app charts. A vault
+ * needs a deep Uniswap pool and a Chainlink feed, and only two of the nine have both
+ * - so a rule on SOL can alert all it likes and can never be armed to trade.
+ */
+export function marketForSymbol(symbol: string): Market | null {
+  const upper = (symbol || "").toUpperCase()
+  if (upper.startsWith("ETH")) return "WETH/USDC"
+  if (upper.startsWith("BTC")) return "WBTC/USDC"
+  return null
+}
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}/api/execution${path}`, { headers: authHeaders(), ...init })
   if (!res.ok) await failResponse(res, "The execution service refused that")
