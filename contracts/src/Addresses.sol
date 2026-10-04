@@ -8,6 +8,16 @@ pragma solidity 0.8.24;
 /// round off each feed, which is the check that catches a transposed address. Do
 /// not deploy from these without that test passing - an address that is wrong here
 /// is a vault pointing at somebody else's contract.
+
+/// How long a market's feed may stay silent before its vault refuses to act on it.
+library OracleAge {
+    /// Crypto feeds trade around the clock and beat at least daily.
+    uint32 internal constant CRYPTO = 26 hours;
+    /// US stock feeds stop with the market: Friday 8pm to Sunday 8pm New York, and a
+    /// day longer over a holiday weekend, after a last answer up to a heartbeat old.
+    uint32 internal constant US_EQUITY = 96 hours;
+}
+
 library ArbitrumOne {
     uint256 internal constant CHAIN_ID = 42161;
 
@@ -36,9 +46,11 @@ library ArbitrumOne {
 /// (ETH / USD). The router was cross-checked on chain: its factory() and WETH9()
 /// answer with the Uniswap factory and the WETH below.
 ///
-/// ETH only. Stock Tokens have pools and feeds here, but their feeds follow US
-/// market hours, and a vault whose oracle goes quiet every weekend cannot honour
-/// a stop on a Saturday. That needs its own staleness rule, not this one.
+/// ETH, and Robinhood's Stock Tokens. Each stock is a standard 18-decimal ERC-20
+/// with its own Chainlink feed (which folds in the token's split/dividend
+/// multiplier) and a Uniswap pool against USDG; the tier below is the deepest one,
+/// measured on 2026-10-04. Addresses from api.robinhood.com/rhj/assets and
+/// Chainlink's Robinhood feed directory, cross-checked on chain by the fork test.
 library RobinhoodChain {
     uint256 internal constant CHAIN_ID = 4663;
 
@@ -55,4 +67,25 @@ library RobinhoodChain {
     /// The 0.01% tier. Measured on 2026-10-03 it held ~13.4M USDG against the
     /// 0.05% pool's ~3.4M, so it is the deeper pool as well as the cheaper one.
     uint24 internal constant POOL_FEE = 100;
+
+    // Stock Tokens. USDG depth of the chosen pool in the trailing comment.
+    address internal constant NVDA = 0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC;
+    address internal constant NVDA_USD = 0x379EC4f7C378F34a1B47E4F3cbeBCbAC3E8E9F15;
+    uint24 internal constant NVDA_FEE = 500; // ~2.25M
+
+    address internal constant QQQ = 0xD5f3879160bc7c32ebb4dC785F8a4F505888de68;
+    address internal constant QQQ_USD = 0x80901d846d5D7B030F26B480776EE3b29374C2ae;
+    uint24 internal constant QQQ_FEE = 500; // ~744k
+
+    address internal constant TSLA = 0x322F0929c4625eD5bAd873c95208D54E1c003b2d;
+    address internal constant TSLA_USD = 0x4A1166a659A55625345e9515b32adECea5547C38;
+    uint24 internal constant TSLA_FEE = 3000; // ~309k
+
+    address internal constant SPY = 0x117cc2133c37B721F49dE2A7a74833232B3B4C0C;
+    address internal constant SPY_USD = 0x319724394D3A0e3669269846abE664Cd621f9f6A;
+    uint24 internal constant SPY_FEE = 500; // ~238k
+
+    address internal constant AAPL = 0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9;
+    address internal constant AAPL_USD = 0x6B22A786bAa607d76728168703a39Ea9C99f2cD0;
+    uint24 internal constant AAPL_FEE = 500; // ~151k
 }

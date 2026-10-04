@@ -67,13 +67,20 @@ abstract contract ForkBase {
         require(IERC20(stable).decimals() == 6, "stable is not 6 decimals");
     }
 
-    function test_every_feed_answers_is_fresh_and_is_eight_decimals() public view {
+    function test_every_feed_answers_is_fresh_for_its_market_and_is_eight_decimals() public view {
         for (uint256 i = 0; i < markets.length; i++) {
             IAggregatorV3 feed = IAggregatorV3(markets[i].oracle);
             require(feed.decimals() == 8, "feed is not 8 decimals");
             (, int256 answer,, uint256 updatedAt,) = feed.latestRoundData();
             require(answer > 1e8 && answer < 10_000_000e8, "feed answer is out of any sane range");
-            require(block.timestamp - updatedAt < 26 hours, "feed is stale on chain");
+            require(block.timestamp - updatedAt < markets[i].maxOracleAge, "feed is stale for its market");
+        }
+    }
+
+    function test_every_asset_is_an_eighteen_or_eight_decimal_token() public view {
+        for (uint256 i = 0; i < markets.length; i++) {
+            uint8 d = IERC20(markets[i].asset).decimals();
+            require(d == 18 || d == 8, "asset decimals are not what the market list assumes");
         }
     }
 
@@ -87,13 +94,20 @@ abstract contract ForkBase {
         }
     }
 
-    /// The whole life of a position against the real router, the real pool and the
-    /// real feed: deposit, grant, open, and an exit pushed by somebody who is
-    /// neither us nor the owner, paid the bounty for it.
-    function test_a_real_round_trip_closed_by_a_stranger() public {
+    /// The whole life of a position on every market, against the real router, the
+    /// real pool and the real feed: deposit, grant, open, and an exit pushed by
+    /// somebody who is neither us nor the owner, paid the bounty for it. For a Stock
+    /// Token this is also the check that the token moves like a plain ERC-20 into and
+    /// out of a contract - and, on a weekend, that its pool still fills within the
+    /// owner's slippage of the last market price.
+    function test_a_real_round_trip_on_every_market_closed_by_a_stranger() public {
         VaultFactory factory = new VaultFactory(stable, router, markets);
-        VaultFactory.Market memory market = markets[0];
+        for (uint256 i = 0; i < markets.length; i++) {
+            _roundTrip(factory, markets[i]);
+        }
+    }
 
+    function _roundTrip(VaultFactory factory, VaultFactory.Market memory market) internal {
         vm.prank(OWNER);
         TradingVault vault = TradingVault(factory.deploy(market.asset, keccak256("risk disclosure v1")));
         require(address(vault.oracle()) == market.oracle, "oracle not wired");
@@ -131,10 +145,11 @@ abstract contract ForkBase {
         require(!early, "closed before the deadline");
 
         vm.warp(deadline);
+        uint256 strangerBefore = IERC20(stable).balanceOf(STRANGER);
         vm.prank(STRANGER);
         uint256 received = vault.closeIfExpired();
 
-        require(IERC20(stable).balanceOf(STRANGER) == 1e6, "the stranger was not paid the bounty");
+        require(IERC20(stable).balanceOf(STRANGER) == strangerBefore + 1e6, "the stranger was not paid the bounty");
         // Two pool fees and a little price movement: the round trip must come back
         // close to whole. Two percent is far looser than either tier costs.
         require(received > 19.6e6, "the round trip lost more than any fee tier explains");

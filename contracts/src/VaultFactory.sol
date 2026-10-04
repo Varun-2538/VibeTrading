@@ -27,6 +27,10 @@ contract VaultFactory {
         address asset;
         address oracle;
         uint24 poolFee;
+        /// Seconds the oracle may stay silent: 26 hours for crypto, most of four
+        /// days for stocks, whose feeds stop with the US market. Checked against the
+        /// vault's own ceiling when each vault is built.
+        uint32 maxOracleAge;
     }
 
     /// asset => its feed and pool. Set once at deployment; there is no setter.
@@ -63,7 +67,17 @@ contract VaultFactory {
         if (vaultOf[msg.sender][asset] != address(0)) revert AlreadyDeployed();
 
         vault = address(
-            new TradingVault(msg.sender, stable, asset, router, market.oracle, market.poolFee, disclosure, TVL_CAP)
+            new TradingVault(
+                msg.sender,
+                stable,
+                asset,
+                router,
+                market.oracle,
+                market.poolFee,
+                disclosure,
+                TVL_CAP,
+                market.maxOracleAge
+            )
         );
         vaultOf[msg.sender][asset] = vault;
         emit VaultDeployed(msg.sender, asset, vault, disclosure);

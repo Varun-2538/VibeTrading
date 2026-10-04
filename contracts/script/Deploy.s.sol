@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import {ArbitrumOne, RobinhoodChain} from "../src/Addresses.sol";
+import {ArbitrumOne, OracleAge, RobinhoodChain} from "../src/Addresses.sol";
 import {VaultFactory} from "../src/VaultFactory.sol";
 
 interface DeployVm {
@@ -41,13 +41,26 @@ contract Deploy {
     {
         if (chainId == ArbitrumOne.CHAIN_ID) {
             markets = new VaultFactory.Market[](2);
-            markets[0] = VaultFactory.Market(ArbitrumOne.WETH, ArbitrumOne.ETH_USD, ArbitrumOne.POOL_FEE);
-            markets[1] = VaultFactory.Market(ArbitrumOne.WBTC, ArbitrumOne.BTC_USD, ArbitrumOne.POOL_FEE);
+            markets[0] =
+                VaultFactory.Market(ArbitrumOne.WETH, ArbitrumOne.ETH_USD, ArbitrumOne.POOL_FEE, OracleAge.CRYPTO);
+            markets[1] =
+                VaultFactory.Market(ArbitrumOne.WBTC, ArbitrumOne.BTC_USD, ArbitrumOne.POOL_FEE, OracleAge.CRYPTO);
             return (ArbitrumOne.USDC, ArbitrumOne.SWAP_ROUTER, markets);
         }
         if (chainId == RobinhoodChain.CHAIN_ID) {
-            markets = new VaultFactory.Market[](1);
-            markets[0] = VaultFactory.Market(RobinhoodChain.WETH, RobinhoodChain.ETH_USD, RobinhoodChain.POOL_FEE);
+            uint32 stock = OracleAge.US_EQUITY;
+            markets = new VaultFactory.Market[](6);
+            markets[0] = VaultFactory.Market(
+                RobinhoodChain.WETH, RobinhoodChain.ETH_USD, RobinhoodChain.POOL_FEE, OracleAge.CRYPTO
+            );
+            markets[1] =
+                VaultFactory.Market(RobinhoodChain.NVDA, RobinhoodChain.NVDA_USD, RobinhoodChain.NVDA_FEE, stock);
+            markets[2] = VaultFactory.Market(RobinhoodChain.QQQ, RobinhoodChain.QQQ_USD, RobinhoodChain.QQQ_FEE, stock);
+            markets[3] =
+                VaultFactory.Market(RobinhoodChain.TSLA, RobinhoodChain.TSLA_USD, RobinhoodChain.TSLA_FEE, stock);
+            markets[4] = VaultFactory.Market(RobinhoodChain.SPY, RobinhoodChain.SPY_USD, RobinhoodChain.SPY_FEE, stock);
+            markets[5] =
+                VaultFactory.Market(RobinhoodChain.AAPL, RobinhoodChain.AAPL_USD, RobinhoodChain.AAPL_FEE, stock);
             return (RobinhoodChain.USDG, RobinhoodChain.SWAP_ROUTER, markets);
         }
         revert UnsupportedChain(chainId);

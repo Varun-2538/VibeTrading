@@ -3,16 +3,23 @@
 One contract per user. It holds their dollars, it can swap into one whitelisted
 asset and back, and it can do nothing else.
 
-| Chain | Dollar | Markets | Pool tier |
+| Chain | Dollar | Markets | Oracle may be silent for |
 |---|---|---|---|
-| Arbitrum One (42161) | USDC | WETH, WBTC | 0.05% |
-| Robinhood Chain (4663) | USDG (Paxos) | WETH | 0.01% |
+| Arbitrum One (42161) | USDC | WETH, WBTC (0.05% pools) | 26 hours |
+| Robinhood Chain (4663) | USDG (Paxos) | WETH (0.01% pool) | 26 hours |
+| Robinhood Chain (4663) | USDG (Paxos) | Stock Tokens: NVDA, QQQ, SPY, AAPL (0.05%), TSLA (0.3%) | 96 hours |
 
-The same contracts on both; only the addresses differ, and those live in
-`src/Addresses.sol`. Robinhood Chain is ETH only for now: Stock Tokens have pools and
-Chainlink feeds there, but those feeds follow US market hours, and a 26-hour
-staleness rule would freeze every stock vault from Saturday to Monday - opens and
-exits alike. That needs its own rule before it ships.
+The same contracts on both chains; only the addresses differ, and those live in
+`src/Addresses.sol`.
+
+**Stocks and weekends.** A Stock Token's pool trades around the clock, but its
+Chainlink feed follows the US market and is silent from Friday's close to Sunday
+night. So the oracle-age limit is per market, set by the factory and immutable in
+each vault: 26 hours for crypto, 96 for US equities, never more than the vault's
+4-day ceiling. While a stock feed is silent the vault prices every swap against the
+last market price, so a weekend move larger than the owner's slippage makes a swap
+revert instead of filling badly, and a stop cannot fire until the feed speaks again.
+The fork tests run a full round trip on every stock market against the live chain.
 
 We run the bot, so we hold an operator key. The whole design exists to make that key
 survivable: it can open a position and it can close one, and there is no code path
@@ -70,9 +77,9 @@ The vault publishes `openFloor(amountIn)` and `closeFloor()` so the executor ask
 the vault what the floor is rather than computing its own and disagreeing.
 
 A feed that has stopped updating authorises nothing, in either direction:
-`MAX_ORACLE_AGE` is 26 hours, which is the daily heartbeat plus slack. Tighter than
-that would make exits impossible in a quiet market, which is worse than the risk it
-removes.
+`maxOracleAge` is 26 hours for crypto, the daily heartbeat plus slack, and 96 hours
+for stocks, a closed weekend plus a holiday. Tighter would make exits impossible in
+a quiet market, which is worse than the risk it removes.
 
 ## The risk ladder
 
@@ -93,8 +100,8 @@ that costs latency, this costs the money.
 
 ```
 forge build
-forge test                                  # 28 offline tests, mocks only
-ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc ROBINHOOD_RPC_URL=https://rpc.mainnet.chain.robinhood.com   forge test --match-path test/Fork.t.sol -vv   # 4 per chain
+forge test                                  # 30 offline tests, mocks only
+ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc ROBINHOOD_RPC_URL=https://rpc.mainnet.chain.robinhood.com   forge test --match-path test/Fork.t.sol -vv   # 5 per chain, a round trip on every market
 ```
 
 The fork tests build the factory from `Deploy.config(block.chainid)`, the function
