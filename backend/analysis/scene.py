@@ -141,6 +141,7 @@ def _patterns(
                 },
                 "neckline": _r(p["neckline"], places),
                 "target": _r(p["target"], places),
+                "target_hit": bool(p.get("target_hit", False)),
             }
         )
     return out

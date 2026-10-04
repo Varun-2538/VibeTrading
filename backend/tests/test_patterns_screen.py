@@ -51,7 +51,7 @@ def test_a_w_that_breaks_but_never_reaches_its_target_expires():
 def test_a_w_that_reaches_its_target_in_time_stays():
     candles = _bars([(0, 104), (10, 110), (20, 100), (30, 106), (40, 101), (52, 112), (150, 111)])
     ws = [p for p in detect_double_patterns(candles, max_results=None) if p["kind"] == "W"]
-    assert ws and ws[0]["state"] == "confirmed"
+    assert ws and ws[0]["state"] == "confirmed" and ws[0]["target_hit"] is True
 
 
 def test_the_target_is_the_top_of_the_first_arm():

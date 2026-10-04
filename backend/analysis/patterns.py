@@ -379,6 +379,8 @@ def _detect_one_kind(
                     "neckline": p_neck,
                     # Back to where the first arm started.
                     "target": p_lead,
+                    # It played out: price reached the target in time.
+                    "target_hit": hit_at is not None,
                 }
             )
 
