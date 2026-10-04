@@ -57,9 +57,12 @@ export default function PrivacyPage() {
         Strategy rules are private to whoever created them, so that feature needs
         to know who is asking. Connecting a wallet and signing a message proves
         you control an address, and we store that address alongside your rules.
-        We ask your wallet for one signature and nothing else: we request no
-        token approvals, we cannot move anything, and signing in authorises no
-        transaction or spending.
+        Signing in asks your wallet for one signature and nothing else: no token
+        approvals, nothing we could move, and no authority to spend. If you use
+        execution, the permission that lets us trade is a separate transaction you
+        send to your own contract — never part of signing in — and it can
+        only open and close positions there, never withdraw. You can revoke it
+        whenever you like.
       </p>
       <p>
         If you connect from a phone, the connection is relayed through
@@ -104,8 +107,11 @@ export default function PrivacyPage() {
       </p>
       <p>
         Signing in leaves a session token in your browser's local storage. It
-        lasts seven days, it only permits reading and editing your own rules, and
-        signing out or clearing site data removes it.
+        lasts seven days, it permits reading and editing your own rules and
+        settings, and signing out or clearing site data removes it. It cannot move
+        money: the permission to trade lives in your contract, granted by a
+        transaction from your wallet, and no token in a browser can stand in for
+        it.
       </p>
 
       <h2>Who else is involved</h2>

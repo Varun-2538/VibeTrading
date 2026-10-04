@@ -108,7 +108,9 @@ No code. Done in this order because later steps depend on earlier ones.
      encrypted in transit; deletable on request to dev@vibetrading.club), and messages
      typed into the assistant (app activity; sent to a third-party LLM). No location,
      contacts, or advertising IDs.
-   - *Financial features*: not a financial product — holds no funds, executes no trades,
+   - *Financial features*: **superseded by the execution work of 2026-09-26** — see
+     `plans/2026-09-11-android-twa.md`. As written: not a financial product, holds no
+     funds, executes no trades,
      is not an exchange or wallet. Links to `/legal/risk`.
    - *Content rating* (IARC questionnaire): no real-money gambling, no simulated gambling;
      expected "Everyone" but target audience set to 18+.

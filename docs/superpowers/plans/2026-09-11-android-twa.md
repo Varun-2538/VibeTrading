@@ -1300,7 +1300,33 @@ Data types:
 
 - [ ] **Step 6: Financial features declaration**
 
-*Does your app provide any financial features?* Select **"My app doesn't provide any financial features"**. Justification if a free-text box is offered: "VibeTrading is a chart-analysis tool. It holds no funds, executes no trades, is not an exchange or a wallet, and connects to no bank or card. A crypto wallet may optionally sign a message to identify the user; no transaction is requested. Risk disclosure: https://vibetrading.club/legal/risk".
+*Does your app provide any financial features?*
+
+**This answer is out of date and must be changed before execution is switched on for
+anyone.** It was written when the app could only alert. The TWA is a wrapper around
+`app.vibetrading.club`, so the Android app gains execution the moment the web app does
+— with no new build and no store review — which means the declaration has to be
+updated *before the feature is enabled*, not before the next release. Enabling
+execution with the old answer standing is a false declaration.
+
+The answer as it stood, for the record: select **"My app doesn't provide any financial
+features"**, justification "VibeTrading is a chart-analysis tool. It holds no funds,
+executes no trades, is not an exchange or a wallet, and connects to no bank or card. A
+crypto wallet may optionally sign a message to identify the user; no transaction is
+requested. Risk disclosure: https://vibetrading.club/legal/risk".
+
+What it needs to become, once execution is live: the app **does** provide a financial
+feature — it can place swaps on a decentralised exchange on the user's behalf. The
+accurate justification is that VibeTrading holds no user funds and takes no custody;
+funds remain in a smart contract the user deploys and owns; the permission the app
+holds can only open and close positions inside that contract, cannot withdraw, and is
+revocable by the user on-chain at any time; the app is not an exchange, a broker, a
+wallet or a custodian, and connects to no bank or card. Point at
+https://vibetrading.club/legal/risk, which describes it in the same terms.
+
+Whether Play also requires the crypto-exchange or financial-services declarations for
+this depends on their current policy wording, which has to be read at the time rather
+than assumed from this document. Treat that reading as part of the work of going live.
 
 - [ ] **Step 7: Store settings**
 
