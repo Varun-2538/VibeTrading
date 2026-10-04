@@ -75,6 +75,8 @@ Vault: [`0x99a0…99a5`](https://robinhoodchain.blockscout.com/address/0x99a038f
 round trip cost 0.0013 USDG in pool fees on 2 USDG; the bounty is what the
 permissionless exit costs, and it went to whoever pushed the button.
 
+Live analytics: **[Dune dashboard](https://dune.com/vibetradingclub/org-data)** - vaults, deposits, positions, and who closed each one, from raw Robinhood Chain logs ([queries](analytics/dune/)).
+
 ### How it was tested
 
 - `contracts/`: 30 offline tests, mostly refusals — the operator cannot withdraw,

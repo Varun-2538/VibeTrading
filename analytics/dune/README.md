@@ -1,5 +1,7 @@
 # Dune dashboard: VibeTrading vaults on Robinhood Chain
 
+Live: https://dune.com/vibetradingclub/org-data
+
 Three DuneSQL queries over `robinhood.logs`. They read raw event logs by topic, so
 they work without submitting the contract ABI for decoding.
 
