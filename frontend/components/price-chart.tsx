@@ -27,6 +27,7 @@ import {
 import { Layers, SlidersHorizontal, Sparkles } from "lucide-react"
 import MarkOverlay from "@/components/mark-overlay"
 import PositionOverlay from "@/components/position-overlay"
+import { DEFAULT_INDICATORS, IndicatorSwitches, useIndicatorPanes } from "@/components/indicator-panes"
 import type { OpenPosition } from "@/lib/positions"
 import { STOCKS } from "@/lib/stocks"
 import PatternOverlay from "@/components/pattern-overlay"
@@ -198,6 +199,10 @@ export default function PriceChart({
   const [patternTotal, setPatternTotal] = useState(0)
   // The candle under the crosshair, or the latest one when nothing is hovered.
   const [hovered, setHovered] = useState<Ohlc | null>(null)
+  const [indicators, setIndicators] = useState(DEFAULT_INDICATORS)
+  // Bumped whenever candlesRef changes, history or a live tick, so the indicator
+  // panes recompute from the same bars the price pane draws.
+  const [candleVersion, setCandleVersion] = useState(0)
   const [latest, setLatest] = useState<Ohlc | null>(null)
 
   /*
@@ -321,6 +326,7 @@ export default function PriceChart({
       .then((candles) => {
         if (controller.signal.aborted || !seriesRef.current) return
         candlesRef.current = candles
+        setCandleVersion((v) => v + 1)
         applyCandles(seriesRef.current, candles, chartStyle)
         chartRef.current?.timeScale().fitContent()
         setSpot(candles.at(-1)?.close)
@@ -382,6 +388,11 @@ export default function PriceChart({
               }
             : { time, value: Number(k.c) }) as never,
         )
+        const bars = candlesRef.current
+        const tick = { time: k.t as number, open: Number(k.o), high: Number(k.h), low: Number(k.l), close: Number(k.c), volume: Number(k.v) }
+        if (bars.length && bars[bars.length - 1].time === tick.time) bars[bars.length - 1] = { ...bars[bars.length - 1], ...tick }
+        else if (!bars.length || bars[bars.length - 1].time < tick.time) bars.push(tick as MsCandle)
+        setCandleVersion((v) => v + 1)
         setSpot(Number(k.c))
         setLatest({ open: Number(k.o), high: Number(k.h), low: Number(k.l), close: Number(k.c) })
       }
@@ -628,7 +639,14 @@ export default function PriceChart({
    * settings sheet below it. Descriptors rather than a duplicated block, so
    * the two renderings cannot drift apart.
    */
+  useIndicatorPanes(chartRef.current, candlesRef.current, candleVersion, indicators)
+
   const controlGroups: { key: string; label: string; node: ReactNode; detection?: boolean }[] = [
+    {
+      key: "indicators",
+      label: "Indicators",
+      node: <IndicatorSwitches value={indicators} onChange={setIndicators} />,
+    },
     {
       key: "style",
       label: "Draw as",

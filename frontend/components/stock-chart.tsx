@@ -19,6 +19,7 @@ import { ShieldCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import MarkOverlay from "@/components/mark-overlay"
 import PositionOverlay from "@/components/position-overlay"
+import { DEFAULT_INDICATORS, IndicatorSwitches, useIndicatorPanes } from "@/components/indicator-panes"
 import type { OpenPosition } from "@/lib/positions"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger } from "@/components/ui/select"
 import type { Timeframe } from "@/lib/api"
@@ -82,7 +83,10 @@ export default function StockChart({
   const [loading, setLoading] = useState(true)
   const [last, setLast] = useState<number | null>(null)
   const [oracle, setOracle] = useState<{ price: number; ageHours: number } | null>(null)
+  const [indicators, setIndicators] = useState(DEFAULT_INDICATORS)
+  const [candleVersion, setCandleVersion] = useState(0)
   const client = usePublicClient({ chainId: ROBINHOOD_CHAIN_ID })
+  useIndicatorPanes(chartRef.current, candlesRef.current, candleVersion, indicators, true)
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -138,6 +142,7 @@ export default function StockChart({
         const candles = await fetchStockCandles(stock, timeframe)
         if (!alive || !candleRef.current || !volumeRef.current) return
         candlesRef.current = candles
+        setCandleVersion((v) => v + 1)
         candleRef.current.setData(
           candles.map((c) => ({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close })),
         )
@@ -278,6 +283,8 @@ export default function StockChart({
             </button>
           ))}
         </div>
+
+        <IndicatorSwitches value={indicators} onChange={setIndicators} />
 
         <Button size="sm" className="ml-auto h-8 gap-1.5 text-xs" onClick={() => openVault(stock.market)}>
           <ShieldCheck className="h-3.5 w-3.5" /> Trade {stock.symbol} in your vault
