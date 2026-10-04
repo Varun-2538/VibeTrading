@@ -29,7 +29,7 @@ import MarkOverlay from "@/components/mark-overlay"
 import PositionOverlay from "@/components/position-overlay"
 import { IndicatorBar, useChartIndicators, useIndicatorPanes } from "@/components/indicator-panes"
 import type { OpenPosition } from "@/lib/positions"
-import { STOCKS } from "@/lib/stocks"
+import { STOCKS, openVault } from "@/lib/stocks"
 import PatternOverlay from "@/components/pattern-overlay"
 import type { Mark, PatternSettings, Viewport } from "@/lib/marks"
 import {
@@ -69,6 +69,13 @@ const SURFACE = "#05100e"
 
 const CANDLE_LIMIT = 1000
 const TF_SECONDS: Record<string, number> = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400 }
+
+/**
+ * ETH as Robinhood Chain trades it: the WETH/USDG pool. The candles, the rules and
+ * the assistant still read ETH's price from Binance - USDG and USDT are both
+ * dollars - so only the label, and the vault a trade lands in, differ.
+ */
+export const ROBINHOOD_ETH = "ETHUSDG"
 
 const CRYPTO_PAIRS = [
   { symbol: "BTCUSDT", name: "Bitcoin" },
@@ -146,6 +153,8 @@ interface PriceChartProps {
   /** 24h change and quote volume for the selected pair, from the ticker feed. */
   changePct?: number
   quoteVolume?: number
+  /** Show ETH as Robinhood Chain's ETH/USDG; the data is ETH's either way. */
+  robinhood?: boolean
   /** Open vault positions on this pair: entry, take-profit and stop-loss are drawn. */
   positions?: OpenPosition[]
 }
@@ -177,9 +186,13 @@ export default function PriceChart({
   slots,
   changePct,
   quoteVolume,
+  robinhood = false,
   positions = [],
 }: PriceChartProps) {
   const selected = symbol || "BTCUSDT"
+  const onRobinhood = robinhood && selected === "ETHUSDT"
+  const shownSymbol = onRobinhood ? ROBINHOOD_ETH : selected
+  const shownLabel = onRobinhood ? "ETH/USDG" : selected
   const setTimeframe = onTimeframeChange
 
   const [loading, setLoading] = useState(true)
@@ -915,14 +928,14 @@ export default function PriceChart({
 
   /* The desktop top bar, when the page gives it a slot: identity, price and
      every chart control except the pattern settings, which have a card. */
-  const pairName = CRYPTO_PAIRS.find((c) => c.symbol === selected)?.name
+  const pairName = onRobinhood ? "Robinhood Chain" : CRYPTO_PAIRS.find((c) => c.symbol === selected)?.name
   const desktopToolbar = (
     <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <Select value={selected} onValueChange={(v) => onSymbolChange?.(v)}>
+        <Select value={shownSymbol} onValueChange={(v) => onSymbolChange?.(v)}>
           <SelectTrigger aria-label="Cryptocurrency" className="h-10 w-[200px] border-border bg-secondary">
             <span className="flex min-w-0 items-baseline gap-2">
-              <span className="text-lg font-semibold tracking-tight">{selected}</span>
+              <span className="text-lg font-semibold tracking-tight">{shownLabel}</span>
               <span className="truncate text-xs text-muted-foreground">{pairName}</span>
             </span>
           </SelectTrigger>
@@ -935,6 +948,12 @@ export default function PriceChart({
                 </div>
               </SelectItem>
             ))}
+            <SelectItem value={ROBINHOOD_ETH}>
+              <div className="flex w-full items-center justify-between">
+                <span className="font-semibold">ETH/USDG</span>
+                <span className="ml-2 text-xs text-muted-foreground">Ethereum · Robinhood Chain</span>
+              </div>
+            </SelectItem>
             {STOCKS.map((st) => (
               <SelectItem key={st.symbol} value={st.symbol}>
                 <div className="flex w-full items-center justify-between">
@@ -1028,7 +1047,7 @@ export default function PriceChart({
         }`}
       >
         <div className="flex min-w-0 items-center gap-2 lg:gap-3">
-          <Select value={selected} onValueChange={(v) => onSymbolChange?.(v)}>
+          <Select value={shownSymbol} onValueChange={(v) => onSymbolChange?.(v)}>
             {/* The trigger is written out rather than left to SelectValue, so
                 the coin name can drop on a narrow screen without also
                 disappearing from the list, where it is the whole point. */}
@@ -1037,9 +1056,9 @@ export default function PriceChart({
               className="h-9 w-[124px] shrink-0 border-border bg-secondary sm:w-[190px] lg:w-[210px]"
             >
               <span className="flex min-w-0 items-center gap-2">
-                <span className="font-semibold">{selected}</span>
+                <span className="font-semibold">{shownLabel}</span>
                 <span className="hidden truncate text-xs text-muted-foreground sm:inline">
-                  {CRYPTO_PAIRS.find((c) => c.symbol === selected)?.name}
+                  {pairName}
                 </span>
               </span>
             </SelectTrigger>
@@ -1052,6 +1071,12 @@ export default function PriceChart({
                   </div>
                 </SelectItem>
               ))}
+              <SelectItem value={ROBINHOOD_ETH}>
+                <div className="flex w-full items-center justify-between">
+                  <span className="font-semibold">ETH/USDG</span>
+                  <span className="ml-2 text-xs text-muted-foreground">Ethereum · Robinhood Chain</span>
+                </div>
+              </SelectItem>
               {STOCKS.map((st) => (
                 <SelectItem key={st.symbol} value={st.symbol}>
                   <div className="flex w-full items-center justify-between">
@@ -1127,11 +1152,25 @@ export default function PriceChart({
         <div className="hidden flex-wrap items-center justify-between gap-2 px-4 pb-2 pt-3 lg:flex">
           <div className="flex items-baseline gap-3">
             <h2 className="text-lg font-semibold tracking-tight text-foreground">
-              {selected.replace(/USDT$/, "")} / USDT
+              {onRobinhood ? "ETH / USDG" : `${selected.replace(/USDT$/, "")} / USDT`}
             </h2>
-            <span className="font-mono text-[11px] text-muted-foreground">
-              {timeframe} · Binance spot reference
-            </span>
+            {onRobinhood ? (
+              <>
+                <span className="rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                  Robinhood Chain
+                </span>
+                <span className="font-mono text-[11px] text-muted-foreground">
+                  {timeframe} · ETH price · trades in the WETH/USDG pool, from your vault
+                </span>
+                <Button size="sm" className="h-7 text-xs" onClick={() => openVault("WETH/USDG")}>
+                  Trade ETH in your vault
+                </Button>
+              </>
+            ) : (
+              <span className="font-mono text-[11px] text-muted-foreground">
+                {timeframe} · Binance spot reference
+              </span>
+            )}
           </div>
           {showPatterns && patterns[0] && (
             <span className="inline-flex items-center gap-1.5 rounded border border-primary/25 bg-primary/10 px-2.5 py-1 font-mono text-[11px] text-primary">
