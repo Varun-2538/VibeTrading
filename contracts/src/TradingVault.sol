@@ -44,6 +44,11 @@ contract TradingVault {
     /// raising it means deploying a new vault - nobody, including us, can raise it
     /// here. It comes off before the audit, not before.
     uint256 public immutable tvlCap;
+    /// How old the oracle's answer may be before it authorises nothing. Per market,
+    /// because markets keep different hours: a crypto feed that is a day and change
+    /// old is broken, while a stock feed is legitimately silent from Friday's close to
+    /// Sunday night. Fixed at deployment, inside a ceiling no factory can exceed.
+    uint256 public immutable maxOracleAge;
 
     uint8 private immutable stableDecimals;
     uint8 private immutable assetDecimals;
@@ -54,11 +59,17 @@ contract TradingVault {
     uint16 public constant MAX_SLIPPAGE_BPS = 500; // 5%
     uint256 public constant MAX_BOUNTY = 2e6; // $2, in the stable's six decimals (USDC, USDG)
     uint64 public constant MAX_POSITION_AGE = 45 days;
-    /// The Chainlink feeds we use update on a small deviation (0.05% on Arbitrum
-    /// One, 0.5% on Robinhood Chain) or a daily heartbeat, so anything older than a day and change means the feed is broken
-    /// rather than quiet. Tighter than this would make exits impossible in a calm
-    /// market, which is worse than the risk it would remove.
-    uint256 public constant MAX_ORACLE_AGE = 26 hours;
+    /// The ceiling on maxOracleAge. Crypto feeds update on a small deviation or a
+    /// daily heartbeat, so their markets use 26 hours: older than a day and change is
+    /// broken rather than quiet. US stock feeds stop with the market - Friday 8pm to
+    /// Sunday 8pm New York, longer over a holiday - so their markets need most of
+    /// four days. Nothing may be configured looser than that.
+    ///
+    /// While a stock feed is silent its pool still trades, and the vault prices every
+    /// swap against the last answer: a weekend move larger than the owner's slippage
+    /// makes the swap revert rather than fill badly, and a stop cannot fire until the
+    /// feed speaks again. Both are the honest behaviour of a market that is closed.
+    uint256 public constant MAX_ORACLE_AGE = 4 days;
 
     // --- the operator grant, entirely the owner's to give and take ------------
 
@@ -114,6 +125,7 @@ contract TradingVault {
     error Slippage();
     error Reentrancy();
     error TransferFailed();
+    error BadOracleAge();
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
@@ -141,8 +153,10 @@ contract TradingVault {
         address _oracle,
         uint24 _poolFee,
         bytes32 _disclosure,
-        uint256 _tvlCap
+        uint256 _tvlCap,
+        uint256 _maxOracleAge
     ) {
+        if (_maxOracleAge == 0 || _maxOracleAge > MAX_ORACLE_AGE) revert BadOracleAge();
         owner = _owner;
         stable = IERC20(_stable);
         asset = IERC20(_asset);
@@ -151,6 +165,7 @@ contract TradingVault {
         poolFee = _poolFee;
         disclosure = _disclosure;
         tvlCap = _tvlCap;
+        maxOracleAge = _maxOracleAge;
 
         stableDecimals = IERC20(_stable).decimals();
         assetDecimals = IERC20(_asset).decimals();
@@ -323,7 +338,7 @@ contract TradingVault {
     function _price() private view returns (uint256) {
         (, int256 answer,, uint256 updatedAt,) = oracle.latestRoundData();
         if (answer <= 0) revert StaleOracle();
-        if (updatedAt == 0 || block.timestamp - updatedAt > MAX_ORACLE_AGE) revert StaleOracle();
+        if (updatedAt == 0 || block.timestamp - updatedAt > maxOracleAge) revert StaleOracle();
         // Safe: the check above refuses anything that is not strictly positive.
         // forge-lint: disable-next-line(unsafe-typecast)
         return uint256(answer);
