@@ -82,6 +82,46 @@ def test_costs_are_paid_on_both_sides():
     assert t.ret == pytest.approx((fill - entry) / entry - 0.001 * (1 + fill / entry))
 
 
+def test_a_pool_tier_is_charged_on_every_swap():
+    """The 0.3% pool costs twice what the 0.05% one does, twice over."""
+    candles = bars(FLAT, (100, 105, 99, 104), FLAT)
+    cheap = one(candles, [sig(0)], plan(fee_pct=0.05, slippage_pct=0)).trades[0]
+    dear = one(candles, [sig(0)], plan(fee_pct=0.3, slippage_pct=0)).trades[0]
+    assert cheap.ret - dear.ret == pytest.approx(0.0025 * (1 + dear.exit / dear.entry), rel=1e-3)
+    assert dear.cost_r == pytest.approx(cheap.cost_r * 6, rel=1e-3)
+
+
+def test_gas_is_a_fee_the_position_size_decides():
+    """A dollar of gas on a $1,000 position is a 0.1% swap; on $2,000, half that."""
+    candles = bars(FLAT, (100, 105, 99, 104), FLAT)
+    tier = one(candles, [sig(0)], plan(fee_pct=0.1, slippage_pct=0)).trades[0]
+    gas = one(candles, [sig(0)], plan(fee_pct=0, slippage_pct=0, gas_usd=1, trade_usd=1000)).trades[0]
+    assert gas.ret == pytest.approx(tier.ret) and gas.cost_r == pytest.approx(tier.cost_r)
+    bigger = one(candles, [sig(0)], plan(fee_pct=0, slippage_pct=0, gas_usd=1, trade_usd=2000)).trades[0]
+    assert bigger.cost_r == pytest.approx(gas.cost_r / 2, rel=1e-3)
+
+
+def test_cost_in_r_is_the_gap_to_the_frictionless_trade():
+    """
+    Every friction lands in cost_r, and net plus cost is the trade that paid
+    nothing. This is the arithmetic the report's two expectancies rest on.
+    """
+    candles = bars(FLAT, (100, 105, 99, 104), FLAT)
+    free = one(candles, [sig(0)], plan()).trades[0]
+    paid = one(candles, [sig(0)], plan(fee_pct=0.3, slippage_pct=0.05, gas_usd=2, trade_usd=500)).trades[0]
+    assert free.cost_r == pytest.approx(0.0)
+    assert free.r == pytest.approx(2.0)
+    # Gross is the same 2% stop reaching the same 4% target, so it lands back on
+    # the frictionless 2R. Not exactly: the stop and the target are placed off
+    # the slipped entry, so paying impact moves them a hair further out. The
+    # decomposition is worth a couple of percent of one R, not more.
+    assert paid.gross_r == pytest.approx(free.r, rel=0.02)
+    assert paid.r + paid.cost_r == pytest.approx(paid.gross_r)
+    # 0.3% pool and $2 of gas on a $500 position - 0.4% - on each of two swaps,
+    # plus 0.05% impact each way: about 1.5% of price against a 2% stop.
+    assert paid.cost_r == pytest.approx(0.75, rel=0.05)
+
+
 def test_risk_sizes_the_position_and_never_levers():
     wide = one(bars(FLAT, (100, 105, 99, 104), FLAT), [sig(0)], plan(stop_pct=2)).trades[0]
     tight = one(bars(FLAT, (100, 105, 99, 104), FLAT), [sig(0)], plan(stop_pct=0.5)).trades[0]
@@ -114,6 +154,7 @@ def test_metrics_add_up_by_hand():
     m = trade_period(candles, [sig(0), sig(2)], 0, 8, plan(), "skip", H)
     assert m["trades"] == 2 and m["win_rate"] == 0.5
     assert (m["expectancy_r"], m["avg_win_r"], m["avg_loss_r"]) == (0.5, 2.0, -1.0)
+    assert (m["cost_r"], m["gross_expectancy_r"]) == (0.0, 0.5)  # this plan trades for free
     assert m["profit_factor"] == 2.0
     assert m["total_return_pct"] == pytest.approx(0.98, abs=1e-3)
     assert m["max_drawdown_pct"] == pytest.approx(-1.0, abs=1e-3)
@@ -122,6 +163,20 @@ def test_metrics_add_up_by_hand():
     assert m["trade_list"][0]["direction"] == "long" and m["trade_list"][0]["entry_time"] == T0 + H
     assert m["equity"][0] == [T0, 1.0] and m["equity"][-1][1] == pytest.approx(1.0098, abs=1e-5)
     assert m["flags"] == ["too_few_trades"]
+
+
+def test_a_cost_line_separates_a_bad_signal_from_an_expensive_pool():
+    """
+    The same two trades, once free and once through a 0.3% pool: gross says the
+    signals did their job, net says the account did not keep it.
+    """
+    candles = bars(FLAT, (100, 105, 99, 104), FLAT, (100, 101, 97, 98), FLAT, FLAT, FLAT, FLAT)
+    dear = plan(fee_pct=0.3, slippage_pct=0.05, gas_usd=1, trade_usd=500)
+    m = trade_period(candles, [sig(0), sig(2)], 0, 8, dear, "skip", H)
+    assert m["gross_expectancy_r"] == pytest.approx(0.5, abs=0.03)  # 0.5 free, plus the placement shift
+    assert m["cost_r"] > 0.5 and m["expectancy_r"] < 0
+    assert m["expectancy_r"] + m["cost_r"] == pytest.approx(m["gross_expectancy_r"], abs=1e-3)
+    assert m["trade_list"][0]["cost_r"] == pytest.approx(m["trade_list"][1]["cost_r"], rel=0.1)
 
 
 def test_drawdown_and_an_account_that_never_traded():

@@ -159,6 +159,8 @@ export interface ExitPlan {
   exit_on_opposite: boolean
   fee_pct: number
   slippage_pct: number
+  gas_usd: number
+  trade_usd: number
   risk_pct: number
 }
 
@@ -169,9 +171,46 @@ export const DEFAULT_EXIT: ExitPlan = {
   target_pct: null,
   max_bars: 20,
   exit_on_opposite: false,
-  fee_pct: 0.1,
+  fee_pct: 0.05,
   slippage_pct: 0.02,
+  gas_usd: 0,
+  trade_usd: 1000,
   risk_pct: 1,
+}
+
+/**
+ * The pool fee tiers a swap can route through, mirroring POOL_FEE_TIERS on the
+ * server. The tier belongs to the pool the pair trades in, so it is picked, not
+ * typed, and a round trip pays it twice.
+ */
+export const POOL_TIERS: { pct: number; what: string }[] = [
+  { pct: 0.01, what: "stables" },
+  { pct: 0.05, what: "majors" },
+  { pct: 0.1, what: "majors" },
+  { pct: 0.3, what: "most pairs" },
+  { pct: 1, what: "thin pairs" },
+]
+
+/** Gas is a cost in dollars; only a position size turns it into a percent. */
+export function gasPct(plan: ExitPlan): number {
+  return plan.trade_usd > 0 ? (plan.gas_usd / plan.trade_usd) * 100 : 0
+}
+
+/** What a round trip costs before the chart moves at all: two swaps, two fills. */
+export function roundTripPct(plan: ExitPlan): number {
+  return 2 * (plan.fee_pct + gasPct(plan) + plan.slippage_pct)
+}
+
+/**
+ * How far the stop must sit for the round trip to cost no more than `budgetR`
+ * of risk. Costs in R are the round trip over the stop distance, so this is
+ * that read backwards - and unlike a rule of thumb about ATR, it holds in any
+ * regime and on any timeframe. BTC's hourly ATR was 0.25% of price the day this
+ * shipped, which puts a 1.5-ATR stop at 0.37%: a 0.3% pool costs 1.7R a trade
+ * there, and no signal survives that.
+ */
+export function stopPctForCostBudget(plan: ExitPlan, budgetR: number): number {
+  return budgetR > 0 ? roundTripPct(plan) / budgetR : Infinity
 }
 
 export interface TradeRow {
@@ -182,6 +221,7 @@ export interface TradeRow {
   direction: "long" | "short"
   reason: "stop" | "target" | "time" | "opposite" | "end"
   r: number
+  cost_r?: number
   pct: number
   bars: number
 }
@@ -195,6 +235,9 @@ export interface TradePeriod {
   avg_win_r: number | null
   avg_loss_r: number | null
   expectancy_r: number | null
+  // Absent on reports that finished before costs were measured per trade.
+  gross_expectancy_r?: number | null
+  cost_r?: number | null
   profit_factor: number | null
   total_return_pct: number | null
   max_drawdown_pct: number | null
@@ -348,8 +391,23 @@ export function tradeVerdict(report: BacktestReport): string | null {
   return (
     `${prefix}${fmtR(unseen.expectancy_r)} per trade over ${unseen.trades} unseen trades, ` +
     `${fmtPct(unseen.total_return_pct)} total, worst drawdown ${fmtPct(unseen.max_drawdown_pct)} ` +
-    `(seen: ${fmtR(seen.expectancy_r)} per trade)${note}`
+    `(seen: ${fmtR(seen.expectancy_r)} per trade)${note}${costNote(unseen)}`
   )
+}
+
+/**
+ * The line that separates a strategy with no edge from one whose edge went to
+ * the pool. Both show a loss per trade; only the second is worth a wider stop
+ * or a slower timeframe, where the same round trip is a smaller share of risk.
+ */
+export function costNote(unseen: TradePeriod): string {
+  const net = unseen.expectancy_r ?? null
+  const gross = unseen.gross_expectancy_r ?? null
+  const cost = unseen.cost_r ?? null
+  if (net === null || gross === null || cost === null || cost <= 0) return ""
+  const paid = ` Costs took ${fmtR(-cost)} per trade: ${fmtR(gross)} before them, ${fmtR(net)} after.`
+  if (gross > 0 && net <= 0) return `${paid} The signals earned an edge and the pool kept it.`
+  return paid
 }
 
 export interface BacktestSummary {
