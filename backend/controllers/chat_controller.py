@@ -143,6 +143,45 @@ ALERT_PHRASES = (
 )
 
 
+# Asking for a strategy that acts on a condition - "a strategy where a trade
+# happens when EMA 9 crosses 21", "buy when RSI crosses 30". That is a rule with a
+# trade attached, so it is drafted exactly as an alert is; the arm sheet is where
+# it becomes a trade. A condition word and a trading word, both whole words.
+CONDITION_WORDS = re.compile(r"\b(when|whenever|once|if|jab|crosses|crossover|cross)\b")
+TRADING_WORDS = re.compile(
+    r"\b(strategy|strategies|stratergy|stratergies|strat|trade|trades|trading|buy|buys|"
+    r"enter|entry|long|position|auto|automatic|automatically)\b"
+)
+# A question about the chart as it is, not a request to act on a future event.
+QUESTION_START = re.compile(r"^\s*(is|are|do|does|did|was|were|where|what|which|why|how|any|can you see)\b")
+
+
+def is_rule_request(message: str) -> bool:
+    text = message.lower()
+    if QUESTION_START.match(text) and "strateg" not in text:
+        return False
+    return bool(CONDITION_WORDS.search(text) and TRADING_WORDS.search(text))
+
+
+# Whole words only: "whether" must not read as ETH, nor "dotted" as DOT.
+NAMED_SYMBOLS = {
+    "BTC": "BTCUSDT", "BITCOIN": "BTCUSDT", "ETH": "ETHUSDT", "ETHEREUM": "ETHUSDT",
+    "BNB": "BNBUSDT", "SOL": "SOLUSDT", "SOLANA": "SOLUSDT", "XRP": "XRPUSDT",
+    "ADA": "ADAUSDT", "CARDANO": "ADAUSDT", "DOGE": "DOGEUSDT", "DOGECOIN": "DOGEUSDT",
+    "DOT": "DOTUSDT", "POLKADOT": "DOTUSDT", "AVAX": "AVAXUSDT", "AVALANCHE": "AVAXUSDT",
+}
+
+
+def named_symbol(message: str) -> Optional[str]:
+    """A coin the message names outright, which beats whatever chart is open."""
+    for word in re.findall(r"[A-Z]+", message.upper()):
+        if word in NAMED_SYMBOLS:
+            return NAMED_SYMBOLS[word]
+        if word.endswith("USDT") and word[:-4] in NAMED_SYMBOLS:
+            return NAMED_SYMBOLS[word[:-4]]
+    return None
+
+
 def route(intent: str, has_window: bool) -> str:
     """
     Which path answers a message: 'alert', 'fellow', 'strategy' or 'legacy'.
@@ -165,7 +204,7 @@ def detect_query_intent(message: str) -> str:
     """Detect what the user is asking about"""
     message_lower = message.lower()
 
-    if any(phrase in message_lower for phrase in ALERT_PHRASES):
+    if any(phrase in message_lower for phrase in ALERT_PHRASES) or is_rule_request(message):
         return 'create_alert'
 
     # Checked before liquidity: "is a double bottom forming at that support?"
@@ -198,8 +237,9 @@ async def ask_question(request: ChatRequest):
     try:
         message = request.message
 
-        # Extract symbol from message or use provided symbol
-        symbol = request.symbol or extract_symbol_from_message(message)
+        # A coin the message names wins over the chart that happens to be open:
+        # "buy ETH when ..." typed beside a BTC chart means ETH.
+        symbol = named_symbol(message) or request.symbol or extract_symbol_from_message(message)
 
         if not symbol:
             return ChatResponse(
@@ -237,11 +277,20 @@ async def ask_question(request: ChatRequest):
                 return ChatResponse(response=str(exc), symbol=symbol)
 
             summary = describe_draft(draft)
+            if is_rule_request(message):
+                next_step = (
+                    "Save it below. To have it trade, backtest it (long only) and press Trade: "
+                    "I'll show what the backtest says first, and the trade runs inside your own vault."
+                )
+            else:
+                next_step = (
+                    "Arm it below and I'll alert you the moment it completes on a closed candle. "
+                    "Nothing is armed until you do."
+                )
             response_text = (
                 f"Here's the rule I read from that:\n\n"
                 f"**{draft.symbol} · {draft.timeframe}** — {summary}.\n\n"
-                f"Arm it below and I'll alert you the moment it completes on a closed candle. "
-                f"Nothing is armed until you do."
+                f"{next_step}"
             )
             return ChatResponse(
                 response=response_text,
