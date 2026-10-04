@@ -285,6 +285,21 @@ def _detect_one_kind(
             inner = shoulder_prices[first + 1 : second]
             if inner and ((min(inner) < min(p_first, p_second)) if is_w else (max(inner) > max(p_first, p_second))):
                 continue
+            # The middle turn sits between the lows, not pressed against one:
+            # a peak one bar after the first low is a spike, not the W's centre.
+            if not (0.2 * separation <= neck - first <= 0.8 * separation):
+                continue
+            # The first arm is the tallest stroke: price falls into the first low
+            # from above the neckline. A low reached by rising into it from
+            # below has no left arm, and two lows after a rally are not a W.
+            lead_from = max(0, first - separation)
+            lead = neck_prices[lead_from:first]
+            if not lead:
+                continue
+            lead_at = lead_from + ((max if is_w else min)(range(len(lead)), key=lambda i: lead[i]))
+            p_lead = neck_prices[lead_at]
+            if (p_lead < p_neck) if is_w else (p_lead > p_neck):
+                continue
 
             # Where is price now, relative to the neckline?
             after = closes[second + 1 :]
@@ -326,6 +341,9 @@ def _detect_one_kind(
                     "confidence": confidence,
                     "components": components,
                     "points": {
+                        # Where the first arm starts, so a line through the
+                        # points draws the whole letter.
+                        "start": _point(candles, lead_at, p_lead),
                         "low1" if is_w else "high1": _point(candles, first, p_first),
                         "peak" if is_w else "trough": _point(candles, neck, p_neck),
                         "low2" if is_w else "high2": _point(candles, second, p_second),

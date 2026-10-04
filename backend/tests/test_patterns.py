@@ -353,9 +353,10 @@ class TestOverlapHandling:
         two highs and two lows over the same bars is a range, and both readings
         are real - this cost a W whose lows were twelve dollars apart.
         """
-        # A range: two tops near 101 and two bottoms near 99.
+        # A range: two tops near 101 and two bottoms near 99, entered from
+        # below so the M has its first arm too.
         leg = 10
-        prices = [100.0]
+        prices = [98.5]
         for target in (101.0, 99.0, 101.0, 99.0, 100.5):
             prices += ramp(prices[-1], target, leg)
         candles = to_candles(prices)
