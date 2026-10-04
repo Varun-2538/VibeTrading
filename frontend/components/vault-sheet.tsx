@@ -77,9 +77,12 @@ interface VaultView {
 export default function VaultSheet({
   open,
   onOpenChange,
+  initialMarket,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** The market to show on open, when the sheet was asked for from a chart. */
+  initialMarket?: string | null
 }) {
   const { address } = useAccount()
   const walletChainId = useChainId()
@@ -87,6 +90,9 @@ export default function VaultSheet({
   const { writeContractAsync, isPending: writing } = useWriteContract()
 
   const [market, setMarket] = useState(VAULT_MARKETS[0].market)
+  useEffect(() => {
+    if (open && initialMarket && vaultMarket(initialMarket)) setMarket(initialMarket)
+  }, [open, initialMarket])
   const chosen = vaultMarket(market) ?? VAULT_MARKETS[0]
   // Reads go to the market's own chain whatever the wallet is on, so the panel can
   // show a Robinhood vault while the wallet still sits on Arbitrum.
