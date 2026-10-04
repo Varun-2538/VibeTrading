@@ -18,9 +18,13 @@ import {
   equityLines,
   fmtPct,
   fmtR,
+  gasPct,
+  stopPctForCostBudget,
   getBacktest,
   markable,
   overfit,
+  POOL_TIERS,
+  roundTripPct,
   settingLabel,
   showTradesOnChart,
   tradeMarks,
@@ -40,6 +44,9 @@ import { UnauthorizedError } from "@/lib/rules"
 import { cn } from "@/lib/utils"
 
 const POLL_MS = 3000
+// The share of risk it is still worth paying to trade. Past this the costs, not
+// the signal, are what the report measures.
+const COST_BUDGET_R = 0.2
 const SPLITS = [0.6, 0.7, 0.8]
 const LISTED = 50
 const STAGE: Record<string, string> = {
@@ -133,6 +140,8 @@ const METRICS: { label: string; get: (p: TradePeriod) => string }[] = [
   { label: "Trades", get: (p) => String(p.trades) },
   { label: "Win rate", get: (p) => (p.win_rate === null ? "—" : `${Math.round(p.win_rate * 100)}%`) },
   { label: "Per trade", get: (p) => fmtR(p.expectancy_r) },
+  { label: "Before costs", get: (p) => fmtR(p.gross_expectancy_r) },
+  { label: "Costs took", get: (p) => (p.cost_r === null || p.cost_r === undefined ? "—" : fmtR(-p.cost_r)) },
   { label: "Avg win / loss", get: (p) => `${fmtR(p.avg_win_r)} / ${fmtR(p.avg_loss_r)}` },
   { label: "Profit factor", get: (p) => p.profit_factor?.toFixed(2) ?? "—" },
   { label: "Return", get: (p) => fmtPct(p.total_return_pct) },
@@ -429,11 +438,38 @@ export default function BacktestSheet({
                   <NumberField label="Target (× risk)" value={exitPlan.target_r} step={0.5} onChange={(v) => setExit({ target_r: v > 0 ? v : null })} />
                   <NumberField label="Max bars held" value={exitPlan.max_bars} step={1} onChange={(v) => setExit({ max_bars: Math.max(1, Math.round(v) || 1) })} />
                 </div>
+              </div>
+              <div className="space-y-1">
+                <span className="text-[11px] text-muted-foreground">Pool fee — paid on every swap, so twice per trade</span>
+                <div className="flex gap-1.5">
+                  {POOL_TIERS.map((tier) => (
+                    <Button
+                      key={tier.pct}
+                      size="sm"
+                      variant={exitPlan.fee_pct === tier.pct ? "default" : "outline"}
+                      className="h-7 flex-1 px-1 text-[11px]"
+                      onClick={() => setExit({ fee_pct: tier.pct })}
+                      title={`${tier.pct}% pool — ${tier.what}`}
+                    >
+                      {tier.pct}%
+                    </Button>
+                  ))}
+                </div>
                 <div className="grid grid-cols-3 gap-2">
-                  <NumberField label="Fee per side %" value={exitPlan.fee_pct} step={0.01} onChange={(v) => setExit({ fee_pct: Math.max(0, v) })} />
-                  <NumberField label="Slippage %" value={exitPlan.slippage_pct} step={0.01} onChange={(v) => setExit({ slippage_pct: Math.max(0, v) })} />
+                  <NumberField label="Price impact %" value={exitPlan.slippage_pct} step={0.01} onChange={(v) => setExit({ slippage_pct: Math.max(0, v) })} />
+                  <NumberField label="Gas per swap $" value={exitPlan.gas_usd} step={0.1} onChange={(v) => setExit({ gas_usd: Math.max(0, v) })} />
+                  <NumberField label="Position size $" value={exitPlan.trade_usd} step={100} onChange={(v) => setExit({ trade_usd: v > 0 ? v : DEFAULT_EXIT.trade_usd })} />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
                   <NumberField label="Risk per trade %" value={exitPlan.risk_pct} step={0.25} onChange={(v) => setExit({ risk_pct: v > 0 ? v : DEFAULT_EXIT.risk_pct })} />
                 </div>
+                <p className="text-[10px] leading-relaxed text-muted-foreground">
+                  A round trip costs {roundTripPct(exitPlan).toFixed(3)}% of the position
+                  {exitPlan.gas_usd > 0 && ` — gas is ${gasPct(exitPlan).toFixed(3)}% of that at this size`}. Costs in R
+                  are that over your stop distance, so for them to stay under {COST_BUDGET_R}R the stop needs to be at
+                  least {stopPctForCostBudget(exitPlan, COST_BUDGET_R).toFixed(2)}% of price away. A tighter stop, or a
+                  faster timeframe, and the pool decides the result rather than the signal.
+                </p>
               </div>
               <div className="space-y-1">
                 <span className="text-[11px] text-muted-foreground">Tuning</span>
@@ -531,7 +567,7 @@ export default function BacktestSheet({
               <p className="text-[10px] leading-relaxed text-muted-foreground">
                 {report.signals.fires} alerts from {report.signals.setups} distinct setups over{" "}
                 {report.meta.bars.toLocaleString()} bars; each setup counts and trades once. Fills assume the worse
-                case inside a bar and pay fees and slippage.{" "}
+                case inside a bar and pay the pool fee, the gas and the price impact of the plan above.{" "}
                 {report.meta.tape_cached ? "Replay reused from cache." : `Replay took ${Math.round(report.meta.replay_seconds)}s.`}{" "}
                 Past behaviour on this data is not a forecast.
               </p>

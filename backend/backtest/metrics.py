@@ -2,7 +2,9 @@
 What trading the signals would have done to an account, one period at a time.
 
 Each period starts from an equity of 1.0 so seen and unseen are compared on
-equal terms. Drawdown and Sharpe read the mark-to-market equity at every
+equal terms. Expectancy is reported twice, before and after friction, so a
+strategy that earns an edge and hands it to the pool can be told apart from one
+that never had an edge. Drawdown and Sharpe read the mark-to-market equity at every
 close, so a trade that went far against the account before recovering still
 shows up in the drawdown.
 """
@@ -35,6 +37,7 @@ def trade_row(candles: Sequence[Dict[str, Any]], trade: Trade) -> Dict[str, Any]
         "direction": "long" if trade.direction == 1 else "short",
         "reason": trade.reason,
         "r": _r(trade.r, 3),
+        "cost_r": _r(trade.cost_r, 3),
         "pct": _r(trade.ret * 100, 3),
         "bars": trade.bars_held,
     }
@@ -81,6 +84,7 @@ def period_metrics(candles: Sequence[Dict[str, Any]], sim: Simulation, timeframe
     trades = sim.trades
     bars = sim.hi - sim.lo
     rs = [t.r for t in trades]
+    costs = [t.cost_r for t in trades]
     pnl = [t.notional * t.ret for t in trades]
     wins = [r for r in rs if r > 0]
     losses = [r for r in rs if r <= 0]
@@ -98,6 +102,11 @@ def period_metrics(candles: Sequence[Dict[str, Any]], sim: Simulation, timeframe
         "avg_win_r": _r(float(np.mean(wins)), 3) if wins else None,
         "avg_loss_r": _r(float(np.mean(losses)), 3) if losses else None,
         "expectancy_r": _r(float(np.mean(rs)), 3) if rs else None,
+        # What the strategy earned before friction, and what friction took. A
+        # negative expectancy with a healthy gross number is a cost problem,
+        # not a signal problem - a different thing to fix.
+        "gross_expectancy_r": _r(float(np.mean(rs)) + float(np.mean(costs)), 3) if rs else None,
+        "cost_r": _r(float(np.mean(costs)), 3) if costs else None,
         "profit_factor": _r(sum(p for p in pnl if p > 0) / gross_loss, 3) if gross_loss > 0 else None,
         "total_return_pct": _r((sim.equity[-1] - 1) * 100, 3) if sim.equity else None,
         "max_drawdown_pct": _r(max_drawdown_pct(sim.equity), 3) if sim.equity else None,
