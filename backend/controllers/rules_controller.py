@@ -23,6 +23,7 @@ from models.rule_schemas import (
     RuleTestOut,
     RuleUpdate,
 )
+from repositories.execution_repository import ExecutionPolicyRepository
 from repositories.rule_repository import RuleEventRepository, RuleRepository
 from services.candle_service import CandleService, CandleFetchError, UnknownTimeframe
 from services.rule_engine import RuleEngine
@@ -170,6 +171,12 @@ async def update_rule(
     rule = await RuleRepository.update(str(rule_id), owner_key, fields)
     if rule is None:
         raise _not_found()
+    if request.params is not None:
+        # The rule that passed its backtest no longer exists, so its permission to
+        # trade does not either. Disarmed here rather than left for the executor to
+        # notice, because the gap between the two is a rule trading on evidence
+        # about something else.
+        await ExecutionPolicyRepository.disarm(str(rule_id), "rule settings changed", owner_key)
     return rule
 
 

@@ -107,6 +107,11 @@ def grid_size(grid: Grid, agent: str) -> int:
 
 class BacktestCreate(BaseModel):
     rule: RuleCreate
+    # The saved rule this report is evidence for, when there is one. Named rather
+    # than inferred: the arming gate has to be sure a report is about the rule
+    # being armed, and comparing JSON blobs and hoping key order is stable is not
+    # being sure.
+    rule_id: Optional[str] = None
     # Signals with no direction of their own (doji, inside bar): skipped, or
     # read as long or short.
     neutral: Literal["skip", "long", "short"] = "skip"

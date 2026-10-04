@@ -58,7 +58,7 @@ async def create_backtest(body: BacktestCreate, owner: str = Depends(require_own
             detail=f"{symbol} {rule.timeframe} has {have} bars of history; this rule needs {needed}.",
         )
 
-    job = await BacktestRepository.create(owner, body.model_dump(mode="json"))
+    job = await BacktestRepository.create(owner, body.model_dump(mode="json"), body.rule_id)
     return {"id": str(job["id"]), "status": job["status"]}
 
 

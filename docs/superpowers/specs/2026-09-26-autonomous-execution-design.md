@@ -31,6 +31,16 @@ effort"*; this design is what lets a stop stop being best effort.
 | Which rules may execute | A backtest is mandatory. The user sets the pass threshold. |
 | x402 | Not an execution mechanism (it is an HTTP-402 payment protocol). Deferred, for charging the fee. |
 
+### One asset per vault (changed during slice 4)
+
+The design above described a vault with a token whitelist. What shipped is a vault
+with a single asset and a single feed, and a factory that deploys one per
+(owner, market). A vault with a portfolio in it needs position bookkeeping, a
+per-asset oracle lookup and an answer to "which balance funds this trade"; a vault
+with one asset needs none of that, and the backtester it is measured against also
+holds one position at a time. Two markets means two vaults, which is a UI problem
+rather than a contract problem.
+
 ### Why a purpose-built vault rather than ERC-4337 + a session key
 
 The policy we need is unusually narrow: one router, three tokens, a per-trade cap,
