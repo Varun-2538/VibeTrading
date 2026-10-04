@@ -235,10 +235,20 @@ def _add_completed(answer: FellowAnswer, scene: Dict[str, Any]) -> None:
         for pt in m.points
     }
     for p in scene.get("patterns", []):
-        if not p.get("target_hit") or len(answer.findings) >= 12:
+        if not p.get("target_hit"):
             continue
         pts = sorted(p.get("points", {}).values(), key=lambda pt: int(pt["t"]))
-        if len(pts) < 2 or all((int(pt["t"]), float(pt["price"])) in drawn for pt in pts):
+        keys = {(int(pt["t"]), float(pt["price"])) for pt in pts}
+        if len(pts) >= 2 and keys <= drawn:
+            # Drawn already: say on the chart that it played out.
+            for f in answer.findings:
+                for m in f.marks:
+                    if isinstance(m, Polyline) and {(pt.time, pt.price) for pt in m.points} & keys:
+                        m.label = f"{p['kind']} completed ✓"
+                    elif isinstance(m, HLine) and _near(m.price, [float(p["target"])]):
+                        m.label = f"{p['kind']} target hit"
+            continue
+        if len(pts) < 2 or len(answer.findings) >= 12:
             continue
         name = "double bottom" if p["kind"] == "W" else "double top"
         answer.findings.append(
