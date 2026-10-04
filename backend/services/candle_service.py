@@ -7,6 +7,11 @@ looking at. Two sources would mean levels and patterns marked at prices that
 do not match the chart, which is a correctness bug in every feature built on
 top, so it is designed out rather than managed.
 
+Crypto pairs come from Binance. Robinhood Stock Tokens (NVDA, TSLA, ...) come from
+their own Uniswap pools on Robinhood Chain, via GeckoTerminal - see
+services/stock_pools.py - in the same shape, so nothing downstream can tell them
+apart.
+
 This talks to Binance directly rather than through BinanceFetcher: that class
 swallows request failures into an empty list (indistinguishable from "no data")
 and builds timezone-naive local datetimes. Here times stay unix milliseconds
@@ -17,6 +22,7 @@ import asyncio
 import httpx
 
 from services.cache_service import cache_service
+from services.stock_pools import ohlcv_request, parse_ohlcv, stock_pool
 
 
 BINANCE_KLINES = "https://api.binance.com/api/v3/klines"
@@ -111,6 +117,9 @@ class CandleService:
 
     @staticmethod
     async def _fetch(symbol: str, timeframe: str, limit: int) -> List[Dict[str, Any]]:
+        stock = stock_pool(symbol)
+        if stock is not None:
+            return await CandleService._fetch_stock(stock, timeframe, limit)
         try:
             client = await _http()
             response = await client.get(
@@ -127,6 +136,24 @@ class CandleService:
         if not isinstance(rows, list):
             raise CandleFetchError(f"Unexpected response shape for {symbol} {timeframe}")
 
+        return CandleService._binance_rows(rows)
+
+    @staticmethod
+    async def _fetch_stock(stock, timeframe: str, limit: int) -> List[Dict[str, Any]]:
+        url, params = ohlcv_request(stock, timeframe, limit)
+        try:
+            client = await _http()
+            response = await client.get(url, params=params, headers={"Accept": "application/json"})
+            response.raise_for_status()
+            body = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise CandleFetchError(
+                f"Could not reach the {stock.symbol} pool's candles for {timeframe}: {exc}"
+            ) from exc
+        return parse_ohlcv(body)
+
+    @staticmethod
+    def _binance_rows(rows: List[Any]) -> List[Dict[str, Any]]:
         return [
             {
                 "time": int(row[0]),
