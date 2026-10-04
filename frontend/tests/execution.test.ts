@@ -4,6 +4,7 @@ import {
   fmtR,
   fmtUsd,
   healthTrouble,
+  marketForSymbol,
   MARKETS,
   refusalLines,
   type ExecutionAccount,
@@ -106,5 +107,23 @@ describe("formatting", () => {
 describe("markets", () => {
   it("mirrors the two the factory deploys vaults for", () => {
     expect(MARKETS).toEqual(["WETH/USDC", "WBTC/USDC"])
+  })
+})
+
+describe("which rules can trade at all", () => {
+  it("maps a symbol to the market a vault exists for", () => {
+    expect(marketForSymbol("ETHUSDT")).toBe("WETH/USDC")
+    expect(marketForSymbol("BTCUSDT")).toBe("WBTC/USDC")
+    expect(marketForSymbol("btcusdt")).toBe("WBTC/USDC")
+  })
+
+  it("refuses the pairs with no pool and no feed", () => {
+    // A vault needs a deep Uniswap pool and a Chainlink price. Seven of the nine
+    // pairs the app charts have neither, so a rule on them can alert forever and can
+    // never be armed to trade - and the panel has to say that rather than fail later.
+    for (const symbol of ["SOLUSDT", "XRPUSDT", "ADAUSDT", "DOGEUSDT", "DOTUSDT", "AVAXUSDT", "BNBUSDT"]) {
+      expect(marketForSymbol(symbol)).toBeNull()
+    }
+    expect(marketForSymbol("")).toBeNull()
   })
 })

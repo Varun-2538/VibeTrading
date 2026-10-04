@@ -63,7 +63,9 @@ import { ARBITRUM_NAME, shortAddress } from "@/lib/wallet"
 import { cn } from "@/lib/utils"
 import BacktestSheet from "@/components/backtest-sheet"
 import VaultSheet from "@/components/vault-sheet"
+import ArmSheet from "@/components/arm-sheet"
 import { listBacktests, type BacktestRule, type BacktestSummary } from "@/lib/backtests"
+import { listPolicies } from "@/lib/execution"
 import { TRIGGERS, signalParams, triggerById, triggerName } from "@/lib/triggers"
 
 interface AnalysisPanelProps {
@@ -170,6 +172,10 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
   const [testing, setTesting] = useState<string | null>(null)
   const [backtestRule, setBacktestRule] = useState<BacktestRule | null>(null)
   const [vaultOpen, setVaultOpen] = useState(false)
+  const [armRuleTarget, setArmRuleTarget] = useState<Rule | null>(null)
+  // Which rules are armed to trade, so the Armed tab can say so without asking
+  // per row. Empty is the normal answer and costs one request.
+  const [tradingRuleIds, setTradingRuleIds] = useState<string[]>([])
   const [backtestJobId, setBacktestJobId] = useState<string | undefined>(undefined)
   const [backtests, setBacktests] = useState<BacktestSummary[]>([])
 
@@ -185,6 +191,22 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
   useEffect(() => {
     void refreshBacktests()
   }, [refreshBacktests])
+
+  const refreshTrading = useCallback(async () => {
+    if (status !== "ready") return
+    try {
+      const policies = await listPolicies()
+      setTradingRuleIds(policies.filter((p) => p.armed).map((p) => p.rule_id))
+    } catch {
+      // Nothing armed, or the execution service is not reachable. Either way the
+      // Armed tab reads as "not trading", which is the safe way to be wrong.
+      setTradingRuleIds([])
+    }
+  }, [status])
+
+  useEffect(() => {
+    void refreshTrading()
+  }, [refreshTrading])
   const [testResult, setTestResult] = useState<{ id: string; message: string } | null>(null)
 
   // Builder state. Symbol and timeframe come from the chart; everything else is
@@ -723,7 +745,9 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
           <p className="mt-3 max-w-2xl text-[11px] leading-relaxed text-muted-foreground">
             Rules are evaluated server-side on closed candles only, and must hold for one
             further candle before firing — so a pattern that repaints away never alerts.
-            Alerts only; nothing here places a trade. Rules are private to your wallet
+            Arming a rule here only makes it alert. Trading is a separate decision, per
+            rule, and it needs a backtest that clears a bar you set plus a vault you own —
+            see the Trade button beside an armed rule. Rules are private to your wallet
             address and follow it to any browser you sign in from. For candle-and-indicator
             sequences, ask the assistant — e.g. "alert me when a doji forms and RSI(14)
             crosses above 30".
@@ -767,6 +791,20 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
                         {testResult?.id === rule.id && ` · ${testResult.message}`}
                       </p>
                     </div>
+                    <Button
+                      onClick={() => setArmRuleTarget(rule)}
+                      variant={tradingRuleIds.includes(rule.id) ? "default" : "ghost"}
+                      size="sm"
+                      className="h-6 gap-1 px-2 text-[11px]"
+                      title={
+                        tradingRuleIds.includes(rule.id)
+                          ? "This rule is armed to trade in your vault"
+                          : "Let this rule trade, if its backtest clears your bar"
+                      }
+                    >
+                      <ShieldCheck className="h-3 w-3" />
+                      {tradingRuleIds.includes(rule.id) ? "Trading" : "Trade"}
+                    </Button>
                     <Button
                       onClick={() => {
                         setBacktestJobId(undefined)
@@ -928,6 +966,14 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
         </TabsContent>
       </Tabs>
         <VaultSheet open={vaultOpen} onOpenChange={setVaultOpen} />
+        <ArmSheet
+          rule={armRuleTarget}
+          open={armRuleTarget !== null}
+          onOpenChange={(next) => {
+            if (!next) setArmRuleTarget(null)
+          }}
+          onChanged={() => void refreshTrading()}
+        />
         <BacktestSheet
           rule={backtestRule}
           jobId={backtestJobId}
