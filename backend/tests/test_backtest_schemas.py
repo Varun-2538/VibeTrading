@@ -35,9 +35,9 @@ def test_window_matches_the_live_sweep():
 
 
 def test_timeframes_are_the_ones_with_history():
-    assert BACKTEST_TIMEFRAMES == ("5m", "15m", "1h", "1d")
-    with pytest.raises(ValidationError, match="5m, 15m, 1h or 1d"):
-        BacktestCreate(rule={**RULE, "timeframe": "1m"})
+    assert BACKTEST_TIMEFRAMES == ("1m", "5m", "15m", "1h", "1d")
+    with pytest.raises(ValidationError, match="1m, 5m, 15m, 1h or 1d"):
+        BacktestCreate(rule={**RULE, "timeframe": "4h"})
 
 
 @pytest.mark.parametrize("split", [0.4, 0.95])
