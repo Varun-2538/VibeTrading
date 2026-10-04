@@ -9,6 +9,7 @@ import {
   LineStyle,
   createChart,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts"
@@ -20,7 +21,8 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger } from "@/components/ui/select"
 import type { Timeframe } from "@/lib/api"
 import { formatUsd, type Ticker } from "@/lib/binance"
-import { STOCKS, fetchStockCandles, openVault, type Stock } from "@/lib/stocks"
+import type { Mark, Viewport } from "@/lib/marks"
+import { STOCKS, fetchStockCandles, openVault, type Stock, type StockCandle } from "@/lib/stocks"
 import { WATCHLIST } from "@/components/watchlist"
 
 // The crypto chart's palette, so switching between the two does not change the room.
@@ -52,17 +54,25 @@ export default function StockChart({
   timeframe,
   onTimeframeChange,
   onSymbolChange,
+  onViewportChange,
+  marks = [],
 }: {
   stock: Stock
   quote?: Ticker
   timeframe: Timeframe
   onTimeframeChange: (tf: Timeframe) => void
   onSymbolChange: (symbol: string) => void
+  /** The window on screen, in unix ms, so the assistant reads exactly these candles. */
+  onViewportChange?: (viewport: Viewport | null) => void
+  /** What the assistant asked to draw. Levels are drawn; shapes are crypto-chart only. */
+  marks?: Mark[]
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null)
   const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null)
+  const candlesRef = useRef<StockCandle[]>([])
+  const linesRef = useRef<IPriceLine[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [last, setLast] = useState<number | null>(null)
@@ -122,6 +132,7 @@ export default function StockChart({
       try {
         const candles = await fetchStockCandles(stock, timeframe)
         if (!alive || !candleRef.current || !volumeRef.current) return
+        candlesRef.current = candles
         candleRef.current.setData(
           candles.map((c) => ({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close })),
         )
@@ -149,6 +160,51 @@ export default function StockChart({
       window.clearInterval(id)
     }
   }, [stock, timeframe])
+
+  // Report the window on screen once each pan settles, as the crypto chart does, so
+  // a question about "here" is answered about these candles and no others.
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart || !onViewportChange) return
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const report = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        const candles = candlesRef.current
+        const logical = chart.timeScale().getVisibleLogicalRange()
+        if (!logical || candles.length === 0) return onViewportChange(null)
+        const first = Math.max(0, Math.ceil(logical.from))
+        const last = Math.min(candles.length - 1, Math.floor(logical.to))
+        if (first > last) return onViewportChange(null)
+        onViewportChange({ from: candles[first].time * 1000, to: candles[last].time * 1000 })
+      }, 250)
+    }
+    chart.timeScale().subscribeVisibleLogicalRangeChange(report)
+    report()
+    return () => {
+      if (timer) clearTimeout(timer)
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(report)
+    }
+  }, [onViewportChange, loading, stock, timeframe])
+
+  // The assistant's level marks, as horizontal lines. Replaced wholesale on change.
+  useEffect(() => {
+    const series = candleRef.current
+    if (!series) return
+    for (const line of linesRef.current) series.removePriceLine(line)
+    linesRef.current = marks
+      .filter((m): m is Extract<Mark, { type: "hline" }> => m.type === "hline")
+      .map((m) =>
+        series.createPriceLine({
+          price: m.price,
+          color: "#e8c46a",
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: m.label,
+        }),
+      )
+  }, [marks, loading])
 
   // The price the vault prices against, and how old it is. On a weekend this is
   // Friday's close, and saying so is the point.
@@ -268,8 +324,9 @@ export default function StockChart({
       </div>
 
       <p className="border-t border-border px-3 py-1.5 text-[10px] leading-relaxed text-muted-foreground">
-        Level and pattern analysis, alerts and rules read exchange candles and cover the crypto pairs only. A stock
-        is traded here through your vault, against the Chainlink price above.
+        Ask the assistant about this chart - it reads these pool candles. Alerts and rules run on exchange
+        candles and cover the crypto pairs only; a stock is traded here through your vault, against the
+        Chainlink price above.
       </p>
     </div>
   )

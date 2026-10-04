@@ -99,6 +99,9 @@ export default function TradingDashboard() {
   // What the chart is showing, so the assistant answers about exactly those
   // candles with exactly the detector settings that are drawn.
   const [viewport, setViewport] = useState<Viewport | null>(null)
+  // The stock chart's window, kept apart from the crypto chart's: both stay
+  // mounted, and the assistant must read whichever one is on screen.
+  const [stockViewport, setStockViewport] = useState<Viewport | null>(null)
   const [patternSettings, setPatternSettings] = useState<PatternSettings>({
     strictness: "balanced",
     source: "wick",
@@ -333,6 +336,8 @@ export default function TradingDashboard() {
                 timeframe={timeframe}
                 onTimeframeChange={setTimeframe}
                 onSymbolChange={selectSymbol}
+                onViewportChange={setStockViewport}
+                marks={marks}
               />
             </div>
           )}
@@ -373,11 +378,11 @@ export default function TradingDashboard() {
           </div>
           <ChatPanel
             onClose={closeChat}
-            currentSymbol={cryptoSymbol}
+            currentSymbol={currentSymbol}
             onSymbolChange={selectSymbol}
             onMarkLevels={setMarkedLevels}
             timeframe={timeframe}
-            viewport={viewport}
+            viewport={stock ? stockViewport : viewport}
             patternSettings={patternSettings}
             onMarks={setMarks}
           />

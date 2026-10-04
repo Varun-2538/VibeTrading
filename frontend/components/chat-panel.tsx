@@ -81,7 +81,7 @@ export default function ChatPanel({
       id: "1",
       role: "assistant",
       content:
-        "I'm looking at the same chart you are. Ask what you'd ask a trader next to you: do you see support here, a double bottom, a doji, an RSI cross? I'll say what I see and what I don't, and mark it on the chart if you want.\n\nFor alerts: \"alert me when a doji forms and RSI(14) crosses above 30\".\n\nAvailable: BTCUSDT, ETHUSDT, BNBUSDT, SOLUSDT, XRPUSDT, ADAUSDT, DOGEUSDT, DOTUSDT, AVAXUSDT",
+        "I'm looking at the same chart you are. Ask what you'd ask a trader next to you: do you see support here, a double bottom, a doji, an RSI cross? I'll say what I see and what I don't, and mark it on the chart if you want.\n\nFor alerts: \"alert me when a doji forms and RSI(14) crosses above 30\".\n\nAvailable: BTCUSDT, ETHUSDT, BNBUSDT, SOLUSDT, XRPUSDT, ADAUSDT, DOGEUSDT, DOTUSDT, AVAXUSDT - and Robinhood stocks NVDA, TSLA, AAPL, SPY, QQQ, read from their pools on Robinhood Chain (chart questions only; alerts are crypto-only).",
     },
   ])
   const [input, setInput] = useState("")
