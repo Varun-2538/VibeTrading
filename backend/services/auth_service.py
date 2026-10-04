@@ -20,9 +20,10 @@ from eth_utils import to_checksum_address
 from config.settings import settings
 from services.cache_service import cache_service
 
-# Arbitrum One. Signing is chain-agnostic, so this is a deliberate constraint
-# rather than a technical one: the chain a user signs on is the chain the rest of
-# the product will operate on, and a session minted anywhere else is refused.
+# Arbitrum One, named in the sign-in message. A session proves who holds an
+# address, and an address is the same on every EVM chain, so this is the identity
+# chain rather than the only chain: vaults live on Arbitrum One or Robinhood Chain,
+# chosen per market, and each vault transaction is sent on its own chain.
 ARBITRUM_ONE = 42161
 
 # Long enough that a slow signer is not timed out mid-prompt, short enough that

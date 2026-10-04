@@ -48,15 +48,18 @@ class Settings(BaseSettings):
     # mainnet; see services/execution/signer.py.
     executor_private_key: str = ""
 
-    # Where the chain is, and which one. The public endpoint is the default because
-    # it needs no account; every read retries and every send is asked about by hash
-    # rather than retried, which is what makes a rate-limited node survivable.
+    # Where each chain is, and where its factory went. Public endpoints are the
+    # default because they need no account; every read retries and every send is
+    # asked about by hash rather than retried, which is what makes a rate-limited
+    # node survivable. Chain ids, tokens and feeds are not settings - they live in
+    # services/execution/markets.py, pinned to contracts/src/Addresses.sol.
+    #
+    # A chain with no factory address is a chain live mode refuses, not one it
+    # guesses at. Same key signs on both: an EOA is an address on every EVM chain.
     arbitrum_rpc_url: str = "https://arb1.arbitrum.io/rpc"
-    arbitrum_chain_id: int = 42161
-    vault_factory_address: str = ""
-    # Chainlink ETH/USD, used only to price gas. Without it gas reads as zero, and an
-    # under-reported cost flatters a strategy.
-    eth_usd_feed: str = "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612"
+    arbitrum_vault_factory_address: str = ""
+    robinhood_rpc_url: str = "https://rpc.mainnet.chain.robinhood.com"
+    robinhood_vault_factory_address: str = ""
 
     # App Config
     frontend_url: str = "http://localhost:3000"
