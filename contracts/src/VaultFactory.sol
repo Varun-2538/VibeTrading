@@ -9,17 +9,18 @@ import {TradingVault} from "./TradingVault.sol";
 /// The router, the oracle and the pool fee are fixed here rather than chosen by the
 /// caller, so a vault cannot be deployed pointing at a contract of somebody's
 /// choosing and then presented as one of ours. The asset list is fixed for the same
-/// reason: two markets, both with deep Arbitrum pools and a Chainlink feed.
+/// reason: markets with a deep Uniswap pool and a Chainlink feed, per chain, from
+/// script/Deploy.s.sol.
 ///
 /// TVL_CAP is a constant, not a parameter. Raising it means deploying a new factory,
 /// which is the intended cost of raising it before the contract has been audited.
 contract VaultFactory {
-    /// The most any vault deployed by this factory may hold, in USDC's six
+    /// The most any vault deployed by this factory may hold, in the stable's six
     /// decimals. Five hundred dollars: enough to trade honestly, little enough that
     /// a bug in an unaudited contract is a bad week rather than a ruin.
     uint256 public constant TVL_CAP = 500e6;
 
-    address public immutable stable; // USDC
+    address public immutable stable; // USDC on Arbitrum One, USDG on Robinhood Chain
     address public immutable router; // Uniswap SwapRouter02
 
     struct Market {
