@@ -64,6 +64,7 @@ import { cn } from "@/lib/utils"
 import BacktestSheet from "@/components/backtest-sheet"
 import VaultSheet from "@/components/vault-sheet"
 import { OPEN_VAULT_EVENT } from "@/lib/stocks"
+import { EXPLORER, useTradeHistory } from "@/lib/history"
 import { pnl, timeLeft, type OpenPosition } from "@/lib/positions"
 import ArmSheet from "@/components/arm-sheet"
 import { listBacktests, type BacktestRule, type BacktestSummary } from "@/lib/backtests"
@@ -181,6 +182,8 @@ export default function AnalysisPanel({
   const [rules, setRules] = useState<Rule[]>([])
   const [events, setEvents] = useState<RuleEvent[]>([])
   const [tab, setTab] = useState("build")
+  // Read only while the tab is open: it walks every vault's log on two chains.
+  const { trades: history, loading: historyLoading } = useTradeHistory(tab === "history" ? address : null)
   // A position that has just opened is the most important thing on this panel, so
   // the panel turns to it - once per new position, never back again on its own.
   const [seenPositions, setSeenPositions] = useState(0)
@@ -529,6 +532,9 @@ export default function AnalysisPanel({
                   {openPositions.length}
                 </span>
               )}
+            </TabsTrigger>
+            <TabsTrigger value="history" className="h-5 px-2 text-xs">
+              History
             </TabsTrigger>
             <TabsTrigger value="fired" className="h-5 px-2 text-xs">
               Fired
@@ -1064,6 +1070,113 @@ export default function AnalysisPanel({
                 Read from your vaults on chain. The stop, target and time exit are written in the contract and
                 cannot be moved; anyone may close the position once one is reached, so it does not wait on our
                 server. P&amp;L is against the chart&apos;s price, before pool fees.
+              </p>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* History: every open and close the owner's vaults emitted, with links. */}
+        <TabsContent value="history" className="mt-0 min-h-0 flex-1 overflow-y-auto">
+          {history.length === 0 ? (
+            <div className="flex h-full items-center justify-center px-6 text-center">
+              <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
+                {historyLoading
+                  ? "Reading your vaults on chain…"
+                  : "No trades yet. Every open and close in your vaults appears here, with a link to the transaction that did it."}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto px-3 py-2 lg:px-4">
+              <table className="w-full min-w-[680px] text-[11px]">
+                <thead>
+                  <tr className="text-left text-[10px] uppercase tracking-wide text-muted-foreground">
+                    <th className="py-1 pr-2 font-medium">Market</th>
+                    <th className="py-1 pr-2 font-medium">Opened</th>
+                    <th className="py-1 pr-2 font-medium">Entry</th>
+                    <th className="py-1 pr-2 font-medium">Exit</th>
+                    <th className="py-1 pr-2 font-medium">Closed by</th>
+                    <th className="py-1 pr-2 font-medium">Result</th>
+                    <th className="py-1" />
+                  </tr>
+                </thead>
+                <tbody className="font-mono tabular-nums">
+                  {history.map((t) => {
+                    const base = EXPLORER[t.chainId]
+                    const c = t.close
+                    const net = c ? c.receivedUsd - t.spentUsd : null
+                    const when = (s: number | null) =>
+                      s ? new Date(s * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"
+                    const why: Record<string, string> = { stop: "stop hit", target: "target hit", time: "time exit", operator: "closed", owner: "closed" }
+                    return (
+                      <tr key={t.openTx} className="border-t border-border align-top">
+                        <td className="py-1.5 pr-2 font-sans">
+                          <span className="font-semibold text-foreground">{t.label}</span>{" "}
+                          <span className="rounded bg-primary/15 px-1 text-[10px] text-primary">LONG</span>
+                          <div className="text-[10px] text-muted-foreground">
+                            {t.chainName} · ${t.spentUsd.toFixed(2)} {t.stable}
+                          </div>
+                        </td>
+                        <td className="py-1.5 pr-2">{when(t.openedAt)}</td>
+                        <td className="py-1.5 pr-2">${t.entry.toFixed(2)}</td>
+                        <td className="py-1.5 pr-2">
+                          {c ? (
+                            <>
+                              ${c.price.toFixed(2)}
+                              <div className="font-sans text-[10px] text-muted-foreground">{why[c.reason] ?? c.reason}</div>
+                            </>
+                          ) : (
+                            <span className="font-sans text-primary">open</span>
+                          )}
+                        </td>
+                        <td className="py-1.5 pr-2 font-sans">
+                          {c ? (
+                            <>
+                              {c.closer === "you" ? "You" : c.closer === "executor" ? "Our executor" : "A stranger"}
+                              {c.bountyUsd > 0 && (
+                                <div className="text-[10px] text-muted-foreground">
+                                  paid {c.bountyUsd.toFixed(2)} {t.stable} bounty
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td
+                          className="py-1.5 pr-2"
+                          style={{ color: net === null ? undefined : net >= 0 ? "#7af0ce" : "#ff7a59" }}
+                        >
+                          {net === null ? "—" : `${net >= 0 ? "+" : "-"}$${Math.abs(net).toFixed(3)}`}
+                        </td>
+                        <td className="whitespace-nowrap py-1.5 text-right font-sans">
+                          <a
+                            href={`${base}/tx/${t.openTx}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mr-1 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+                          >
+                            Open tx ↗
+                          </a>
+                          {c && (
+                            <a
+                              href={`${base}/tx/${c.tx}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+                            >
+                              Close tx ↗
+                            </a>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
+                Read from your vaults&apos; own event log, not from our database. A close by a stranger is the
+                vault working without us: anyone may close a position once its stop, target or time exit is
+                reached, and is paid the bounty. Result is the trade itself - what the swap back returned, less what went in - before any bounty.
               </p>
             </div>
           )}
