@@ -62,26 +62,35 @@ export function colorOf(specs: IndicatorSpec[], s: IndicatorSpec): string {
   return OVERLAY_COLORS[Math.max(0, i) % OVERLAY_COLORS.length]
 }
 
-/**
- * The chart's indicators as state, which the chat can also change: it sends
- * INDICATOR_EVENT when a message asks to draw (or remove) one.
- */
+// One set of indicators for every chart: switching from ETH to a stock keeps them.
+let shared: IndicatorSpec[] = DEFAULT_SPECS
+const subscribers = new Set<(specs: IndicatorSpec[]) => void>()
+function setShared(next: IndicatorSpec[]) {
+  shared = next
+  for (const f of subscribers) f(next)
+}
+// The chat sends INDICATOR_EVENT when a message asks to draw (or remove) one.
+if (typeof window !== "undefined") {
+  window.addEventListener(INDICATOR_EVENT, (e) => {
+    const d = (e as CustomEvent<IndicatorEventDetail>).detail ?? {}
+    let next = shared
+    if (d.remove) next = withoutSpecs(next, d.remove)
+    if (d.add) next = withSpecs(next, d.add)
+    setShared(next)
+  })
+}
+
+/** The charts' indicators: one state, shared by every chart and the chat. */
 export function useChartIndicators(): [IndicatorSpec[], (next: IndicatorSpec[]) => void] {
-  const [specs, setSpecs] = useState<IndicatorSpec[]>(DEFAULT_SPECS)
+  const [specs, setSpecs] = useState<IndicatorSpec[]>(shared)
   useEffect(() => {
-    const on = (e: Event) => {
-      const d = (e as CustomEvent<IndicatorEventDetail>).detail ?? {}
-      setSpecs((cur) => {
-        let next = cur
-        if (d.remove) next = withoutSpecs(next, d.remove)
-        if (d.add) next = withSpecs(next, d.add)
-        return next
-      })
+    subscribers.add(setSpecs)
+    setSpecs(shared)
+    return () => {
+      subscribers.delete(setSpecs)
     }
-    window.addEventListener(INDICATOR_EVENT, on)
-    return () => window.removeEventListener(INDICATOR_EVENT, on)
   }, [])
-  return [specs, setSpecs]
+  return [specs, setShared]
 }
 
 /**
