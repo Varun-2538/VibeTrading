@@ -52,10 +52,10 @@ contract TradingVault {
     // --- limits, all of them ceilings the owner can only tighten --------------
 
     uint16 public constant MAX_SLIPPAGE_BPS = 500; // 5%
-    uint256 public constant MAX_BOUNTY = 2e6; // $2, in USDC's six decimals
+    uint256 public constant MAX_BOUNTY = 2e6; // $2, in the stable's six decimals (USDC, USDG)
     uint64 public constant MAX_POSITION_AGE = 45 days;
-    /// A Chainlink feed on Arbitrum updates on a 0.05% deviation or a daily
-    /// heartbeat, so anything older than a day and change means the feed is broken
+    /// The Chainlink feeds we use update on a small deviation (0.05% on Arbitrum
+    /// One, 0.5% on Robinhood Chain) or a daily heartbeat, so anything older than a day and change means the feed is broken
     /// rather than quiet. Tighter than this would make exits impossible in a calm
     /// market, which is worse than the risk it would remove.
     uint256 public constant MAX_ORACLE_AGE = 26 hours;
