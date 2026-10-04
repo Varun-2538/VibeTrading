@@ -296,3 +296,12 @@ def test_field_names_are_said_in_words():
     raw["reply_md"] = "Both Ws in the scene have target_hit true."
     a = parse_answer(json.dumps(raw), SCENE)
     assert "target_hit" not in a.reply_md and "scene" not in a.reply_md
+
+
+def test_a_played_out_pattern_the_model_drew_is_relabelled_completed():
+    scene = json.loads(json.dumps(SCENE))
+    scene["patterns"][0]["target_hit"] = True
+    pts = [{"time": pt["t"], "price": pt["price"]} for pt in scene["patterns"][0]["points"].values()]
+    a = parse_answer(answer_with([{"type": "polyline", "points": pts, "label": "W"}], kind="pattern"), scene)
+    labels = [m.label for f in a.findings for m in f.marks if m.type == "polyline"]
+    assert labels == ["W completed ✓"]
