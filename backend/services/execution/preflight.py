@@ -17,6 +17,11 @@ here rather than re-derived.
 Every failure is reported, not the first. An owner fixing one at a time learns
 nothing about the others, and this is the only place that will ever tell them why
 their strategy is not allowed to spend.
+
+The two kinds are not equal. A quality failure is advice: it is the owner's money,
+and an owner who has read why may still choose to trade (`overridable`). An identity
+failure is not: a report about some other rule, or one that measured shorts a pool
+cannot take, says nothing about this one, so there is nothing to overrule.
 """
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -46,9 +51,16 @@ class PreflightResult:
     passed: bool
     reasons: List[str] = field(default_factory=list)
     evidence: Dict[str, Any] = field(default_factory=dict)
+    # Failed on quality alone, so the owner may arm it anyway, having been told why.
+    overridable: bool = False
 
     def as_dict(self) -> Dict[str, Any]:
-        return {"passed": self.passed, "reasons": list(self.reasons), "evidence": dict(self.evidence)}
+        return {
+            "passed": self.passed,
+            "reasons": list(self.reasons),
+            "evidence": dict(self.evidence),
+            "overridable": self.overridable,
+        }
 
 
 def _behavioural(plan: Dict[str, Any]) -> Dict[str, Any]:
@@ -136,6 +148,9 @@ def check(
             "shorten max_bars."
         )
 
+    # Everything above is identity; nothing below it can make a wrong report right.
+    identity_failures = len(reasons)
+
     # --- quality: only the unseen half, and only what the report already says.
     count = int(trades.get("trades") or 0)
     if count < thresholds.min_trades:
@@ -178,6 +193,7 @@ def check(
 
     return PreflightResult(
         passed=not reasons,
+        overridable=bool(reasons) and identity_failures == 0,
         reasons=reasons,
         evidence={
             "backtest_job_id": str(job.get("id")),

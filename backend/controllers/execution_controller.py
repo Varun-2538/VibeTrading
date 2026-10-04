@@ -197,11 +197,22 @@ async def arm_rule(
     time learns nothing about the rest.
     """
     result = await _gate(rule_id, body, owner_key)
-    if not result.passed:
+    if not result.passed and not (body.override and result.overridable):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"message": "This rule cannot be armed yet.", "reasons": result.reasons},
+            detail={
+                "message": "This rule cannot be armed yet.",
+                "reasons": result.reasons,
+                "overridable": result.overridable,
+            },
         )
+
+    preflight = result.as_dict()
+    if not result.passed:
+        # Armed against the gate's advice. Said so on the policy, with the reasons
+        # the owner was shown, so it can never later read as a rule that passed.
+        preflight["overridden"] = True
+        preflight["overridden_at"] = datetime.now(timezone.utc).isoformat()
 
     policy = body.action.model_dump()
     exit_plan = policy.pop("exit")
@@ -214,7 +225,7 @@ async def arm_rule(
         policy=policy,
         parity_version=PARITY_VERSION,
         backtest_job_id=body.backtest_job_id,
-        preflight=result.as_dict(),
+        preflight=preflight,
     )
     return _policy(row)
 

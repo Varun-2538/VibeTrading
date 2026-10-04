@@ -139,6 +139,9 @@ class ArmRequest(BaseModel):
     action: DexTradeActionConfig
     backtest_job_id: str = Field(min_length=1)
     thresholds: PreflightThresholds = Field(default_factory=PreflightThresholds)
+    # Arm it even though the evidence fell short of the bar. Honoured only when every
+    # failure was about quality, and the reasons are kept with the policy.
+    override: bool = False
 
 
 class AccountSettings(BaseModel):

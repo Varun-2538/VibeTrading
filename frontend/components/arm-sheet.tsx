@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Loader2, ShieldCheck } from "lucide-react"
+import { AlertTriangle, Loader2, ShieldCheck } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -67,6 +67,8 @@ export default function ArmSheet({
   const [result, setResult] = useState<PreflightResult | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Ticked by the owner before a rule that failed the gate may be armed anyway.
+  const [understood, setUnderstood] = useState(false)
 
   // Every market this rule's coin trades in, one per chain. ETH has two - Robinhood
   // Chain against USDG and Arbitrum One against USDC - and which one is a choice the
@@ -97,6 +99,7 @@ export default function ArmSheet({
   useEffect(() => {
     if (!open) return
     setResult(null)
+    setUnderstood(false)
     setChosen(null)
     setReport(null)
     void load()
@@ -146,7 +149,7 @@ export default function ArmSheet({
     }
   }
 
-  async function arm() {
+  async function arm(override = false) {
     if (!rule || !market || !chosen || !exitPlan) return
     setBusy("arm")
     setError(null)
@@ -159,6 +162,7 @@ export default function ArmSheet({
           neutral: (report?.meta.neutral as "skip" | "long" | "short") ?? "skip",
           max_notional_usd: cap,
           thresholds: { min_expectancy_r: expectancy, max_drawdown_pct: drawdown },
+          override,
         }),
       )
       onChanged?.()
@@ -227,6 +231,20 @@ export default function ArmSheet({
                   </tbody>
                 </table>
               ) : null}
+              {policy.preflight?.overridden && (
+                <div className="space-y-1 rounded border border-amber-500/50 bg-amber-500/10 p-2">
+                  <p className="flex items-center gap-1.5 text-[11px] font-medium text-amber-200">
+                    <AlertTriangle className="h-3.5 w-3.5" /> Armed against the AI&apos;s advice
+                  </p>
+                  <ul className="list-disc space-y-0.5 pl-4">
+                    {policy.preflight.reasons.map((reason) => (
+                      <li key={reason} className="text-[10px] leading-relaxed text-muted-foreground">
+                        {reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {!policy.parity_current && (
                 <p className="text-[11px] leading-relaxed text-destructive">
                   This was armed under different exit arithmetic and will not trade until it is armed
@@ -358,7 +376,7 @@ export default function ArmSheet({
                   size="sm"
                   className="h-7 flex-1 text-xs"
                   disabled={!result?.passed || busy !== null}
-                  onClick={arm}
+                  onClick={() => arm()}
                 >
                   {busy === "arm" ? <Loader2 className="h-3 w-3 animate-spin" /> : "Let it trade"}
                 </Button>
@@ -378,6 +396,36 @@ export default function ArmSheet({
                     </li>
                   ))}
                 </ul>
+              )}
+              {result && !result.passed && result.overridable && (
+                <section className="space-y-2 rounded border border-amber-500/50 bg-amber-500/10 p-2">
+                  <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-amber-200">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      The AI declined this strategy for the reasons above. It is your money, so you can still
+                      let it trade - but the backtest says it is more likely to lose than not. Your vault&apos;s
+                      own caps still hold: at most ${cap} a trade, and every stop is enforced on-chain.
+                    </span>
+                  </p>
+                  <label className="flex items-start gap-2 text-[11px] leading-relaxed text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={understood}
+                      onChange={(e) => setUnderstood(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    I have read why it was declined and want it to trade anyway.
+                  </label>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="h-7 w-full text-xs"
+                    disabled={!understood || busy !== null}
+                    onClick={() => arm(true)}
+                  >
+                    {busy === "arm" ? <Loader2 className="h-3 w-3 animate-spin" /> : "Trade anyway"}
+                  </Button>
+                </section>
               )}
             </>
           )}
