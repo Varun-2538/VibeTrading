@@ -106,9 +106,13 @@ def _patterns(
     scale: str,
     places: int,
 ) -> List[Dict[str, Any]]:
+    # W and M only. They carry the full set of checks - a first arm, the letter
+    # inside 60 candles, a target reached in time - which the head-and-shoulders
+    # and cup detectors do not yet, and those reported shapes nobody could find.
     found = detect_all_patterns(
         list(candles),
         strictness=strictness,
+        kinds=("W", "M"),
         source=source,
         scale=scale,
         max_results=None,
