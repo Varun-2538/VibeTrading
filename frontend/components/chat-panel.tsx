@@ -217,6 +217,19 @@ export default function ChatPanel({
 
       setMessages((prev) => [...prev, aiMessage])
 
+      // Patterns the assistant found are drawn straight away - the letter is
+      // the answer, and a completed one is the evidence it works.
+      const patternMarks = (aiMessage.fellow?.findings ?? [])
+        .filter((f) => f.kind === "pattern" && f.present)
+        .flatMap((f) => f.marks)
+      if (patternMarks.length > 0) {
+        setMarked((prev) => {
+          const next = new Map(prev)
+          for (const m of patternMarks) next.set(markKey(m), m)
+          return next
+        })
+      }
+
       // Update chart symbol if changed
       if (data.symbol && data.chart_update && onSymbolChange) {
         onSymbolChange(data.symbol)
