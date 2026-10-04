@@ -94,7 +94,7 @@ def test_missing_history_is_409_with_the_numbers(monkeypatch):
 
 
 def test_unsupported_timeframe_is_422(monkeypatch):
-    body = {"rule": {**BODY["rule"], "timeframe": "1m"}}
+    body = {"rule": {**BODY["rule"], "timeframe": "4h"}}
     assert client(monkeypatch, Jobs()).post("/api/backtests", json=body).status_code == 422
 
 
