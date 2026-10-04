@@ -26,6 +26,8 @@ import {
 } from "@/components/ui/sheet"
 import { Layers, SlidersHorizontal, Sparkles } from "lucide-react"
 import MarkOverlay from "@/components/mark-overlay"
+import PositionOverlay from "@/components/position-overlay"
+import type { OpenPosition } from "@/lib/positions"
 import { STOCKS } from "@/lib/stocks"
 import PatternOverlay from "@/components/pattern-overlay"
 import type { Mark, PatternSettings, Viewport } from "@/lib/marks"
@@ -65,6 +67,7 @@ const GRID = "rgba(122,240,206,0.06)"
 const SURFACE = "#05100e"
 
 const CANDLE_LIMIT = 1000
+const TF_SECONDS: Record<string, number> = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400 }
 
 const CRYPTO_PAIRS = [
   { symbol: "BTCUSDT", name: "Bitcoin" },
@@ -142,6 +145,8 @@ interface PriceChartProps {
   /** 24h change and quote volume for the selected pair, from the ticker feed. */
   changePct?: number
   quoteVolume?: number
+  /** Open vault positions on this pair: entry, take-profit and stop-loss are drawn. */
+  positions?: OpenPosition[]
 }
 
 export interface PanelSlots {
@@ -171,6 +176,7 @@ export default function PriceChart({
   slots,
   changePct,
   quoteVolume,
+  positions = [],
 }: PriceChartProps) {
   const selected = symbol || "BTCUSDT"
   const setTimeframe = onTimeframeChange
@@ -1153,6 +1159,14 @@ export default function PriceChart({
           )}
           {marks.length > 0 && (
             <MarkOverlay chart={chartRef.current} series={seriesRef.current} marks={marks} loading={loading} />
+          )}
+          {positions.length > 0 && !loading && (
+            <PositionOverlay
+              chart={chartRef.current}
+              series={seriesRef.current}
+              positions={positions}
+              timeframeSeconds={TF_SECONDS[timeframe] ?? 3600}
+            />
           )}
           {loading && (
             <div className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-muted-foreground">

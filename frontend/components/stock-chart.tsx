@@ -18,6 +18,8 @@ import { ShieldCheck } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import MarkOverlay from "@/components/mark-overlay"
+import PositionOverlay from "@/components/position-overlay"
+import type { OpenPosition } from "@/lib/positions"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger } from "@/components/ui/select"
 import type { Timeframe } from "@/lib/api"
 import { formatUsd, type Ticker } from "@/lib/binance"
@@ -32,6 +34,7 @@ const INK_MUTED = "#86948e"
 const GRID = "rgba(122,240,206,0.06)"
 const SURFACE = "#05100e"
 
+const TF_SECONDS: Record<string, number> = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400 }
 const TIMEFRAMES: Timeframe[] = ["1m", "5m", "15m", "1h", "4h", "1d"]
 const REFRESH_MS = 60_000
 const ROBINHOOD_CHAIN_ID = 4663
@@ -56,6 +59,7 @@ export default function StockChart({
   onSymbolChange,
   onViewportChange,
   marks = [],
+  positions = [],
 }: {
   stock: Stock
   quote?: Ticker
@@ -66,6 +70,8 @@ export default function StockChart({
   onViewportChange?: (viewport: Viewport | null) => void
   /** What the assistant asked to draw: levels, sweeps and other bar markers, pattern shapes. */
   marks?: Mark[]
+  /** Open vault positions in this stock: entry, take-profit and stop-loss are drawn. */
+  positions?: OpenPosition[]
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -298,6 +304,14 @@ export default function StockChart({
             sweeps, and pattern shapes, and both charts keep candle times in seconds. */}
         {marks.length > 0 && (
           <MarkOverlay chart={chartRef.current} series={candleRef.current} marks={marks} loading={loading} />
+        )}
+        {positions.length > 0 && !loading && (
+          <PositionOverlay
+            chart={chartRef.current}
+            series={candleRef.current}
+            positions={positions}
+            timeframeSeconds={TF_SECONDS[timeframe] ?? 3600}
+          />
         )}
         {(loading || error) && (
           <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
