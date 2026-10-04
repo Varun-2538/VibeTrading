@@ -157,3 +157,217 @@ arming gate's job, not the backtester's — measuring a short strategy is a perf
 reasonable thing to want.
 
 Backend 562 tests, frontend 72, `next build` clean.
+
+---
+
+# Slice 3 — who may trade, decided before anything can
+
+Still nothing executes. What this adds is the decision and its record: the schema
+an execution config must satisfy, the gate it must pass, and the table that
+remembers what the server agreed to. The global switch ships `FALSE`, every
+account ships `off`, and no process reads the queue yet.
+
+## `006_execution.sql`
+
+Eight tables. The important ones are the constraints, not the columns, because
+exactly-once has to be a property of the schema rather than of a Python check —
+two processes reading before either writes is a race by construction:
+
+| Constraint | Stops |
+|---|---|
+| `execution_positions_one_live` UNIQUE on (owner, rule, venue, market, mode) WHERE status is live | Two positions for one rule. Also what keeps live faithful to `simulate`, which holds one at a time. |
+| `execution_intents_one_per_event` UNIQUE on event_id | A second sweep, or a replayed loop, queueing a fire twice. |
+| `execution_intents_one_exit_per_position` UNIQUE on (position, kind) for exits | A monitor tick that runs twice queueing two flattens — the second of which opens a reverse position. |
+| `execution_orders.client_order_id` UNIQUE | Two sends of the same venue write. The row is inserted *before* the call. |
+| `execution_fills` UNIQUE on (venue, venue_fill_id) | A positions poll after a restart booking a fill twice. |
+
+The one cycle — a position names the intent that opened it, an exit intent names
+its position — is broken on the position side with no foreign key, deliberately,
+because a mid-file circular constraint cannot be written idempotently.
+
+`backtest_jobs` gains `rule_id`, so the gate finds a rule's evidence by id instead
+of comparing JSON blobs and hoping key order stays stable. The frontend now sends
+it, and a job without one is still perfectly legal — backtesting an unsaved draft
+is an ordinary thing to do.
+
+## Three layers, each with one job
+
+`strategy_rules.action` is what the **owner declared**. `execution_policies` is
+what the **server agreed to**, written only by the arming route, with the evidence
+attached. The snapshot the executor will obey lives on the intent and the position,
+so a later edit cannot move a live stop. That separation is why `RuleUpdate` still
+has no `action` field: the kind is not settable through the rules API at all.
+
+And a PATCH that changes a rule's `params` now disarms it, next to the line that
+already clears its pending streak for the same reason. The rule that passed the
+backtest no longer exists, so its permission does not either.
+
+## `DexTradeActionConfig`
+
+A discriminated union on `kind`, like `RuleParams` on `agent`: a misspelled field
+has to be a 422 when written, because a loose dict here produces a rule that
+spends money on terms nobody validated. `ExitPlan` is nested **verbatim** — one
+type for how a signal becomes a trade, so the report and the executor cannot mean
+different things by a stop.
+
+Two fields exist here only because they live on `BacktestCreate` rather than on
+`ExitPlan`, and a live fire needs them: `neutral`, and `sides` — fixed at `"long"`,
+since an action that claimed otherwise would be armed against evidence a pool
+cannot produce. And a validator refuses a plan with no target and `max_bars > 200`:
+a live position needs a bound that is not the stop, because the stop may never
+arrive.
+
+## The gate
+
+`services/execution/preflight.py`, pure and synchronous — the caller loads the
+job, this decides. Called from the arming route and **not** from the executor,
+because a gate evaluated at execution time would stop trading mid-position when
+history rolled past the age limit, which is the worst moment to lose the exit path.
+
+*Identity*: same rule id, pair, timeframe, params; the same behavioural exit fields
+(costs deliberately excluded — a report measured through a dearer pool is still
+evidence about the same strategy); the same `neutral`; `sides == "long"`; the
+current `PARITY_VERSION`; and evidence newer than 14 days. Plus a refusal when
+`max_bars × timeframe` exceeds 45 days, which `ExitPlan` alone cannot catch.
+
+*Quality*, from the unseen half only: at least 30 trades, expectancy above **the
+owner's** threshold, drawdown within **the owner's** limit, and none of
+`likely_overfit`, `too_few_trades` or `no_edge_detected`. The owner sets the bar
+because it is their money and their patience; they cannot set it to zero, because
+there is no reading of a losing unseen result that makes it evidence. `min_trades`
+is not settable at all — a preference cannot make a small sample larger.
+
+*Cost honesty*: once an account has ten closed positions, its own measured `cost_r`
+must not exceed the report's by more than half again. A strategy measured at 0.05%
+fees that is really paying 0.3% is not the strategy that passed — the cost work
+from 2026-09-26 doing real safety work.
+
+Every failure is returned at once. An owner fixing one at a time learns nothing
+about the rest, and this is the only place that will ever tell them why their
+strategy may not spend.
+
+## `/api/execution/*`
+
+`GET`/`PUT /account`, `POST`/`DELETE /kill`, `GET /policies`,
+`POST /rules/{id}/preflight`, and `POST`/`DELETE /rules/{id}/arm`. Owner-scoped,
+404 rather than 403 on a mismatch, and arming returns **409 with every reason**.
+An unconfigured account reads as the defaults rather than as an error — "off, and
+these are the caps you would start from" — and reports the global switch alongside,
+because an account that looks armed while execution is off is the most confusing
+state to debug.
+
+Disarming is always allowed, and the kill switch can be flipped before an account
+exists. Neither ever needs to wait for anything.
+
+**What this route still lacks, and must before live mode:** a fresh signature over
+the specific change. A bearer token in `localStorage` is the right ceiling for
+reading and editing rules and the wrong one for authorising spend — the frontend
+says so itself. It holds for now because arming requires a passing backtest and
+every account is off.
+
+Backend 617 tests (was 564), frontend 72, `next build` clean.
+
+## Next
+
+Slice 4 is the vault contract — Foundry, a factory, Arbitrum Sepolia — which is
+where this stops being only schema.
+
+---
+
+# Slice 4 — the vault
+
+`contracts/`, a Foundry project with **no submodules and no libraries**. Every
+interface it needs is four lines long and lives in `src/interfaces`. A contract that
+holds someone's money should be readable end to end in one sitting, and a dependency
+tree is the opposite of that.
+
+## What it is
+
+One vault per (owner, market), deployed by the owner from a factory. It holds USDC,
+it can swap into one whitelisted asset and back, and it can do nothing else.
+
+**Changed from the design:** one asset per vault rather than a whitelist. A vault
+with a portfolio needs position bookkeeping and an answer to "which balance funds
+this trade"; a vault with one asset needs neither, and `simulate` holds one position
+at a time too. Two markets is two vaults.
+
+## The operator's surface, which is the whole security argument
+
+`openPosition` and `closeByOperator`. That is all. There is no transfer, no
+arbitrary approve, no setter for the router, the oracle or the asset, and **no
+function anywhere that changes a stop once written** — not for us, not for the
+owner. A bot cannot give a losing position a little more room.
+
+The owner's rights are unconditional and cannot be blocked, delayed or front-run by
+us: `deposit`, `withdraw` (position open or not), `setOperator`, `revokeOperator`,
+`setCaps`, `closeByOwner`.
+
+## Exits that do not depend on our uptime
+
+`closeIfStopped`, `closeIfTargetHit`, `closeIfExpired` — **permissionless**, each
+reverting unless the condition is genuinely true, each paying a flat bounty from the
+vault to whoever called it. Not to us and not to the owner: paying ourselves out of
+their vault for work we said we would do is a fee by another name, and the test that
+pins that says so.
+
+A contract cannot notice a price — EVM code runs only when called — so the vault
+verifies and something outside pushes. Our executor normally does, within seconds;
+if it is down, a stranger has a profit motive to, which is the mechanism that makes
+liquidations reliable without trusting one operator.
+
+**Oracle authorises, minimum-out protects.** `MAX_ORACLE_AGE` is 26 hours: the
+Chainlink daily heartbeat plus slack. Tighter would make exits impossible in a quiet
+market, which is worse than the risk it removes. And the vault publishes
+`openFloor(amountIn)` and `closeFloor()` so the executor asks the vault what the
+floor is rather than computing its own and disagreeing — the same move as
+`trade_plan.py`, one floor rather than two.
+
+## What the tests are about
+
+28 offline tests, mostly **refusals**, because that is what the vault is for: the
+operator cannot withdraw, cannot re-open over an existing position, cannot exceed
+the notional cap or the daily count, cannot act on an expired grant, cannot place a
+stop on the wrong side of the price, cannot open against a stale feed. The owner can
+withdraw while a position is open. Revoking is immediate. Deposits stop at the hard
+cap, and `setCaps` cannot loosen past the contract's own ceilings.
+
+Two worth naming:
+
+- **A stranger closes a stopped position and is paid; the operator is not.** Both
+  halves matter.
+- **The vault checks the fill itself even if the router does not.** Uniswap's router
+  enforces the minimum we hand it, so the first version of the sandwich test was
+  passing for the wrong reason — the router refused before the vault did. A mock
+  that under-delivers *silently* proves the vault's own check is a guarantee rather
+  than something it borrows.
+
+`test/Fork.t.sol` is the only test that can say whether the addresses in
+`src/Addresses.sol` are the contracts we believe they are — everything else runs
+against mocks that agree with us by construction. It skips without
+`ARBITRUM_RPC_URL`, and it must be run before any deployment.
+
+## The risk ladder, enforced in code
+
+`VaultFactory.TVL_CAP = 500e6`, a constant. Raising it means deploying a new
+factory, so nobody — including us — can raise it on a live vault. Sepolia first,
+then mainnet at five hundred dollars a vault, then an audit, then a higher cap.
+
+## Client side
+
+`frontend/lib/vault.ts`: the ABIs, the market list mirroring the factory's, amount
+handling for USDC's six decimals and Chainlink's eight, and the **disclosure**.
+
+That last one is load-bearing rather than decorative. The vault stores
+`keccak256(disclosure text)` at deploy, so which wording an owner accepted is a fact
+on-chain with a block timestamp, not a row in our database. `DISCLOSURES` is
+append-only and the hash of v1 is pinned by a test: a failure there means someone
+edited an accepted version instead of adding one, and every vault that accepted v1
+would now disagree with the site about what its owner agreed to.
+
+28 contract tests (1 skipped), frontend 82, backend unchanged at 618.
+
+## Not done in this slice
+
+The vault UI — deploy, fund, set the grant, revoke, withdraw. The client library is
+here and tested; the panel lands with slice 5, because a vault with no executor has
+nothing to do yet.

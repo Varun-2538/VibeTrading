@@ -73,6 +73,10 @@ export interface Backtest {
 
 /** A rule as the Strategy panel lists it, or as the chat drafts it. */
 export interface BacktestRule {
+  // A saved rule's id, when the backtest is being run for one. Sent as rule_id so
+  // the report can later be named as the evidence that armed it; absent when the
+  // rule is a draft nobody has saved.
+  id?: string
   name: string
   symbol: string
   timeframe: string
@@ -111,6 +115,7 @@ export async function createBacktest(
         cooldown_secs: rule.cooldown_secs,
         persist_bars: rule.persist_bars,
       },
+      rule_id: rule.id ?? null,
       neutral: options.neutral,
       sides: options.sides,
       split: options.split,
