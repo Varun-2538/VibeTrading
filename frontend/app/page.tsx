@@ -388,7 +388,7 @@ export default function Landing() {
                 src="/product/panel-desktop.png"
                 width={1440}
                 height={900}
-                alt="The VibeTrading panel on desktop: a BTC chart with support and resistance levels drawn, W and M patterns marked, a rail listing each level with its test count, and the assistant beside the chart."
+                alt="The VibeTrading panel on desktop: Robinhood Chain's ETH/USDG and stock tokens in the watchlist, a SOL 15m chart with RSI and MACD, and the assistant marking the double tops it found in red - each labelled completed, with the neckline and the target it hit."
                 className="block h-auto w-full"
                 priority={false}
               />
@@ -396,7 +396,7 @@ export default function Landing() {
                 className="border-t px-4 py-2.5 font-mono text-[11px]"
                 style={{ borderColor: "var(--vt-line)", color: "var(--vt-ink-faint)" }}
               >
-                Desktop · BTC 1h · levels and patterns on
+                Desktop · SOL 15m · the assistant marks completed W/M patterns
               </figcaption>
             </figure>
             <figure
@@ -407,7 +407,7 @@ export default function Landing() {
                 src="/product/panel-phone.png"
                 width={390}
                 height={844}
-                alt="The same panel on a phone: the chart fills the screen, the timeframes sit under the symbol, and a bottom bar switches between chart, analysis and assistant."
+                alt="The same panel on a phone: the chart with RSI and MACD fills the screen, the timeframes sit under the symbol, and a bottom bar switches between chart, analysis and assistant."
                 className="block h-auto w-full"
               />
               <figcaption
