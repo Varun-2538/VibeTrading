@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useAccount } from "wagmi"
 import { AlertTriangle, Loader2, ShieldCheck } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -29,6 +30,8 @@ import {
   type PreflightResult,
 } from "@/lib/execution"
 import { UnauthorizedError, type Rule } from "@/lib/rules"
+import { useHasVault } from "@/lib/positions"
+import { openVault } from "@/lib/stocks"
 
 const DEFAULT_EXPECTANCY = 0.1
 const DEFAULT_DRAWDOWN = 25
@@ -76,6 +79,9 @@ export default function ArmSheet({
   const options = useMemo(() => (rule ? marketsForSymbol(rule.symbol) : []), [rule])
   const [picked, setPicked] = useState<Market | null>(null)
   const market: Market | null = picked && options.includes(picked) ? picked : (options[0] ?? null)
+  const { address } = useAccount()
+  const vaultMarketName: string | null = policy?.armed ? policy.market : market
+  const hasVault = useHasVault(open ? address : null, vaultMarketName)
 
   const load = useCallback(async () => {
     if (!rule) return
@@ -205,6 +211,25 @@ export default function ArmSheet({
         </SheetHeader>
 
         <div className="space-y-5 px-4 pb-8 pt-2">
+          {hasVault === false && vaultMarketName && (
+            <section className="space-y-2 rounded border border-amber-500/50 bg-amber-500/10 p-2">
+              <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-amber-200">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>
+                  You have no {vaultMarketName} vault yet.{" "}
+                  {policy?.armed ? "This rule is armed, but" : "You can arm this rule now, but"} nothing will
+                  trade until you deploy one and fund it - a signal before then is skipped, and no money moves.
+                </span>
+              </p>
+              <Button size="sm" className="h-7 w-full gap-1.5 text-xs" onClick={() => {
+                  onOpenChange(false)
+                  openVault(vaultMarketName)
+                }}
+              >
+                <ShieldCheck className="h-3.5 w-3.5" /> Deploy your {vaultMarketName} vault
+              </Button>
+            </section>
+          )}
           {market === null ? (
             <p className="rounded border border-border bg-secondary/40 p-2 text-[11px] leading-relaxed text-muted-foreground">
               {rule?.symbol} cannot be traded on-chain here. A vault needs a deep Uniswap pool and a
