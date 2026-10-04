@@ -42,6 +42,18 @@ def test_a_w_that_never_breaks_its_neckline_stops_being_one():
     assert [p for p in detect_double_patterns(candles, max_results=None) if p["kind"] == "W"] == []
 
 
+def test_a_w_that_breaks_but_never_reaches_its_target_expires():
+    # Breaks the neckline, stalls short of the arm's top for a hundred candles.
+    candles = _bars([(0, 104), (10, 110), (20, 100), (30, 106), (40, 101), (48, 107.5), (150, 107)])
+    assert [p for p in detect_double_patterns(candles, max_results=None) if p["kind"] == "W"] == []
+
+
+def test_a_w_that_reaches_its_target_in_time_stays():
+    candles = _bars([(0, 104), (10, 110), (20, 100), (30, 106), (40, 101), (52, 112), (150, 111)])
+    ws = [p for p in detect_double_patterns(candles, max_results=None) if p["kind"] == "W"]
+    assert ws and ws[0]["state"] == "confirmed"
+
+
 def test_the_target_is_the_top_of_the_first_arm():
     candles = _bars([(0, 104), (10, 110), (20, 100), (30, 106), (40, 101), (55, 112)])
     ws = [p for p in detect_double_patterns(candles, max_results=None) if p["kind"] == "W"]

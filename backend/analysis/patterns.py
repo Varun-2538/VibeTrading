@@ -103,9 +103,10 @@ TOL_REFERENCE_BARS = 20
 
 KINDS = ("W", "M")
 
-# The whole letter - from where the first arm starts to the second low - fits in
-# this many candles, on any timeframe. Wider, and it is a range, not a W.
-MAX_LETTER_BARS = 45
+# The whole pattern - from where the first arm starts until price reaches the
+# target - completes within this many candles, on any timeframe. One that has not
+# by then is invalidated and no longer reported; one still inside it is live.
+MAX_LETTER_BARS = 60
 # The first arm stands above the neckline by at least this share of the W's
 # height: the target is the top of that arm, and a target barely past the
 # neckline is no trade.
@@ -320,6 +321,16 @@ def _detect_one_kind(
             # or it is not this pattern: a W still "forming" a hundred candles
             # later is a range, and a break that late is a different move.
             if (break_at + 1 if broken else len(after)) > separation:
+                continue
+            # After the break, price must reach the target before the pattern's
+            # time runs out; until then it is live, after that it is void.
+            hit_at = None
+            if broken:
+                for j in range(second + 1 + break_at, len(candles)):
+                    if (float(candles[j]["high"]) >= p_lead) if is_w else (float(candles[j]["low"]) <= p_lead):
+                        hit_at = j
+                        break
+            if (hit_at if hit_at is not None else len(candles) - 1) - lead_at > MAX_LETTER_BARS:
                 continue
             distance = (p_neck - last_close) if is_w else (last_close - p_neck)
             moving_up = bool(after) and (
