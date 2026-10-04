@@ -8,6 +8,8 @@ import ChatPanel from "@/components/chat-panel"
 import AnalysisPanel from "@/components/analysis-panel"
 import AppHeader from "@/components/app-header"
 import Watchlist, { WATCHLIST } from "@/components/watchlist"
+import StockChart from "@/components/stock-chart"
+import { OPEN_VAULT_EVENT, fetchStockQuotes, isStock, stockFor } from "@/lib/stocks"
 import { Button } from "@/components/ui/button"
 import { BarChart3, CandlestickChart, Cpu, MessageSquare, Sparkles } from "lucide-react"
 import type { LiquidityData, Timeframe } from "@/lib/api"
@@ -78,6 +80,15 @@ export default function TradingDashboard() {
   const [isDraggingAnalysis, setIsDraggingAnalysis] = useState(false)
   const [region, setRegion] = useState<CompactRegion>("chart")
   const [currentSymbol, setCurrentSymbol] = useState("BTCUSDT")
+  // The last crypto pair picked. A stock replaces the chart, but the level and
+  // pattern analysis, the assistant and the rules read Binance and have never seen
+  // a stock, so they stay on this pair rather than failing on one they cannot read.
+  const [cryptoSymbol, setCryptoSymbol] = useState("BTCUSDT")
+  const selectSymbol = useCallback((symbol: string) => {
+    setCurrentSymbol(symbol)
+    if (!isStock(symbol)) setCryptoSymbol(symbol)
+  }, [])
+  const stock = stockFor(currentSymbol)
   // Lifted out of the chart so the strategy panel builds rules against the
   // timeframe the user is actually looking at.
   const [timeframe, setTimeframe] = useState<Timeframe>("1h")
@@ -104,6 +115,27 @@ export default function TradingDashboard() {
     () => subscribeTickers(WATCHLIST, (t) => setTickers((prev) => ({ ...prev, [t.symbol]: t }))),
     [],
   )
+  // Stock Tokens have no stream; their pools are polled once a minute.
+  const [stockTickers, setStockTickers] = useState<Record<string, Ticker>>({})
+  useEffect(() => {
+    let alive = true
+    const load = () =>
+      fetchStockQuotes()
+        .then((q) => alive && setStockTickers(q))
+        .catch(() => undefined)
+    void load()
+    const id = window.setInterval(load, 60_000)
+    return () => {
+      alive = false
+      window.clearInterval(id)
+    }
+  }, [])
+  // "Trade in vault" from a stock chart lands on the panel that holds the vault.
+  useEffect(() => {
+    const onOpenVault = () => setRegion("analysis")
+    window.addEventListener(OPEN_VAULT_EVENT, onOpenVault)
+    return () => window.removeEventListener(OPEN_VAULT_EVENT, onOpenVault)
+  }, [])
 
   const desktop = useMedia(DESKTOP)
   const wide = useMedia(WIDE)
@@ -121,7 +153,7 @@ export default function TradingDashboard() {
   const candlesInView = viewport
     ? Math.max(0, Math.round((viewport.to - viewport.from) / TIMEFRAME_MS[timeframe]) + 1)
     : null
-  const ticker = tickers[currentSymbol]
+  const ticker = tickers[cryptoSymbol]
 
   const clearMarks = useCallback(() => {
     setMarks([])
@@ -131,17 +163,17 @@ export default function TradingDashboard() {
   useEffect(() => {
     const onTrades = (event: Event) => {
       const detail = (event as CustomEvent<TradeMarksDetail>).detail
-      setCurrentSymbol(detail.symbol)
+      selectSymbol(detail.symbol)
       setTimeframe(detail.timeframe as Timeframe)
       setTradeMarks(detail)
       setRegion("chart")
     }
     window.addEventListener(TRADE_MARKS_EVENT, onTrades)
     return () => window.removeEventListener(TRADE_MARKS_EVENT, onTrades)
-  }, [])
+  }, [selectSymbol])
 
   const shownTradeMarks =
-    tradeMarks && tradeMarks.symbol === currentSymbol && tradeMarks.timeframe === timeframe
+    tradeMarks && tradeMarks.symbol === cryptoSymbol && tradeMarks.timeframe === timeframe
       ? (tradeMarks.marks as Mark[])
       : NO_MARKS
   const chartMarks = useMemo(
@@ -223,7 +255,14 @@ export default function TradingDashboard() {
       {/* Desktop top bar. The chart renders its toolbar into it. */}
       <div className="hidden shrink-0 px-2 pt-2 lg:block">
         <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-3 py-2">
-          <div ref={setToolbarEl} className="min-w-0 flex-1" />
+          {/* The crypto chart portals its toolbar here. While a stock is on
+              screen the stock chart carries its own, so this one steps aside. */}
+          <div ref={setToolbarEl} className={`min-w-0 flex-1 ${stock ? "hidden" : ""}`} />
+          {stock && (
+            <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+              {stock.symbol} · Robinhood Stock Token · Robinhood Chain
+            </span>
+          )}
           {candlesInView !== null && (
             <span className="hidden shrink-0 items-center gap-1.5 rounded bg-muted px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.06em] text-muted-foreground xl:flex">
               <Cpu className="h-3.5 w-3.5 text-primary/80" />
@@ -249,7 +288,12 @@ export default function TradingDashboard() {
         {/* Side rail, xl only: the watchlist, and the chart's pattern
             settings and level rail rendered here through portals. */}
         <aside className="hidden min-h-0 flex-col gap-2 overflow-y-auto xl:col-start-1 xl:row-span-2 xl:row-start-1 xl:flex">
-          <Watchlist tickers={tickers} selected={currentSymbol} onSelect={setCurrentSymbol} />
+          <Watchlist
+            tickers={tickers}
+            stockTickers={stockTickers}
+            selected={currentSymbol}
+            onSelect={selectSymbol}
+          />
           <section className="shrink-0 rounded-xl border border-border bg-card p-3">
             <h2 className="mb-3 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-primary/80">
               Detection parameters
@@ -265,8 +309,8 @@ export default function TradingDashboard() {
             loses its size and has to re-measure when it comes back. */}
         <div className="absolute inset-0 lg:relative lg:inset-auto lg:col-start-1 lg:row-start-1 lg:overflow-hidden lg:rounded-xl lg:border lg:border-border xl:col-start-2">
           <PriceChart
-            symbol={currentSymbol}
-            onSymbolChange={setCurrentSymbol}
+            symbol={cryptoSymbol}
+            onSymbolChange={selectSymbol}
             timeframe={timeframe}
             onTimeframeChange={setTimeframe}
             liquidityData={markedLevels}
@@ -279,6 +323,19 @@ export default function TradingDashboard() {
             changePct={ticker?.changePct}
             quoteVolume={ticker?.quoteVolume}
           />
+          {/* A stock covers the crypto chart rather than replacing it, so that one
+              keeps its size and its stream and is exactly as it was on return. */}
+          {stock && (
+            <div className="absolute inset-0 z-10">
+              <StockChart
+                stock={stock}
+                quote={stockTickers[stock.symbol]}
+                timeframe={timeframe}
+                onTimeframeChange={setTimeframe}
+                onSymbolChange={selectSymbol}
+              />
+            </div>
+          )}
         </div>
 
         {/* Analysis: a card under the chart at lg, a full-screen region below it. */}
@@ -297,7 +354,7 @@ export default function TradingDashboard() {
           >
             <div className="absolute left-1/2 top-1/2 h-1 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-border" />
           </div>
-          <AnalysisPanel symbol={currentSymbol} timeframe={timeframe} />
+          <AnalysisPanel symbol={cryptoSymbol} timeframe={timeframe} />
         </div>
 
         {/* Chat: a resizable card at lg, a full-screen region below it. */}
@@ -316,8 +373,8 @@ export default function TradingDashboard() {
           </div>
           <ChatPanel
             onClose={closeChat}
-            currentSymbol={currentSymbol}
-            onSymbolChange={setCurrentSymbol}
+            currentSymbol={cryptoSymbol}
+            onSymbolChange={selectSymbol}
             onMarkLevels={setMarkedLevels}
             timeframe={timeframe}
             viewport={viewport}
