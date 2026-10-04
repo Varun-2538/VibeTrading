@@ -318,10 +318,18 @@ export default function VaultSheet({
 
   async function setMode(mode: ExecutionMode) {
     if (!account) return
+    // Live sizes each trade from the vault's size, so it is read off the vault itself
+    // rather than asked for: the balance the owner deposited is the size they chose.
+    const vaultUsd = vault ? Number(vault.balance) / 1e6 : 0
+    const equity = vaultUsd > 0 ? vaultUsd : account.equity_usd
+    if (mode === "live" && equity <= 0) {
+      setError("Fund the vault first: live mode sizes each trade from what is in it.")
+      return
+    }
     setBusy("Mode")
     setError(null)
     try {
-      setAccount(await saveAccount({ ...toSettings(account), mode }))
+      setAccount(await saveAccount({ ...toSettings(account), equity_usd: equity, mode }))
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not change the mode")
     } finally {
