@@ -21,7 +21,7 @@ def kline(open_ms, step_ms, price=100.0):
 
 
 def test_depths_match_the_spec():
-    assert hs.HISTORY_DEPTH_DAYS == {"5m": 183, "15m": 365, "1h": 1095, "1d": None}
+    assert hs.HISTORY_DEPTH_DAYS == {"1m": 30, "5m": 183, "15m": 365, "1h": 1095, "1d": None}
     assert set(hs.TIMEFRAME_MS) == set(hs.HISTORY_DEPTH_DAYS)
     assert len(hs.PAIRS) == 9
 
@@ -39,7 +39,7 @@ def test_unlimited_depth_starts_at_zero():
 
 def test_unknown_timeframe_is_refused():
     with pytest.raises(hs.UnknownHistoryTimeframe):
-        hs.depth_start_ms("1m", NOW)
+        hs.depth_start_ms("4h", NOW)
 
 
 def test_parse_klines_coerces_and_keeps_only_closed_bars():

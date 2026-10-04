@@ -20,6 +20,7 @@ PAIRS: Tuple[str, ...] = (
 )
 
 TIMEFRAME_MS: Dict[str, int] = {
+    "1m": 60_000,
     "5m": 5 * 60_000,
     "15m": 15 * 60_000,
     "1h": 60 * 60_000,
@@ -30,6 +31,9 @@ TIMEFRAME_MS: Dict[str, int] = {
 # stays under ~30 minutes on the production e2-small; None keeps everything
 # Binance has.
 HISTORY_DEPTH_DAYS: Dict[str, Optional[int]] = {
+    # A month of minutes is ~43k bars, about the size of the 5m series, so a 1m
+    # replay costs what a 5m one does.
+    "1m": 30,
     "5m": 183,
     "15m": 365,
     "1h": 1095,

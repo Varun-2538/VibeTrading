@@ -130,7 +130,7 @@ class BacktestCreate(BaseModel):
     @model_validator(mode="after")
     def _timeframe_has_history(self) -> "BacktestCreate":
         if self.rule.timeframe not in BACKTEST_TIMEFRAMES:
-            raise ValueError("Backtests run on 5m, 15m, 1h or 1d")
+            raise ValueError("Backtests run on 1m, 5m, 15m, 1h or 1d")
         if self.tune:
             size = grid_size(self.grid, self.rule.params.agent)
             if size > MAX_COMBINATIONS:
