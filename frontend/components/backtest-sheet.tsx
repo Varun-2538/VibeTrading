@@ -414,7 +414,7 @@ export default function BacktestSheet({
         </SheetHeader>
 
         <div className="space-y-4 px-4 pb-6">
-          {!supported && <p className="text-xs text-muted-foreground">Backtests run on 5m, 15m, 1h and 1d charts.</p>}
+          {!supported && <p className="text-xs text-muted-foreground">Backtests run on 1m, 5m, 15m, 1h and 1d charts.</p>}
 
           {supported && job === null && !jobId && (
             <div className="space-y-3">

@@ -6,7 +6,7 @@ export type BacktestStatus = "queued" | "replaying" | "studying" | "tuning" | "d
 export type Neutral = "skip" | "long" | "short"
 
 export const ACTIVE_STATUSES: BacktestStatus[] = ["queued", "replaying", "studying", "tuning"]
-export const BACKTEST_TIMEFRAMES = ["5m", "15m", "1h", "1d"] as const
+export const BACKTEST_TIMEFRAMES = ["1m", "5m", "15m", "1h", "1d"] as const
 export const HEADLINE_HORIZON = 10
 
 export interface HorizonStudy {
