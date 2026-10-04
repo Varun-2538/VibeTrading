@@ -24,7 +24,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { Layers, SlidersHorizontal, Sparkles } from "lucide-react"
+import { Layers, ShieldCheck, SlidersHorizontal, Sparkles } from "lucide-react"
 import MarkOverlay from "@/components/mark-overlay"
 import PositionOverlay from "@/components/position-overlay"
 import { IndicatorBar, useChartIndicators, useIndicatorPanes } from "@/components/indicator-panes"
@@ -965,12 +965,6 @@ export default function PriceChart({
           </SelectContent>
         </Select>
 
-        {onRobinhood && (
-          <Button size="sm" className="h-8 text-xs" onClick={() => openVault("WETH/USDG")}>
-            Trade ETH in your vault
-          </Button>
-        )}
-
         <div className="flex items-baseline gap-2 font-mono">
           {spot !== undefined && (
             <span className="text-xl font-semibold tabular-nums tracking-tight text-primary">
@@ -1095,8 +1089,8 @@ export default function PriceChart({
           </Select>
 
           {onRobinhood && (
-            <Button size="sm" className="h-8 shrink-0 px-2 text-xs" onClick={() => openVault("WETH/USDG")}>
-              Vault
+            <Button size="sm" className="h-8 shrink-0 gap-1.5 text-xs" onClick={() => openVault("WETH/USDG")}>
+              <ShieldCheck className="h-3.5 w-3.5" /> Vault
             </Button>
           )}
           {spot !== undefined && (
@@ -1173,8 +1167,9 @@ export default function PriceChart({
                 <span className="font-mono text-[11px] text-muted-foreground">
                   {timeframe} · ETH price · trades in the WETH/USDG pool, from your vault
                 </span>
-                <Button size="sm" className="h-7 text-xs" onClick={() => openVault("WETH/USDG")}>
-                  Trade ETH in your vault
+                {/* The stock chart's button, so every Robinhood Chain asset offers its vault alike. */}
+                <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => openVault("WETH/USDG")}>
+                  <ShieldCheck className="h-3.5 w-3.5" /> Trade ETH in your vault
                 </Button>
               </>
             ) : (
