@@ -476,3 +476,101 @@ Backend 704 tests (was 618). Frontend and contracts unchanged.
 
 The vault UI — deploy, fund, grant, revoke, withdraw — and the vault venue adapter,
 which is the last thing between shadow and live. Then a week in shadow before either.
+
+---
+
+# Slice 6a — the live adapter
+
+The last thing between shadow and live. Two decisions were taken with the owner: a
+signer *interface* with an env-var key for testnet and KMS before mainnet, and the
+**public** Arbitrum RPC.
+
+## No new dependencies
+
+`eth_abi`, `eth_account`, `eth_utils` and `httpx` are already here — the first three as
+dependencies of the sign-in path, `httpx` as the candle service's client. So the
+adapter is a hand-written JSON-RPC client and a hand-written encoder, and `web3.py`
+never arrives.
+
+That is not only about the 256 MB the executor is capped at. A library whose job is to
+hide the encoding would also hide the part that matters: this module and
+`TradingVault.sol` have to agree exactly. `tests/test_execution_abi.py` parses the
+Solidity and compares every signature, every error selector, the `Position` struct's
+field count, and the two token addresses `markets.py` duplicates from
+`Addresses.sol`. A renamed function or a re-typed argument fails a test rather than
+reverting in production.
+
+## What the public RPC forced, and why it is better
+
+A public node rate-limits and occasionally drops requests, and here a dropped request
+means `VenueUnknown`, which parks an intent until reconciliation. Two things make it
+workable:
+
+**Reads retry; sends never.** `eth_call`, a nonce and a balance are idempotent, so a
+rate limit costs latency. `eth_sendRawTransaction` is sent exactly once.
+
+**We sign locally, so the transaction hash exists before the broadcast does.** A send
+that times out is therefore not a dead end — the hash can be asked about until the
+answer is definite. Without that, every timeout on a rate-limited node would strand a
+position; with it, most "cannot tell" becomes "here is what happened".
+
+`"already known"` and `"nonce too low"` are treated as *already broadcast* rather than
+as failures, because building a second transaction in response to either is precisely
+how an account spends twice.
+
+## The five steps, in this order
+
+1. **ask the vault for its floor** (`openFloor`) — our minimum-out cannot be looser
+   than the one the contract enforces, and cannot be tighter either, which would
+   refuse fills the owner already agreed to;
+2. **simulate** with `eth_estimateGas` — a revert here is a definite refusal, learned
+   before anything is signed, which is how most failures become `VenueRejected`;
+3. **sign**, which yields the hash;
+4. **broadcast once**;
+5. **read back** what happened: the qty from the vault's own position, and on the way
+   out the proceeds from the change in its stablecoin balance.
+
+Step 5 matters: the fill price is a fact about the pool, and inferring it from a quote
+would put a number in the audit trail that nothing on chain agrees with. The pool fee
+is already inside that price, so `fee_usd` is zero — charging it again would
+double-count what the report models once. Gas is priced through the ETH/USD feed;
+without a feed it reads as zero, and since an under-reported cost flatters a strategy
+the feed is configured by default rather than optional.
+
+## Where the vault address comes from
+
+`vaultOf(owner, asset)` on the factory, cached. Not stored on the policy: the factory
+is the one place that knows which contract belongs to an owner, and a stale address in
+our database would be a transaction sent to the wrong contract. An owner with no vault
+is a refusal, not a zero address.
+
+## The signer
+
+One protocol, one implementation. `LocalSigner` reads a key from the environment,
+never logs it, and will not put it in an error. A KMS signer implements the same
+protocol and is what should sign against mainnet.
+
+What limits the damage either way is the vault, not the signer: the key can swap
+inside a contract the owner controls, within caps they set, and has no path to
+withdraw. No key at all is a normal state — shadow needs none, and an executor without
+one idles rather than crash-looping on a machine that was only ever meant to run
+shadow.
+
+## Still off
+
+`mode: live` requires a signer, a factory address and a deployed vault, and the
+absence of any of them is a refusal rather than a downgrade to shadow. The global
+switch and every account are unchanged: off.
+
+Backend 762 tests, up from 708.
+
+## What is left before a live trade
+
+1. Deploy the factory to Arbitrum Sepolia and run `test/Fork.t.sol` against it — the
+   only test that can say the addresses are the contracts we believe they are.
+2. An executor key, and `EXECUTOR_ADDRESS` published so the panel can offer a grant.
+3. A week in shadow, reading entry drift and exit slippage out of
+   `GET /api/execution/positions/{id}`.
+4. The legal rewrite and the Play re-declaration, which are slice 6's other half and
+   are not optional.
+5. A KMS signer before mainnet.

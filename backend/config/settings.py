@@ -40,6 +40,24 @@ class Settings(BaseSettings):
     # key exists, and the panel refuses to offer a grant while it is.
     executor_address: str = ""
 
+    # The key itself. Empty is a normal state: shadow mode needs none, and an
+    # executor without one idles rather than refusing to start. What limits the
+    # damage if it leaks is the vault - it can swap inside a contract the owner
+    # controls, within their caps, and has no path to withdraw - not this variable.
+    # A KMS signer implements the same interface and is what should sign against
+    # mainnet; see services/execution/signer.py.
+    executor_private_key: str = ""
+
+    # Where the chain is, and which one. The public endpoint is the default because
+    # it needs no account; every read retries and every send is asked about by hash
+    # rather than retried, which is what makes a rate-limited node survivable.
+    arbitrum_rpc_url: str = "https://arb1.arbitrum.io/rpc"
+    arbitrum_chain_id: int = 42161
+    vault_factory_address: str = ""
+    # Chainlink ETH/USD, used only to price gas. Without it gas reads as zero, and an
+    # under-reported cost flatters a strategy.
+    eth_usd_feed: str = "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612"
+
     # App Config
     frontend_url: str = "http://localhost:3000"
     backend_port: int = 8000
