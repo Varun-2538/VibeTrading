@@ -38,6 +38,7 @@ from repositories.execution_repository import (
     ExecutionSettingsRepository,
 )
 from repositories.rule_repository import RuleRepository
+from services.execution.markets import CHAINS, factory_address
 from services.execution.preflight import check
 from services.trade_plan import PARITY_VERSION
 
@@ -83,6 +84,25 @@ def _account(owner_key: str, row: Optional[Dict[str, Any]], globally_enabled: bo
     # browser: one source of truth, so a redeployed executor cannot leave owners
     # granting permission to an address that no longer signs anything.
     base["operator_address"] = settings.executor_address or None
+    # Where vaults can live, from the same reasoning: the factory a browser deploys
+    # through is the one the executor resolves vaults from, so it is published here
+    # rather than built into the frontend. A chain with no factory is listed with
+    # null, so the panel can say it is not open yet instead of hiding it.
+    base["chains"] = [
+        {
+            "key": info.key,
+            "chain_id": info.chain_id,
+            "name": info.name,
+            "venue": info.venue,
+            "stable": info.stable,
+            "stable_symbol": info.stable_symbol,
+            "factory": factory_address(info) or None,
+            "markets": dict(info.markets),
+            "stock_markets": list(info.stock_markets),
+            "explorer": info.explorer,
+        }
+        for info in CHAINS
+    ]
     return base
 
 

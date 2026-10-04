@@ -167,25 +167,45 @@ class TestRevertReasons:
         assert "custom error" in revert_reason("0xdeadbeef")
 
 
+def _address_book():
+    """contracts/src/Addresses.sol, as {library: {constant: address}}."""
+    source = (CONTRACTS / "Addresses.sol").read_text(encoding="utf-8")
+    book = {}
+    for name, body in re.findall(r"library (\w+) \{(.*?)^\}", source, flags=re.S | re.M):
+        book[name] = dict(re.findall(r"address internal constant (\w+) = (0x[0-9a-fA-F]{40});", body))
+        chain_id = re.search(r"CHAIN_ID = (\d+);", body)
+        book[name]["CHAIN_ID"] = int(chain_id.group(1)) if chain_id else None
+    assert book, "no libraries parsed; the regex has drifted from the source"
+    return book
+
+
 def test_the_market_addresses_match_the_contracts_address_book():
     """
-    `markets.py` duplicates two addresses from Addresses.sol, which is the authority.
-    An address that drifted here would be a transaction sent to the wrong token, and
-    nothing else in the suite would notice.
+    `markets.py` duplicates addresses from Addresses.sol, which is the authority. An
+    address that drifted here would be a transaction sent to the wrong token, or a
+    gas price read off the wrong feed, and nothing else in the suite would notice.
     """
-    from services.execution.markets import MARKET_ASSETS, USDC
+    from services.execution.markets import ARBITRUM, ROBINHOOD
 
-    source = (CONTRACTS / "Addresses.sol").read_text(encoding="utf-8")
-    literals = dict(re.findall(r"address internal constant (\w+) = (0x[0-9a-fA-F]{40});", source))
-    assert literals, "no addresses parsed; the regex has drifted from the source"
-    assert MARKET_ASSETS["WETH/USDC"] == literals["WETH"]
-    assert MARKET_ASSETS["WBTC/USDC"] == literals["WBTC"]
-    assert USDC == literals["USDC"]
+    book = _address_book()
+    arb, rh = book["ArbitrumOne"], book["RobinhoodChain"]
+
+    assert ARBITRUM.chain_id == arb["CHAIN_ID"]
+    assert ARBITRUM.stable == arb["USDC"]
+    assert ARBITRUM.eth_usd_feed == arb["ETH_USD"]
+    assert ARBITRUM.markets == {"WETH/USDC": arb["WETH"], "WBTC/USDC": arb["WBTC"]}
+
+    assert ROBINHOOD.chain_id == rh["CHAIN_ID"]
+    assert ROBINHOOD.stable == rh["USDG"]
+    assert ROBINHOOD.eth_usd_feed == rh["ETH_USD"]
+    stocks = ("NVDA", "QQQ", "TSLA", "SPY", "AAPL")
+    assert ROBINHOOD.markets == {"WETH/USDG": rh["WETH"], **{f"{s}/USDG": rh[s] for s in stocks}}
+    assert set(ROBINHOOD.stock_markets) == {f"{s}/USDG" for s in stocks}
 
 
-def test_the_default_gas_feed_is_the_one_in_the_address_book():
-    from config import settings
+def test_every_chain_in_the_address_book_is_one_we_route_to():
+    """A chain added to the contracts but not here would be deployable and unreachable."""
+    from services.execution.markets import CHAINS
 
-    source = (CONTRACTS / "Addresses.sol").read_text(encoding="utf-8")
-    literals = dict(re.findall(r"address internal constant (\w+) = (0x[0-9a-fA-F]{40});", source))
-    assert settings.eth_usd_feed == literals["ETH_USD"]
+    chains = {v["CHAIN_ID"] for v in _address_book().values() if v["CHAIN_ID"] is not None}
+    assert {c.chain_id for c in CHAINS} == chains

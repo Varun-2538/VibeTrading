@@ -12,6 +12,8 @@ import {MockRouter} from "./mocks/MockRouter.sol";
 interface Vm {
     function warp(uint256) external;
     function prank(address) external;
+    function startPrank(address) external;
+    function stopPrank() external;
     function expectRevert(bytes4) external;
     function expectRevert() external;
 }
@@ -56,7 +58,7 @@ contract TradingVaultTest is Asserts {
         router.setPrice(PRICE);
 
         vault = new TradingVault(
-            OWNER, address(usdc), address(weth), address(router), address(oracle), 500, DISCLOSURE, TVL_CAP
+            OWNER, address(usdc), address(weth), address(router), address(oracle), 500, DISCLOSURE, TVL_CAP, 26 hours
         );
 
         // The router needs stock of both sides to fill a swap.
@@ -274,6 +276,50 @@ contract TradingVaultTest is Asserts {
         vault.openPosition(100e6, 1900e8, 2200e8, uint64(block.timestamp + 5 days), 0.0494e18);
     }
 
+    /// A stock market's feed is silent from Friday's close to Sunday night. Its vault
+    /// is built with a longer age so a weekend does not freeze it - and still refuses
+    /// a feed that has been silent longer than any weekend.
+    function test_a_stock_hours_vault_rides_out_a_weekend_and_no_longer() public {
+        TradingVault stocks = new TradingVault(
+            OWNER, address(usdc), address(weth), address(router), address(oracle), 500, DISCLOSURE, TVL_CAP, 96 hours
+        );
+        usdc.mint(address(stocks), 200e6);
+        vm.startPrank(OWNER);
+        stocks.setOperator(OPERATOR, uint64(block.timestamp + 30 days));
+        stocks.setCaps(200e6, 5, 100, 0.2e6);
+        vm.stopPrank();
+
+        // Sixty hours of silence: a weekend. The crypto vault refuses, this one does not.
+        vm.warp(block.timestamp + 60 hours);
+        vm.prank(OPERATOR);
+        vm.expectRevert(TradingVault.StaleOracle.selector);
+        vault.openPosition(100e6, 1900e8, 2200e8, uint64(block.timestamp + 5 days), 0.0494e18);
+
+        uint256 floor = stocks.openFloor(100e6);
+        vm.prank(OPERATOR);
+        stocks.openPosition(100e6, 1900e8, 2200e8, uint64(block.timestamp + 5 days), floor);
+        (bool open,,,,,,,) = stocks.position();
+        isTrue(open, "opened on a weekend-old price");
+
+        // Past its own limit, it authorises nothing either - not even a stranger's exit.
+        vm.warp(block.timestamp + 37 hours);
+        vm.prank(STRANGER);
+        vm.expectRevert(TradingVault.StaleOracle.selector);
+        stocks.closeIfStopped();
+    }
+
+    function test_an_oracle_age_outside_the_ceiling_cannot_be_built() public {
+        vm.expectRevert(TradingVault.BadOracleAge.selector);
+        new TradingVault(
+            OWNER, address(usdc), address(weth), address(router), address(oracle), 500, DISCLOSURE, TVL_CAP, 0
+        );
+        uint256 tooLoose = 4 days + 1;
+        vm.expectRevert(TradingVault.BadOracleAge.selector);
+        new TradingVault(
+            OWNER, address(usdc), address(weth), address(router), address(oracle), 500, DISCLOSURE, TVL_CAP, tooLoose
+        );
+    }
+
     function test_a_fill_worse_than_the_oracle_allows_is_refused() public {
         // The router hands back 3% less than fair; the owner allowed 1%.
         uint256 minOut = vault.openFloor(100e6);
@@ -336,7 +382,8 @@ contract VaultFactoryTest is Asserts {
         router = new MockRouter();
 
         VaultFactory.Market[] memory markets = new VaultFactory.Market[](1);
-        markets[0] = VaultFactory.Market({asset: address(weth), oracle: address(oracle), poolFee: 500});
+        markets[0] =
+            VaultFactory.Market({asset: address(weth), oracle: address(oracle), poolFee: 500, maxOracleAge: 26 hours});
         factory = new VaultFactory(address(usdc), address(router), markets);
     }
 
@@ -348,6 +395,7 @@ contract VaultFactoryTest is Asserts {
         eq(uint256(uint160(address(v.oracle()))), uint256(uint160(address(oracle))), "oracle is fixed");
         eq(v.tvlCap(), factory.TVL_CAP(), "the cap is the factory's constant");
         eq(factory.TVL_CAP(), 500e6, "and it is five hundred dollars until an audit");
+        eq(v.maxOracleAge(), 26 hours, "the market's oracle age reaches the vault");
     }
 
     function test_an_unknown_asset_is_refused() public {

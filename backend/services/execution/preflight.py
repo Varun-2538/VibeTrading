@@ -27,6 +27,7 @@ from models.execution_schemas import (
     DexTradeActionConfig,
     PreflightThresholds,
 )
+from services.execution.markets import base_of, trades_symbol
 from services.history_service import TIMEFRAME_MS
 from services.trade_plan import BEHAVIOURAL_FIELDS, PARITY_VERSION
 
@@ -84,6 +85,11 @@ def check(
         reasons.append("That backtest was not run for this rule.")
     if (meta.get("symbol") or "").upper() != (rule["symbol"] or "").upper():
         reasons.append(f"The backtest is on {meta.get('symbol')}, the rule is on {rule['symbol']}.")
+    if not trades_symbol(action.market, rule["symbol"]):
+        reasons.append(
+            f"This rule watches {rule['symbol']}, and {action.market} holds {base_of(action.market)}. "
+            "A rule can only trade the coin it watches."
+        )
     if meta.get("timeframe") != rule["timeframe"]:
         reasons.append(f"The backtest is on {meta.get('timeframe')}, the rule is on {rule['timeframe']}.")
     if (meta.get("params") or {}) != (rule["params"] or {}):

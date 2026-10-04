@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Loader2, ShieldCheck, Wallet } from "lucide-react"
-import { useAccount, usePublicClient, useWriteContract } from "wagmi"
-import type { Address } from "viem"
+import { useAccount, useChainId, usePublicClient, useSwitchChain, useWriteContract } from "wagmi"
+import type { Address, Hash } from "viem"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -31,6 +31,7 @@ import {
   VAULT_ABI,
   VAULT_FACTORY,
   VAULT_MARKETS,
+  vaultMarket,
   disclosureHash,
   disclosureText,
   formatFeedPrice,
@@ -43,6 +44,12 @@ import {
 
 const GRANT_DAYS = 30
 const ZERO = "0x0000000000000000000000000000000000000000"
+// What "Set caps" writes besides the per-trade ceiling the owner types. Five trades a
+// day, half a percent of slippage, and a $1 bounty to a stranger who closes a stop -
+// enough to be worth their gas on an L2, and inside the vault's own $2 ceiling.
+const DEFAULT_TRADES_PER_DAY = 5
+const DEFAULT_SLIPPAGE_BPS = 50
+const DEFAULT_BOUNTY = 1_000_000n
 
 interface VaultView {
   address: Address
@@ -75,25 +82,35 @@ export default function VaultSheet({
   onOpenChange: (open: boolean) => void
 }) {
   const { address } = useAccount()
-  const client = usePublicClient()
+  const walletChainId = useChainId()
+  const { switchChainAsync } = useSwitchChain()
   const { writeContractAsync, isPending: writing } = useWriteContract()
 
   const [market, setMarket] = useState(VAULT_MARKETS[0].market)
+  const chosen = vaultMarket(market) ?? VAULT_MARKETS[0]
+  // Reads go to the market's own chain whatever the wallet is on, so the panel can
+  // show a Robinhood vault while the wallet still sits on Arbitrum.
+  const client = usePublicClient({ chainId: chosen.chainId })
   const [vault, setVault] = useState<VaultView | null>(null)
   const [account, setAccount] = useState<ExecutionAccount | null>(null)
   const [health, setHealth] = useState<ExecutionHealth | null>(null)
   const [positions, setPositions] = useState<ExecutionPosition[]>([])
-  const [amount, setAmount] = useState("100")
+  const [amount, setAmount] = useState("20")
+  const [perTrade, setPerTrade] = useState("20")
   const [accepted, setAccepted] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
 
-  const asset = useMemo(
-    () => VAULT_MARKETS.find((m) => m.market === market)?.asset as Address,
-    [market],
+  const asset = chosen.asset
+  const chainInfo = account?.chains?.find((c) => c.key === chosen.chainKey) ?? null
+  // The server's address is the one the executor resolves vaults from. The build-time
+  // variable is only a fallback for Arbitrum, for a backend that predates /account
+  // publishing chains.
+  const factory = useMemo(
+    () => (chainInfo?.factory ?? (chosen.chainKey === "arbitrum" ? VAULT_FACTORY : "")) as Address | "",
+    [chainInfo, chosen.chainKey],
   )
-  const factory = VAULT_FACTORY as Address | ""
 
   const loadVault = useCallback(async () => {
     if (!client || !address || !factory) return
@@ -155,17 +172,38 @@ export default function VaultSheet({
 
   useEffect(() => {
     if (!open) return
-    void loadVault()
     void loadServer()
-  }, [open, loadVault, loadServer])
+  }, [open, loadServer])
+
+  useEffect(() => {
+    if (!open) return
+    setVault(null)
+    void loadVault()
+  }, [open, loadVault])
+
+  /**
+   * Send one transaction on the market's chain and wait for it to be mined.
+   *
+   * Waiting is not politeness: a deposit sent before its approve has landed reverts
+   * on the allowance, and a panel that said "sent" for both would be wrong about one.
+   */
+  async function tx(request: Parameters<typeof writeContractAsync>[0]): Promise<void> {
+    const hash: Hash = await writeContractAsync({ ...request, chainId: chosen.chainId } as typeof request)
+    const receipt = await client!.waitForTransactionReceipt({ hash })
+    if (receipt.status !== "success") throw new Error(`The transaction reverted (${hash.slice(0, 10)}…)`)
+  }
 
   async function send(label: string, run: () => Promise<unknown>) {
     setBusy(label)
     setError(null)
     setNote(null)
     try {
+      if (walletChainId !== chosen.chainId) {
+        // The wallet asks the owner to switch; nothing is sent on the wrong chain.
+        await switchChainAsync({ chainId: chosen.chainId })
+      }
       await run()
-      setNote(`${label} sent. It will show here once the chain confirms it.`)
+      setNote(`${label} confirmed on ${chosen.chainName}.`)
       await loadVault()
     } catch (err) {
       setError(err instanceof Error ? err.message.split("\n")[0] : `${label} failed`)
@@ -176,7 +214,7 @@ export default function VaultSheet({
 
   const deploy = () =>
     send("Deploy", () =>
-      writeContractAsync({
+      tx({
         address: factory as Address,
         abi: FACTORY_ABI,
         functionName: "deploy",
@@ -196,13 +234,13 @@ export default function VaultSheet({
         abi: VAULT_ABI,
         functionName: "stable",
       })) as Address
-      await writeContractAsync({
+      await tx({
         address: stable,
         abi: ERC20_ABI,
         functionName: "approve",
         args: [vault.address, value],
       })
-      await writeContractAsync({
+      await tx({
         address: vault.address,
         abi: VAULT_ABI,
         functionName: "deposit",
@@ -219,7 +257,7 @@ export default function VaultSheet({
       return
     }
     return send("Grant", () =>
-      writeContractAsync({
+      tx({
         address: vault!.address,
         abi: VAULT_ABI,
         functionName: "setOperator",
@@ -233,7 +271,7 @@ export default function VaultSheet({
 
   const revoke = () =>
     send("Revoke", () =>
-      writeContractAsync({ address: vault!.address, abi: VAULT_ABI, functionName: "revokeOperator" }),
+      tx({ address: vault!.address, abi: VAULT_ABI, functionName: "revokeOperator" }),
     )
 
   const withdrawAll = () =>
@@ -243,13 +281,34 @@ export default function VaultSheet({
         abi: VAULT_ABI,
         functionName: "stable",
       })) as Address
-      await writeContractAsync({
+      await tx({
         address: vault!.address,
         abi: VAULT_ABI,
         functionName: "withdraw",
         args: [stable, vault!.balance, address as Address],
       })
     })
+
+  /**
+   * The vault's own ceilings. A new vault's per-trade maximum is zero, so until the
+   * owner sets one every open reverts - deliberately: a vault funded but never capped
+   * cannot be traded by anyone.
+   */
+  const setCaps = () => {
+    const max = parseUsdc(perTrade)
+    if (!vault || max === null || max <= 0n) {
+      setError("Enter a per-trade maximum in dollars.")
+      return
+    }
+    return send("Caps", () =>
+      tx({
+        address: vault.address,
+        abi: VAULT_ABI,
+        functionName: "setCaps",
+        args: [max, DEFAULT_TRADES_PER_DAY, DEFAULT_SLIPPAGE_BPS, DEFAULT_BOUNTY],
+      }),
+    )
+  }
 
   async function setMode(mode: ExecutionMode) {
     if (!account) return
@@ -302,26 +361,56 @@ export default function VaultSheet({
         <div className="space-y-5 px-4 pb-8 pt-2">
           {!factory && (
             <p className="rounded border border-border bg-secondary/40 p-2 text-[11px] leading-relaxed text-muted-foreground">
-              No vault factory is configured for this environment yet, so there is nothing to deploy against.
-              The contract is in <span className="font-mono">contracts/</span> and goes to a testnet first.
+              Vaults are not open on {chosen.chainName} yet: no factory is deployed there, so there is
+              nothing to deploy against.
             </p>
           )}
 
           <section className="space-y-2">
             <span className="text-[11px] text-muted-foreground">Market</span>
-            <div className="flex gap-1.5">
-              {VAULT_MARKETS.map((m) => (
+            <div className="grid grid-cols-3 gap-1.5">
+              {VAULT_MARKETS.filter((m) => !m.stock).map((m) => (
                 <Button
                   key={m.market}
                   size="sm"
                   variant={market === m.market ? "default" : "outline"}
-                  className="h-7 flex-1 text-xs"
+                  className="h-auto flex-col gap-0 py-1 text-xs"
+                  onClick={() => setMarket(m.market)}
+                >
+                  <span>{m.label}</span>
+                  <span className="text-[9px] font-normal opacity-70">{m.chainName}</span>
+                </Button>
+              ))}
+            </div>
+            <span className="block pt-1 text-[11px] text-muted-foreground">Stocks · Robinhood Chain, in USDG</span>
+            <div className="grid grid-cols-5 gap-1.5">
+              {VAULT_MARKETS.filter((m) => m.stock).map((m) => (
+                <Button
+                  key={m.market}
+                  size="sm"
+                  variant={market === m.market ? "default" : "outline"}
+                  className="h-7 text-xs"
                   onClick={() => setMarket(m.market)}
                 >
                   {m.label}
                 </Button>
               ))}
             </div>
+            {chosen.stock && (
+              <p className="rounded border border-border bg-secondary/40 p-2 text-[10px] leading-relaxed text-muted-foreground">
+                {chosen.label} is a Robinhood Stock Token. Its pool trades around the clock, but its Chainlink
+                price follows the US market and is silent from Friday&apos;s close to Sunday night. Over a
+                weekend the vault prices every swap against the last market price: a move larger than your
+                slippage makes a swap refuse rather than fill badly, and a stop cannot fire until the market
+                reopens. Stock rules cannot be armed yet - signals are read from exchange candles, and no
+                exchange we read lists stocks - so a stock vault is traded by hand for now.
+              </p>
+            )}
+            <p className="text-[10px] leading-relaxed text-muted-foreground">
+              {chosen.chainName}, held in {chosen.stable}
+              {chosen.chainKey === "robinhood" ? ", the Paxos dollar native to Robinhood Chain" : ""}. Your
+              wallet is asked to switch networks before anything is sent.
+            </p>
             <p className="text-[10px] leading-relaxed text-muted-foreground">
               One vault per market, on purpose: a vault holding one asset is small enough to read end to
               end, and a position never competes with another for the same balance.
@@ -360,9 +449,20 @@ export default function VaultSheet({
               <section className="space-y-1.5">
                 <div className="flex items-baseline justify-between">
                   <span className="text-[11px] text-muted-foreground">Vault</span>
-                  <span className="font-mono text-[10px] text-muted-foreground">
-                    {vault.address.slice(0, 6)}…{vault.address.slice(-4)}
-                  </span>
+                  {chainInfo?.explorer ? (
+                    <a
+                      href={`${chainInfo.explorer}/address/${vault.address}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-mono text-[10px] text-muted-foreground underline"
+                    >
+                      {vault.address.slice(0, 6)}…{vault.address.slice(-4)}
+                    </a>
+                  ) : (
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      {vault.address.slice(0, 6)}…{vault.address.slice(-4)}
+                    </span>
+                  )}
                 </div>
                 <table className="w-full text-[11px]">
                   <tbody className="font-mono">
@@ -395,6 +495,23 @@ export default function VaultSheet({
                     Withdraw all
                   </Button>
                 </div>
+                <div className="flex gap-1.5">
+                  <Input
+                    value={perTrade}
+                    onChange={(e) => setPerTrade(e.target.value)}
+                    className="h-7 px-2 font-mono text-xs"
+                    inputMode="decimal"
+                    aria-label="Maximum per trade, in dollars"
+                  />
+                  <Button size="sm" variant="outline" className="h-7 shrink-0 text-xs" disabled={busy !== null} onClick={setCaps}>
+                    Set max per trade
+                  </Button>
+                </div>
+                {vault.maxNotional === 0n && (
+                  <p className="text-[10px] leading-relaxed text-destructive">
+                    The per-trade maximum is zero, so nothing can open in this vault until you set one.
+                  </p>
+                )}
                 <div className="flex gap-1.5">
                   {grantOn ? (
                     <Button size="sm" variant="outline" className="h-7 flex-1 text-xs" disabled={busy !== null} onClick={revoke}>

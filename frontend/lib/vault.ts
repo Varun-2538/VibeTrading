@@ -13,7 +13,11 @@
  */
 import { keccak256, parseAbi, stringToHex, type Address } from "viem"
 
-/** Deployed per environment; absent until the factory is deployed on a chain. */
+/**
+ * A fallback for Arbitrum One only. The factory addresses that count are the ones
+ * GET /api/execution/account publishes per chain, because those are the ones the
+ * executor resolves vaults from.
+ */
 export const VAULT_FACTORY = (process.env.NEXT_PUBLIC_VAULT_FACTORY ?? "") as Address | ""
 
 export const USDC_DECIMALS = 6
@@ -88,17 +92,83 @@ export const ERC20_ABI = parseAbi([
   "function approve(address spender, uint256 amount) returns (bool)",
 ])
 
-/** Markets a vault can be deployed for, mirroring VaultFactory's fixed list. */
-export const VAULT_MARKETS: { market: string; label: string; asset: Address }[] = [
-  { market: "WETH/USDC", label: "ETH", asset: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1" },
-  { market: "WBTC/USDC", label: "BTC", asset: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f" },
+export const ARBITRUM_ONE_ID = 42161
+export const ROBINHOOD_CHAIN_ID = 4663
+
+export interface VaultMarket {
+  market: string
+  label: string
+  chainId: number
+  chainKey: "arbitrum" | "robinhood"
+  chainName: string
+  stable: string
+  asset: Address
+  /** A Robinhood Stock Token, whose price feed follows US market hours. */
+  stock?: boolean
+}
+
+const robinhoodStock = (symbol: string, asset: Address): VaultMarket => ({
+  market: `${symbol}/USDG`,
+  label: symbol,
+  chainId: ROBINHOOD_CHAIN_ID,
+  chainKey: "robinhood",
+  chainName: "Robinhood Chain",
+  stable: "USDG",
+  asset,
+  stock: true,
+})
+
+/**
+ * Markets a vault can be deployed for, mirroring each chain's VaultFactory list.
+ * Robinhood Chain first: its dollar is USDG and its ETH pool is the deepest tier we
+ * route to. The same addresses are pinned on the server by a test against
+ * contracts/src/Addresses.sol, and the server publishes them again on /account.
+ */
+export const VAULT_MARKETS: VaultMarket[] = [
+  {
+    market: "WETH/USDG",
+    label: "ETH · USDG",
+    chainId: ROBINHOOD_CHAIN_ID,
+    chainKey: "robinhood",
+    chainName: "Robinhood Chain",
+    stable: "USDG",
+    asset: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+  },
+  {
+    market: "WETH/USDC",
+    label: "ETH · USDC",
+    chainId: ARBITRUM_ONE_ID,
+    chainKey: "arbitrum",
+    chainName: "Arbitrum One",
+    stable: "USDC",
+    asset: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+  },
+  {
+    market: "WBTC/USDC",
+    label: "BTC · USDC",
+    chainId: ARBITRUM_ONE_ID,
+    chainKey: "arbitrum",
+    chainName: "Arbitrum One",
+    stable: "USDC",
+    asset: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f",
+  },
+  // Robinhood Stock Tokens, each against USDG on its deepest Uniswap pool.
+  robinhoodStock("NVDA", "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC"),
+  robinhoodStock("TSLA", "0x322F0929c4625eD5bAd873c95208D54E1c003b2d"),
+  robinhoodStock("AAPL", "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9"),
+  robinhoodStock("SPY", "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C"),
+  robinhoodStock("QQQ", "0xD5f3879160bc7c32ebb4dC785F8a4F505888de68"),
 ]
+
+export function vaultMarket(market: string): VaultMarket | null {
+  return VAULT_MARKETS.find((m) => m.market === market) ?? null
+}
 
 export function assetForMarket(market: string): Address | null {
   return VAULT_MARKETS.find((m) => m.market === market)?.asset ?? null
 }
 
-/** USDC has six decimals, and a wallet balance is a bigint. */
+/** USDC and USDG both have six decimals, and a wallet balance is a bigint. */
 export function formatUsdc(value: bigint | null | undefined): string {
   if (value === null || value === undefined) return "—"
   const whole = value / 1_000_000n

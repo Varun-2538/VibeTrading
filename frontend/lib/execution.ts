@@ -27,6 +27,25 @@ export interface ExecutionAccount {
   parity_version: number
   /** The address a vault owner grants to. Null until an executor key exists. */
   operator_address: string | null
+  /** Where vaults can live, published by the server. Absent from an older backend. */
+  chains?: ExecutionChain[]
+}
+
+/** One chain vaults can be deployed on, as GET /account publishes it. */
+export interface ExecutionChain {
+  key: "arbitrum" | "robinhood"
+  chain_id: number
+  name: string
+  venue: string
+  stable: string
+  stable_symbol: string
+  /** Null until the factory is deployed on this chain. */
+  factory: string | null
+  /** Market name to the token a position is held in. */
+  markets: Record<string, string>
+  /** Markets whose feed follows US market hours: vaultable, not yet armable. */
+  stock_markets?: string[]
+  explorer: string
 }
 
 export interface AccountSettings {
@@ -97,21 +116,34 @@ export interface ExecutionHealth {
   open_positions: number
 }
 
-export const MARKETS = ["WETH/USDC", "WBTC/USDC"] as const
+export const MARKETS = ["WETH/USDC", "WBTC/USDC", "WETH/USDG"] as const
 export type Market = (typeof MARKETS)[number]
 
+/** Which chain a market is on. The quote token decides: USDC is Arbitrum One's, USDG Robinhood Chain's. */
+export const MARKET_CHAIN: Record<Market, { key: ExecutionChain["key"]; name: string; stable: string }> = {
+  "WETH/USDC": { key: "arbitrum", name: "Arbitrum One", stable: "USDC" },
+  "WBTC/USDC": { key: "arbitrum", name: "Arbitrum One", stable: "USDC" },
+  "WETH/USDG": { key: "robinhood", name: "Robinhood Chain", stable: "USDG" },
+}
+
 /**
- * The market a rule would trade in, from the symbol it watches.
+ * Every market a rule could trade in, from the symbol it watches - one per chain
+ * that has a pool for it, Robinhood Chain first where it has one.
  *
- * Null for everything else, and that is most of the pairs the app charts. A vault
- * needs a deep Uniswap pool and a Chainlink feed, and only two of the nine have both
- * - so a rule on SOL can alert all it likes and can never be armed to trade.
+ * Empty for everything else, and that is most of the pairs the app charts. A vault
+ * needs a deep Uniswap pool and a Chainlink feed, and only two of the nine coins have
+ * both - so a rule on SOL can alert all it likes and can never be armed to trade.
  */
-export function marketForSymbol(symbol: string): Market | null {
+export function marketsForSymbol(symbol: string): Market[] {
   const upper = (symbol || "").toUpperCase()
-  if (upper.startsWith("ETH")) return "WETH/USDC"
-  if (upper.startsWith("BTC")) return "WBTC/USDC"
-  return null
+  if (upper.startsWith("ETH")) return ["WETH/USDG", "WETH/USDC"]
+  if (upper.startsWith("BTC")) return ["WBTC/USDC"]
+  return []
+}
+
+/** The first market for a symbol, or null when it has none. */
+export function marketForSymbol(symbol: string): Market | null {
+  return marketsForSymbol(symbol)[0] ?? null
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {

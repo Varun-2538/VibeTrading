@@ -59,7 +59,7 @@ import {
 } from "@/lib/rules"
 import { useSession, type SessionStatus } from "@/hooks/use-session"
 import { useStrategySocket } from "@/hooks/use-strategy-socket"
-import { ARBITRUM_NAME, shortAddress } from "@/lib/wallet"
+import { ARBITRUM_NAME, SUPPORTED_NETWORKS, shortAddress } from "@/lib/wallet"
 import { cn } from "@/lib/utils"
 import BacktestSheet from "@/components/backtest-sheet"
 import VaultSheet from "@/components/vault-sheet"
@@ -112,13 +112,13 @@ function SignInGate({
   const copy = {
     disconnected: {
       title: "Connect a wallet to build strategy rules",
-      body: `Your rules and the alerts they fire are private to your address. Connect an ${ARBITRUM_NAME} wallet to begin.`,
+      body: `Your rules and the alerts they fire are private to your address. Connect a wallet on ${SUPPORTED_NETWORKS} to begin.`,
       label: "Connect wallet",
       action: onConnect,
     },
     "wrong-chain": {
       title: `Switch to ${ARBITRUM_NAME}`,
-      body: `Sign-in is tied to ${ARBITRUM_NAME}. Switch networks in your wallet to continue.`,
+      body: `This app runs on ${SUPPORTED_NETWORKS}. Switch networks in your wallet to continue.`,
       label: `Switch to ${ARBITRUM_NAME}`,
       action: onSwitchChain,
     },
