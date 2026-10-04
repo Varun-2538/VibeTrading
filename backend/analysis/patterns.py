@@ -103,6 +103,14 @@ TOL_REFERENCE_BARS = 20
 
 KINDS = ("W", "M")
 
+# The whole letter - from where the first arm starts to the second low - fits in
+# this many candles, on any timeframe. Wider, and it is a range, not a W.
+MAX_LETTER_BARS = 45
+# The first arm stands above the neckline by at least this share of the W's
+# height: the target is the top of that arm, and a target barely past the
+# neckline is no trade.
+MIN_ARM_EXCESS = 0.5
+
 # Which prices the shape is measured on. Wicks are the classic definition and
 # the default; closes ignore spikes. Note that neither changes how a break is
 # judged - that is always a close beyond the neckline.
@@ -248,7 +256,7 @@ def _detect_one_kind(
             separation = second - first
             if separation < min_bars:
                 continue
-            if separation > preset.max_bars:
+            if separation > min(preset.max_bars, MAX_LETTER_BARS - min_bars):
                 break  # shoulders are ordered, so everything later is further
 
             between = [n for n in necks if first < n < second]
@@ -292,18 +300,27 @@ def _detect_one_kind(
             # The first arm is the tallest stroke: price falls into the first low
             # from above the neckline. A low reached by rising into it from
             # below has no left arm, and two lows after a rally are not a W.
-            lead_from = max(0, first - separation)
+            lead_from = max(0, first - min(separation, MAX_LETTER_BARS - separation))
             lead = neck_prices[lead_from:first]
             if not lead:
                 continue
             lead_at = lead_from + ((max if is_w else min)(range(len(lead)), key=lambda i: lead[i]))
             p_lead = neck_prices[lead_at]
-            if (p_lead < p_neck) if is_w else (p_lead > p_neck):
+            excess = (p_lead - p_neck) if is_w else (p_neck - p_lead)
+            if excess < MIN_ARM_EXCESS * height:
                 continue
 
             # Where is price now, relative to the neckline?
             after = closes[second + 1 :]
-            broken = any(c > p_neck for c in after) if is_w else any(c < p_neck for c in after)
+            break_at = next(
+                (j for j, c in enumerate(after) if (c > p_neck if is_w else c < p_neck)), None
+            )
+            broken = break_at is not None
+            # The neckline breaks about as soon as the second low took to form,
+            # or it is not this pattern: a W still "forming" a hundred candles
+            # later is a range, and a break that late is a different move.
+            if (break_at + 1 if broken else len(after)) > separation:
+                continue
             distance = (p_neck - last_close) if is_w else (last_close - p_neck)
             moving_up = bool(after) and (
                 last_close > p_second if is_w else last_close < p_second
@@ -349,7 +366,8 @@ def _detect_one_kind(
                         "low2" if is_w else "high2": _point(candles, second, p_second),
                     },
                     "neckline": p_neck,
-                    "target": p_neck + height if is_w else p_neck - height,
+                    # Back to where the first arm started.
+                    "target": p_lead,
                 }
             )
 
@@ -375,7 +393,10 @@ MIN_SCREEN_SHARE = 0.15
 
 def _height(pattern: Dict[str, Any]) -> float:
     """Neckline to the shoulders - how big the letter is."""
-    return abs(pattern["neckline"] - pattern["target"])
+    shoulders = [v["price"] for k, v in pattern["points"].items() if k in ("low1", "low2", "high1", "high2")]
+    if not shoulders:
+        return abs(pattern["neckline"] - pattern["target"])
+    return abs(pattern["neckline"] - sum(shoulders) / len(shoulders))
 
 
 def _rank(pattern: Dict[str, Any]) -> Tuple[int, int, float]:
