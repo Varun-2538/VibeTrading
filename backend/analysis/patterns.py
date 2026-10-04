@@ -54,17 +54,23 @@ class Strictness:
     ever being seen to approach.
     """
 
-    def __init__(self, tol, depth, near_frac, max_bars):
+    def __init__(self, tol, depth, near_frac, max_bars, tol_height=0.0):
         self.tol = tol
+        # The shoulders may also differ by this share of the pattern's height.
+        # ATR alone judges a W against candle noise, and on a quiet one-minute
+        # chart ATR is a few dimes: a W six dollars deep whose lows sit a dollar
+        # apart - the one anybody would circle - failed it. Against its own
+        # height a dollar is a fifth of the letter, and reads as a match.
+        self.tol_height = tol_height
         self.depth = depth
         self.near_frac = near_frac
         self.max_bars = max_bars
 
 
 PRESETS: Dict[str, Strictness] = {
-    "strict": Strictness(tol=0.5, depth=2.0, near_frac=0.15, max_bars=120),
-    "balanced": Strictness(tol=1.0, depth=1.0, near_frac=0.25, max_bars=120),
-    "loose": Strictness(tol=2.0, depth=0.7, near_frac=0.40, max_bars=150),
+    "strict": Strictness(tol=0.5, depth=2.0, near_frac=0.15, max_bars=120, tol_height=0.15),
+    "balanced": Strictness(tol=1.0, depth=1.0, near_frac=0.25, max_bars=120, tol_height=0.3),
+    "loose": Strictness(tol=2.0, depth=0.7, near_frac=0.40, max_bars=150, tol_height=0.45),
 }
 
 # Half-widths of the swing-pivot window to search.
@@ -266,12 +272,18 @@ def _detect_one_kind(
             # 17 to 41 "patterns" in a pure random walk.
             mismatch = abs(p_second - p_first)
             width_factor = min(1.0, separation / TOL_REFERENCE_BARS)
-            if mismatch > preset.tol * unit * width_factor:
-                continue
 
             # The neckline must be a real move away from them, not a ripple.
             height = (p_neck - max(p_first, p_second)) if is_w else (min(p_first, p_second) - p_neck)
             if height < preset.depth * unit:
+                continue
+            allowed = max(preset.tol * unit, preset.tol_height * height) * width_factor
+            if mismatch > allowed:
+                continue
+            # Nothing between the two lows may go below both of them: a deeper
+            # low in the middle makes it a different letter, not this W.
+            inner = shoulder_prices[first + 1 : second]
+            if inner and ((min(inner) < min(p_first, p_second)) if is_w else (max(inner) > max(p_first, p_second))):
                 continue
 
             # Where is price now, relative to the neckline?
@@ -296,7 +308,7 @@ def _detect_one_kind(
             leg_one = neck - first
             leg_two = second - neck
             components = {
-                "similarity": _score(mismatch, best=0.0, worst=preset.tol * unit),
+                "similarity": _score(mismatch, best=0.0, worst=allowed / width_factor),
                 # Scored out to four times the minimum: at twice it saturated
                 # at 100 for almost every real pattern, so the term carried no
                 # information.
@@ -337,6 +349,15 @@ STATE_RANK = {"approaching": 0, "forming": 1, "confirmed": 2}
 
 def _last_index(pattern: Dict[str, Any]) -> int:
     return max(p["index"] for p in pattern["points"].values())
+
+
+# See detect_double_patterns: the smallest W worth drawing, against the window.
+MIN_SCREEN_SHARE = 0.15
+
+
+def _height(pattern: Dict[str, Any]) -> float:
+    """Neckline to the shoulders - how big the letter is."""
+    return abs(pattern["neckline"] - pattern["target"])
 
 
 def _rank(pattern: Dict[str, Any]) -> Tuple[int, int, float]:
@@ -489,5 +510,10 @@ def detect_double_patterns(
             found += _detect_one_kind(candles, kind, preset, unit, k, source)
 
     found = [p for p in found if p["confidence"] >= min_confidence]
+    # A W smaller than this share of the window's price range is a wiggle on
+    # screen, however clean: ATR thresholds measure it against candle noise, and
+    # on 800 one-minute bars that admits dozens a person would never call a W.
+    span_range = max(float(c["high"]) for c in candles) - min(float(c["low"]) for c in candles)
+    found = [p for p in found if _height(p) >= MIN_SCREEN_SHARE * span_range]
     ranked = _drop_overlaps(found)
     return ranked if max_results is None else ranked[:max_results]
