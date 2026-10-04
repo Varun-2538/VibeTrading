@@ -30,6 +30,8 @@ import {
 import type { Mark } from "@/lib/marks"
 
 const MARK_COLOUR = "#e8c547"
+// A pattern's letter, drawn the way a trader circles one: in red.
+const SHAPE_COLOUR = "#ff4d4d"
 const MARK_FILL = "rgba(232,197,71,0.10)"
 
 interface MarkOverlayProps {
@@ -133,15 +135,15 @@ export default function MarkOverlay({ chart, series, marks, loading = false }: M
           const last = coords[coords.length - 1]
           return (
             <g key={`poly-${i}`}>
-              <polyline points={pts} fill="none" stroke={MARK_COLOUR} strokeWidth={1.5} />
+              <polyline points={pts} fill="none" stroke={SHAPE_COLOUR} strokeWidth={2.5} strokeLinejoin="round" />
               {coords.map((c, j) => (
-                <circle key={j} cx={c.x as number} cy={c.y as number} r={3} fill={MARK_COLOUR} />
+                <circle key={j} cx={c.x as number} cy={c.y as number} r={3} fill={SHAPE_COLOUR} />
               ))}
               {mark.label && (
                 <text
                   x={(last.x as number) + 6}
                   y={(last.y as number) - 6}
-                  fill={MARK_COLOUR}
+                  fill={SHAPE_COLOUR}
                   fontSize={11}
                   fontFamily="ui-monospace, monospace"
                 >
