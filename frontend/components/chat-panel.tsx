@@ -66,6 +66,14 @@ interface ChatPanelProps {
 const HISTORY_TURNS = 8
 const HISTORY_CHARS = 300
 
+/** Things the assistant answers well, each on the chart that is open. */
+const SUGGESTIONS = [
+  "Which patterns are forming?",
+  "Any doji or hammer here?",
+  "Where is support?",
+  "Is there a MACD cross?",
+]
+
 export default function ChatPanel({
   onClose,
   currentSymbol,
@@ -499,6 +507,7 @@ export default function ChatPanel({
       <div className="shrink-0 border-t border-border p-3 lg:p-4">
         <div className="flex gap-2">
           <Input
+            id="chat-input"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
@@ -510,9 +519,24 @@ export default function ChatPanel({
             {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </Button>
         </div>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Try: "do you see support or a double bottom forming here?"
-        </p>
+        {/* Starting points, one row. A click writes the prompt into the box and
+            leaves sending to the user, so it can be edited first. */}
+        <div className="mt-2 flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none]">
+          {SUGGESTIONS.map((text) => (
+            <button
+              key={text}
+              type="button"
+              disabled={isLoading}
+              onClick={() => {
+                setInput(text)
+                document.getElementById("chat-input")?.focus()
+              }}
+              className="shrink-0 whitespace-nowrap rounded-full border border-border bg-secondary/60 px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground disabled:opacity-50"
+            >
+              {text}
+            </button>
+          ))}
+        </div>
         {/* The assistant writes in the register of advice, so the disclaimer
             belongs here rather than only in the footer of another page. */}
         <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground/70">
