@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import PriceChart, { type PanelSlots } from "@/components/price-chart"
+import PriceChart, { ROBINHOOD_ETH, type PanelSlots } from "@/components/price-chart"
 import ChatPanel from "@/components/chat-panel"
 import AnalysisPanel from "@/components/analysis-panel"
 import AppHeader from "@/components/app-header"
@@ -86,10 +86,24 @@ export default function TradingDashboard() {
   // pattern analysis, the assistant and the rules read Binance and have never seen
   // a stock, so they stay on this pair rather than failing on one they cannot read.
   const [cryptoSymbol, setCryptoSymbol] = useState("BTCUSDT")
+  // ETH shown as Robinhood Chain's ETH/USDG. Picked from the chart's list; kept
+  // while anything else (the assistant, a position) points the chart at ETH.
+  const [ethOnRobinhood, setEthOnRobinhood] = useState(false)
   const selectSymbol = useCallback((symbol: string) => {
+    if (symbol === ROBINHOOD_ETH) {
+      setEthOnRobinhood(true)
+      symbol = "ETHUSDT"
+    } else if (symbol !== "ETHUSDT") {
+      setEthOnRobinhood(false)
+    }
     setCurrentSymbol(symbol)
     if (!isStock(symbol)) setCryptoSymbol(symbol)
   }, [])
+  /** The chart's own list: a choice of ETH/USDT there is meant literally. */
+  const pickSymbol = useCallback((symbol: string) => {
+    if (symbol === "ETHUSDT") setEthOnRobinhood(false)
+    selectSymbol(symbol)
+  }, [selectSymbol])
   const stock = stockFor(currentSymbol)
   // Lifted out of the chart so the strategy panel builds rules against the
   // timeframe the user is actually looking at.
@@ -335,7 +349,8 @@ export default function TradingDashboard() {
         <div className="absolute inset-0 lg:relative lg:inset-auto lg:col-start-1 lg:row-start-1 lg:overflow-hidden lg:rounded-xl lg:border lg:border-border xl:col-start-2">
           <PriceChart
             symbol={cryptoSymbol}
-            onSymbolChange={selectSymbol}
+            robinhood={ethOnRobinhood}
+            onSymbolChange={pickSymbol}
             timeframe={timeframe}
             onTimeframeChange={setTimeframe}
             liquidityData={markedLevels}
