@@ -153,8 +153,10 @@ export default function TradingDashboard() {
     }),
     [desktop, wide, toolbarEl, detectionEl, railEl],
   )
-  const candlesInView = viewport
-    ? Math.max(0, Math.round((viewport.to - viewport.from) / TIMEFRAME_MS[timeframe]) + 1)
+  // Counted from whichever chart is on screen.
+  const shownViewport = stock ? stockViewport : viewport
+  const candlesInView = shownViewport
+    ? Math.max(0, Math.round((shownViewport.to - shownViewport.from) / TIMEFRAME_MS[timeframe]) + 1)
     : null
   const ticker = tickers[cryptoSymbol]
 

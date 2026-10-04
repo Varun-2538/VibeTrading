@@ -9,7 +9,6 @@ import {
   LineStyle,
   createChart,
   type IChartApi,
-  type IPriceLine,
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts"
@@ -18,6 +17,7 @@ import { parseAbi } from "viem"
 import { ShieldCheck } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import MarkOverlay from "@/components/mark-overlay"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger } from "@/components/ui/select"
 import type { Timeframe } from "@/lib/api"
 import { formatUsd, type Ticker } from "@/lib/binance"
@@ -64,7 +64,7 @@ export default function StockChart({
   onSymbolChange: (symbol: string) => void
   /** The window on screen, in unix ms, so the assistant reads exactly these candles. */
   onViewportChange?: (viewport: Viewport | null) => void
-  /** What the assistant asked to draw. Levels are drawn; shapes are crypto-chart only. */
+  /** What the assistant asked to draw: levels, sweeps and other bar markers, pattern shapes. */
   marks?: Mark[]
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -72,7 +72,6 @@ export default function StockChart({
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null)
   const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null)
   const candlesRef = useRef<StockCandle[]>([])
-  const linesRef = useRef<IPriceLine[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [last, setLast] = useState<number | null>(null)
@@ -187,25 +186,6 @@ export default function StockChart({
     }
   }, [onViewportChange, loading, stock, timeframe])
 
-  // The assistant's level marks, as horizontal lines. Replaced wholesale on change.
-  useEffect(() => {
-    const series = candleRef.current
-    if (!series) return
-    for (const line of linesRef.current) series.removePriceLine(line)
-    linesRef.current = marks
-      .filter((m): m is Extract<Mark, { type: "hline" }> => m.type === "hline")
-      .map((m) =>
-        series.createPriceLine({
-          price: m.price,
-          color: "#e8c46a",
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: m.label,
-        }),
-      )
-  }, [marks, loading])
-
   // The price the vault prices against, and how old it is. On a weekend this is
   // Friday's close, and saying so is the point.
   useEffect(() => {
@@ -314,6 +294,11 @@ export default function StockChart({
 
       <div className="relative min-h-0 flex-1">
         <div ref={containerRef} className="absolute inset-0" />
+        {/* The crypto chart's overlay, reused: it draws levels, bar markers such as
+            sweeps, and pattern shapes, and both charts keep candle times in seconds. */}
+        {marks.length > 0 && (
+          <MarkOverlay chart={chartRef.current} series={candleRef.current} marks={marks} loading={loading} />
+        )}
         {(loading || error) && (
           <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
             <span className="rounded bg-secondary/90 px-2 py-1 text-[11px] text-muted-foreground">
