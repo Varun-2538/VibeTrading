@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/sheet"
 import { Layers, SlidersHorizontal, Sparkles } from "lucide-react"
 import MarkOverlay from "@/components/mark-overlay"
+import { STOCKS } from "@/lib/stocks"
 import PatternOverlay from "@/components/pattern-overlay"
 import type { Mark, PatternSettings, Viewport } from "@/lib/marks"
 import {
@@ -915,6 +916,14 @@ export default function PriceChart({
                 </div>
               </SelectItem>
             ))}
+            {STOCKS.map((st) => (
+              <SelectItem key={st.symbol} value={st.symbol}>
+                <div className="flex w-full items-center justify-between">
+                  <span className="font-semibold">{st.symbol}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">{st.name} · stock</span>
+                </div>
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
 
@@ -1021,6 +1030,14 @@ export default function PriceChart({
                   <div className="flex w-full items-center justify-between">
                     <span className="font-semibold">{c.symbol}</span>
                     <span className="ml-2 text-xs text-muted-foreground">{c.name}</span>
+                  </div>
+                </SelectItem>
+              ))}
+              {STOCKS.map((st) => (
+                <SelectItem key={st.symbol} value={st.symbol}>
+                  <div className="flex w-full items-center justify-between">
+                    <span className="font-semibold">{st.symbol}</span>
+                    <span className="ml-2 text-xs text-muted-foreground">{st.name} · stock</span>
                   </div>
                 </SelectItem>
               ))}

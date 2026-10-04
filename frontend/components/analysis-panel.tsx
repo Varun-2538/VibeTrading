@@ -63,6 +63,7 @@ import { ARBITRUM_NAME, SUPPORTED_NETWORKS, shortAddress } from "@/lib/wallet"
 import { cn } from "@/lib/utils"
 import BacktestSheet from "@/components/backtest-sheet"
 import VaultSheet from "@/components/vault-sheet"
+import { OPEN_VAULT_EVENT } from "@/lib/stocks"
 import ArmSheet from "@/components/arm-sheet"
 import { listBacktests, type BacktestRule, type BacktestSummary } from "@/lib/backtests"
 import { listPolicies } from "@/lib/execution"
@@ -173,6 +174,10 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
   const [testing, setTesting] = useState<string | null>(null)
   const [backtestRule, setBacktestRule] = useState<BacktestRule | null>(null)
   const [vaultOpen, setVaultOpen] = useState(false)
+  // A chart asked for the vault on a particular market. Held until sign-in when
+  // the gate is still up, so the request is not lost to it.
+  const [vaultMarketAsked, setVaultMarketAsked] = useState<string | null>(null)
+  const [vaultPending, setVaultPending] = useState(false)
   const [armRuleTarget, setArmRuleTarget] = useState<Rule | null>(null)
   // Which rules are armed to trade, so the Armed tab can say so without asking
   // per row. Empty is the normal answer and costs one request.
@@ -207,6 +212,23 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
     window.addEventListener(PANEL_NAV_EVENT, onNav)
     return () => window.removeEventListener(PANEL_NAV_EVENT, onNav)
   }, [status])
+
+  useEffect(() => {
+    const onOpenVault = (event: Event) => {
+      setVaultMarketAsked((event as CustomEvent<{ market: string }>).detail.market)
+      if (status === "ready") setVaultOpen(true)
+      else setVaultPending(true)
+    }
+    window.addEventListener(OPEN_VAULT_EVENT, onOpenVault)
+    return () => window.removeEventListener(OPEN_VAULT_EVENT, onOpenVault)
+  }, [status])
+
+  useEffect(() => {
+    if (vaultPending && status === "ready") {
+      setVaultPending(false)
+      setVaultOpen(true)
+    }
+  }, [vaultPending, status])
 
   const refreshTrading = useCallback(async () => {
     if (status !== "ready") return
@@ -981,7 +1003,7 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
           )}
         </TabsContent>
       </Tabs>
-        <VaultSheet open={vaultOpen} onOpenChange={setVaultOpen} />
+        <VaultSheet open={vaultOpen} onOpenChange={setVaultOpen} initialMarket={vaultMarketAsked} />
         <ArmSheet
           rule={armRuleTarget}
           open={armRuleTarget !== null}
