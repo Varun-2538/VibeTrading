@@ -27,7 +27,7 @@ import {
 import { Layers, SlidersHorizontal, Sparkles } from "lucide-react"
 import MarkOverlay from "@/components/mark-overlay"
 import PositionOverlay from "@/components/position-overlay"
-import { DEFAULT_INDICATORS, IndicatorSwitches, useIndicatorPanes } from "@/components/indicator-panes"
+import { IndicatorBar, useChartIndicators, useIndicatorPanes } from "@/components/indicator-panes"
 import type { OpenPosition } from "@/lib/positions"
 import { STOCKS } from "@/lib/stocks"
 import PatternOverlay from "@/components/pattern-overlay"
@@ -199,7 +199,7 @@ export default function PriceChart({
   const [patternTotal, setPatternTotal] = useState(0)
   // The candle under the crosshair, or the latest one when nothing is hovered.
   const [hovered, setHovered] = useState<Ohlc | null>(null)
-  const [indicators, setIndicators] = useState(DEFAULT_INDICATORS)
+  const [indicators, setIndicators] = useChartIndicators()
   // Bumped whenever candlesRef changes, history or a live tick, so the indicator
   // panes recompute from the same bars the price pane draws.
   const [candleVersion, setCandleVersion] = useState(0)
@@ -642,11 +642,6 @@ export default function PriceChart({
   useIndicatorPanes(chartRef.current, candlesRef.current, candleVersion, indicators)
 
   const controlGroups: { key: string; label: string; node: ReactNode; detection?: boolean }[] = [
-    {
-      key: "indicators",
-      label: "Indicators",
-      node: <IndicatorSwitches value={indicators} onChange={setIndicators} />,
-    },
     {
       key: "style",
       label: "Draw as",
@@ -1151,6 +1146,9 @@ export default function PriceChart({
         {/* Chart */}
         <div className="relative min-w-0 flex-1">
           <div ref={containerRef} className="absolute inset-0" />
+          <div className="pointer-events-none absolute left-2 right-16 top-2 z-20 lg:top-10">
+            <IndicatorBar specs={indicators} onChange={setIndicators} />
+          </div>
           {chartStyle === "candle" && (hovered ?? latest) && (
             <div className="pointer-events-none absolute left-2 top-2 z-10 hidden items-center gap-3 rounded bg-background/85 px-2 py-1 font-mono text-[11px] text-muted-foreground backdrop-blur lg:flex">
               {(["open", "high", "low", "close"] as const).map((k) => (
