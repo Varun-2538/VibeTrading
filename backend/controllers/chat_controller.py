@@ -18,6 +18,7 @@ import hashlib
 import json
 from services.market_data_service import MarketDataService
 from services.candle_service import CandleService
+from services.stock_pools import STOCK_POOLS, is_stock
 from analysis.patterns import detect_double_patterns
 from repositories.ohlc_repository import OHLCRepository
 from decimal import Decimal
@@ -93,7 +94,31 @@ def extract_symbol_from_message(message: str) -> Optional[str]:
         if short_form in message_upper:
             return full_symbol
 
+    # Robinhood Stock Tokens, by ticker or by name. Matched on whole words, since
+    # a ticker like SPY is also a fragment of ordinary English.
+    words = set(re.findall(r"[A-Z0-9&]+", message_upper))
+    stock_names = {"NVIDIA": "NVDA", "TESLA": "TSLA", "APPLE": "AAPL"}
+    for word in words:
+        if word in STOCK_POOLS:
+            return word
+        if word in stock_names:
+            return stock_names[word]
+
     return None
+
+
+# What a stock can and cannot be asked. Its candles come from its Uniswap pool,
+# so the assistant can read its chart; rules and alerts run on Binance candles,
+# which have never seen a stock, so it cannot watch one.
+STOCK_ALERT_REFUSAL = (
+    "I can read {symbol}'s chart, but I can't watch it for you yet: alerts and rules run on "
+    "exchange candles, and no exchange I read lists stocks. Ask me what I see on the chart, "
+    "or trade {symbol} through your vault."
+)
+STOCK_NEEDS_WINDOW = (
+    "Open {symbol} on the chart and ask again - I answer about stocks from the candles on "
+    "screen, and none were sent with that question."
+)
 
 
 # Phrasings that mean "is there a chart pattern here". This has to be
@@ -185,6 +210,19 @@ async def ask_question(request: ChatRequest):
 
         # Detect query intent
         intent = detect_query_intent(message)
+
+        # A Robinhood Stock Token. Its chart is readable - the candles come from its
+        # pool - but nothing that runs on exchange data is: not alerts, not the
+        # strategy builder, not the database-backed paths. So every question about a
+        # stock goes to the chart reader, and a request to be alerted is declined
+        # with the reason rather than drafted into a rule that could never fire.
+        if is_stock(symbol):
+            symbol = symbol.upper()
+            if intent == 'create_alert':
+                return ChatResponse(response=STOCK_ALERT_REFUSAL.format(symbol=symbol), symbol=symbol)
+            if request.window is None:
+                return ChatResponse(response=STOCK_NEEDS_WINDOW.format(symbol=symbol), symbol=symbol)
+            return await _ask_fellow(request, symbol)
 
         # A rule draft. The model reads the sentence; the rule schema decides
         # whether the result is a rule; nothing is armed until the user clicks
@@ -511,8 +549,9 @@ async def _ask_fellow(request: ChatRequest, symbol: str) -> ChatResponse:
 
     # Level two: what the fellow sees, offered as an alert. Built from the
     # scene with the same detector settings as the chart, so the alert watches
-    # for what the overlay draws.
-    attach_subscriptions(answer, scene, request.pattern_settings)
+    # for what the overlay draws. Not for a stock: no rule can watch one.
+    if not is_stock(symbol):
+        attach_subscriptions(answer, scene, request.pattern_settings)
 
     return ChatResponse(
         response=answer.reply_md,
