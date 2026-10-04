@@ -230,7 +230,7 @@ export default function StockChart({
 
   return (
     <div className="flex h-full w-full flex-col bg-card">
-      <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 lg:hidden">
         <Select value={stock.symbol} onValueChange={onSymbolChange}>
           <SelectTrigger aria-label="Market" className="h-9 w-[150px] shrink-0 border-border bg-secondary sm:w-[200px]">
             <span className="flex min-w-0 items-center gap-2">
@@ -289,18 +289,28 @@ export default function StockChart({
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-3 py-1.5 text-[11px] text-muted-foreground">
-        <span>
-          Robinhood Stock Token · candles from its {stock.market} {stock.feePct}% Uniswap pool on Robinhood Chain
+      {/* Written like the ETH/USDG header, so every Robinhood Chain asset reads alike. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5 lg:px-4 lg:pb-2 lg:pt-3">
+        <h2 className="hidden text-lg font-semibold tracking-tight text-foreground lg:block">
+          {stock.symbol} / USDG
+        </h2>
+        <span className="hidden rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary lg:inline">
+          Robinhood Chain
+        </span>
+        <span className="font-mono text-[11px] text-muted-foreground">
+          {timeframe} · stock token · candles from its {stock.market} {stock.feePct}% pool
         </span>
         {oracle && (
-          <span className="tabular-nums">
+          <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
             Chainlink ${formatUsd(oracle.price)}
             {gapPct !== null && ` (pool ${gapPct >= 0 ? "+" : ""}${gapPct.toFixed(2)}%)`} · updated{" "}
             {oracle.ageHours < 1 ? "under an hour" : `${Math.round(oracle.ageHours)}h`} ago
             {oracle.ageHours > 6 ? " · US market closed" : ""}
           </span>
         )}
+        <Button size="sm" className="hidden h-8 gap-1.5 text-xs lg:inline-flex" onClick={() => openVault(stock.market)}>
+          <ShieldCheck className="h-3.5 w-3.5" /> Trade {stock.symbol} in your vault
+        </Button>
       </div>
 
       <div className="relative min-h-0 flex-1">
