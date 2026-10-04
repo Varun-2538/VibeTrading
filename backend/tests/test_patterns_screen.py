@@ -18,12 +18,31 @@ def _bars(path):
 def test_lows_apart_by_more_than_atr_but_little_against_the_height():
     # ATR here is about a third of a dollar; the lows are a dollar apart and the
     # W is six dollars deep, so against itself it is a match.
-    candles = _bars([(0, 104), (30, 106), (60, 100), (90, 106), (120, 101), (160, 110)])
+    candles = _bars([(0, 104), (10, 110), (20, 100), (30, 106), (40, 101), (55, 112)])
     ws = [p for p in detect_double_patterns(candles, max_results=None) if p["kind"] == "W"]
-    assert any(abs(w["points"]["low1"]["index"] - 60) <= 2 and abs(w["points"]["low2"]["index"] - 120) <= 2 for w in ws)
+    assert any(abs(w["points"]["low1"]["index"] - 20) <= 2 and abs(w["points"]["low2"]["index"] - 40) <= 2 for w in ws)
 
 
 def test_a_deeper_low_in_the_middle_is_not_this_w():
-    candles = _bars([(0, 106), (30, 100), (45, 104), (60, 97), (75, 104), (90, 100.3), (130, 110)])
+    candles = _bars([(0, 108), (8, 100), (13, 104), (18, 97), (23, 104), (28, 100.3), (40, 110)])
     ws = [p for p in detect_double_patterns(candles, max_results=None) if p["kind"] == "W"]
-    assert not any(abs(w["points"]["low1"]["index"] - 30) <= 2 and abs(w["points"]["low2"]["index"] - 90) <= 2 for w in ws)
+    assert not any(abs(w["points"]["low1"]["index"] - 8) <= 2 and abs(w["points"]["low2"]["index"] - 28) <= 2 for w in ws)
+
+
+def test_a_w_whose_first_arm_is_no_taller_than_its_middle_is_not_one():
+    # Falls from 106 to 100, back to 106, down to 100, out: the break of 106
+    # leaves no room to the arm's top, so there is no trade in it.
+    candles = _bars([(0, 106), (10, 100), (20, 106), (30, 100), (45, 112)])
+    assert [p for p in detect_double_patterns(candles, max_results=None) if p["kind"] == "W"] == []
+
+
+def test_a_w_that_never_breaks_its_neckline_stops_being_one():
+    # Lows ten bars apart, then sixty bars of drifting under the neckline.
+    candles = _bars([(0, 110), (10, 100), (15, 106), (20, 100), (80, 104)])
+    assert [p for p in detect_double_patterns(candles, max_results=None) if p["kind"] == "W"] == []
+
+
+def test_the_target_is_the_top_of_the_first_arm():
+    candles = _bars([(0, 104), (10, 110), (20, 100), (30, 106), (40, 101), (55, 112)])
+    ws = [p for p in detect_double_patterns(candles, max_results=None) if p["kind"] == "W"]
+    assert ws and abs(ws[0]["target"] - 110.05) < 0.2

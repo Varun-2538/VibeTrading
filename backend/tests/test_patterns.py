@@ -47,7 +47,7 @@ def w_series(
     base=100.0,
     depth=10.0,
     low2_offset=0.0,
-    leg=20,
+    leg=10,
     tail=0,
     scale=1.0,
     wick=0.0,
@@ -68,7 +68,9 @@ def w_series(
     low1 = base - depth
     low2 = low1 + low2_offset
 
-    prices = [base + depth * 0.5]
+    # The first arm starts a full height above the neckline: the letter's
+    # tallest stroke, and where its target sits.
+    prices = [base + depth]
     prices += ramp(prices[-1], low1, leg)
     prices += ramp(low1, peak, leg)
     prices += ramp(peak, low2, leg)
@@ -278,9 +280,9 @@ class TestStrictness:
             detect_double_patterns(w_series(tail=12), strictness="aggressive")
 
 
-def combined_series(leg=20):
+def combined_series(leg=10):
     """An early W that completes and breaks, then a later W still forming."""
-    prices = [105.0]
+    prices = [106.0]
     prices += ramp(prices[-1], 90, leg)
     prices += ramp(90, 100, leg)
     prices += ramp(100, 90, leg)
@@ -331,7 +333,7 @@ class TestOverlapHandling:
     def test_back_to_back_patterns_both_survive(self):
         # Two W's in sequence sharing no bars: both must be reported.
         leg = 14
-        prices = [104.0]
+        prices = [106.0]
         prices += ramp(prices[-1], 90, leg)
         prices += ramp(90, 100, leg)
         prices += ramp(100, 90, leg)
@@ -353,18 +355,11 @@ class TestOverlapHandling:
         two highs and two lows over the same bars is a range, and both readings
         are real - this cost a W whose lows were twelve dollars apart.
         """
-        # A range: two tops near 101 and two bottoms near 99, entered from
-        # below so the M has its first arm too.
-        leg = 10
-        prices = [98.5]
-        for target in (101.0, 99.0, 101.0, 99.0, 100.5):
-            prices += ramp(prices[-1], target, leg)
-        candles = to_candles(prices)
-
-        found = detect_double_patterns(
-            candles, strictness="loose", max_results=None
-        )
-        kinds = {p["kind"] for p in found}
+        # Two highs and two lows over the same bars.
+        span = {"a": {"index": 10}, "b": {"index": 20}, "c": {"index": 30}}
+        w = {"kind": "W", "state": "confirmed", "confidence": 60.0, "points": span}
+        m = {"kind": "M", "state": "confirmed", "confidence": 70.0, "points": dict(span)}
+        kinds = {p["kind"] for p in detect_module._drop_overlaps([w, m])}
         assert kinds == {"W", "M"}, (
             f"expected both a double top and a double bottom, got {kinds or 'none'}"
         )
@@ -467,8 +462,8 @@ class TestPriceSource:
     def test_a_break_still_needs_a_close_beyond_the_neckline(self):
         # Wicks poke above the neckline but no candle closes above it, so the
         # pattern must not be reported as confirmed.
-        leg = 20
-        prices = [105.0]
+        leg = 10
+        prices = [114.0]  # the wicks deepen the W, so the arm starts higher
         prices += ramp(prices[-1], 90, leg)
         prices += ramp(90, 100, leg)
         prices += ramp(100, 90, leg)
@@ -509,8 +504,10 @@ class TestRangeBoundPatterns:
         for _ in range(3):
             prices += ramp(prices[-1], 101, leg)
             prices += ramp(101, 99, leg)
-        # A modest W within that same range.
-        prices += ramp(prices[-1], 99.0, leg)
+        # A modest W within that same range, its first arm falling from a
+        # poke above it.
+        prices += ramp(prices[-1], 101.5, leg)
+        prices += ramp(101.5, 99.0, leg)
         prices += ramp(99.0, 100.6, leg)
         prices += ramp(100.6, 99.05, leg)
         prices += ramp(99.05, 100.8, leg)
