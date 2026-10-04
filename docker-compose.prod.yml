@@ -81,7 +81,12 @@ services:
       dockerfile: Dockerfile
     container_name: tradesmart-backtester
     command: ["python", "worker.py"]
-    environment: *backend-env
+    environment:
+      <<: *backend-env
+      # One poll every five seconds needs nothing like the API's pool, and three
+      # processes will share one Postgres that defaults to 100 connections.
+      DB_POOL_MIN: 1
+      DB_POOL_MAX: 4
     cpu_shares: 256
     mem_limit: 512m
     healthcheck:

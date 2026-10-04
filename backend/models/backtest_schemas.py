@@ -110,6 +110,11 @@ class BacktestCreate(BaseModel):
     # Signals with no direction of their own (doji, inside bar): skipped, or
     # read as long or short.
     neutral: Literal["skip", "long", "short"] = "skip"
+    # Which directions the venue can take. A spot pool has no short - a position
+    # is the asset or it is stablecoins - so a report meant as evidence for spot
+    # execution has to be measured long-only, or it is measuring trades that
+    # could never have happened.
+    sides: Literal["both", "long", "short"] = "both"
     # Fraction of evaluated bars that are "seen"; the rest are unseen.
     split: float = Field(default=0.7, ge=0.5, le=0.9)
     exit: ExitPlan = Field(default_factory=ExitPlan)

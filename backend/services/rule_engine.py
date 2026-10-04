@@ -20,6 +20,7 @@ from analysis.levels import detect_levels
 from analysis.patterns_big import detect_all_patterns
 from repositories.rule_repository import RuleEventRepository, RuleRepository
 from services.actions import ACTIONS
+from services.actions.base import PENDING
 from services.candle_service import CandleService, CandleFetchError, UnknownTimeframe
 
 from services.rule_decision import (  # noqa: F401  (BLOCKED_* are re-exported)
@@ -219,21 +220,23 @@ class RuleEngine:
         if action is None:
             # An unknown action is recorded and skipped rather than raised: the
             # fire is a real fact even if we cannot act on it.
-            await RuleEventRepository.set_action_result(
-                event["id"], "skipped", {"reason": f"no handler for '{action_kind}'"}
+            await RuleEventRepository.set_action_result_if(
+                event["id"], PENDING, "skipped", {"reason": f"no handler for '{action_kind}'"}
             )
             return event
 
         # A provisional signal can still repaint, so it may only ever alert.
         if signal.provisional and action_kind != "alert":
-            await RuleEventRepository.set_action_result(
-                event["id"], "skipped", {"reason": "provisional signal"}
+            await RuleEventRepository.set_action_result_if(
+                event["id"], PENDING, "skipped", {"reason": "provisional signal"}
             )
             return event
 
         result = await action.execute(rule, signal, event["id"])
-        await RuleEventRepository.set_action_result(
-            event["id"], result.status, result.result
+        # Only from 'pending': an action that handed the fire to another process
+        # may already have had its status moved on by that process.
+        await RuleEventRepository.set_action_result_if(
+            event["id"], PENDING, result.status, result.result
         )
         return event
 

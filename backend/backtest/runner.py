@@ -18,6 +18,7 @@ from backtest.study import study
 from backtest.tuning import plan_for, tune
 from models.backtest_schemas import BacktestCreate, required_bars
 from services.history_service import TIMEFRAME_MS
+from services.trade_plan import PARITY_VERSION
 
 CHUNK_BARS = 500
 JOB_TIMEOUT_SECONDS = 3600
@@ -134,6 +135,7 @@ async def _run(job, jobs, history, clock, started, chunk, to_thread) -> Dict[str
             return tune(
                 candles[: split + 1], tape, params, request.exit,
                 neutral=request.neutral,
+                sides=request.sides,
                 start=start,
                 split=split,
                 grid=request.grid,
@@ -156,8 +158,10 @@ async def _run(job, jobs, history, clock, started, chunk, to_thread) -> Dict[str
     )
     setups = distinct_setups(fires)
     trades = {
-        "seen": trade_period(candles, setups, start, split, active_plan, request.neutral, TIMEFRAME_MS[timeframe]),
-        "unseen": trade_period(candles, setups, split, end, active_plan, request.neutral, TIMEFRAME_MS[timeframe]),
+        "seen": trade_period(candles, setups, start, split, active_plan, request.neutral,
+                             TIMEFRAME_MS[timeframe], request.sides),
+        "unseen": trade_period(candles, setups, split, end, active_plan, request.neutral,
+                               TIMEFRAME_MS[timeframe], request.sides),
     }
 
     report: Dict[str, Any] = {
@@ -167,6 +171,7 @@ async def _run(job, jobs, history, clock, started, chunk, to_thread) -> Dict[str
             "name": rule.name,
             "params": active_params,
             "neutral": request.neutral,
+            "sides": request.sides,
             "split": request.split,
             "bars": end - start,
             "warmup_bars": start,
@@ -176,9 +181,15 @@ async def _run(job, jobs, history, clock, started, chunk, to_thread) -> Dict[str
             "tape_cached": cached,
             "replay_seconds": round(replay_seconds, 1),
             "exit": active_plan.model_dump(),
+            # Which version of the shared trade maths measured this. A rule may
+            # only be armed for execution against a report from the version the
+            # executor is running, so changing where a stop goes cannot silently
+            # keep an old report as its evidence.
+            "parity_version": PARITY_VERSION,
         },
         "signals": {"fires": len(fires), "setups": len(setups)},
-        "study": study(candles, setups, start=start, split=split, end=end, neutral=request.neutral),
+        "study": study(candles, setups, start=start, split=split, end=end,
+                       neutral=request.neutral, sides=request.sides),
         "trades": trades,
         "flags": report_flags(trades, tuned=request.tune),
     }

@@ -84,3 +84,11 @@ def test_a_grid_over_the_cap_is_refused():
 def test_an_empty_grid_axis_is_refused():
     with pytest.raises(ValidationError):
         BacktestCreate(rule=RULE, tune=True, grid={"stop_atr": []})
+
+
+def test_sides_defaults_to_both_and_only_accepts_a_venue_it_knows():
+    """A spot pool has no short, so long-only has to be expressible - and typed."""
+    assert BacktestCreate(rule=RULE).sides == "both"
+    assert BacktestCreate(rule=RULE, sides="long").sides == "long"
+    with pytest.raises(ValidationError):
+        BacktestCreate(rule=RULE, sides="long_only")
