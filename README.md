@@ -14,6 +14,74 @@ No signup, no accounts, free to use.
 
 ---
 
+## Rules that trade, in a vault you own — on Robinhood Chain and Arbitrum One
+
+A rule built in the app can do more than alert: armed to trade, it opens and closes
+positions **inside a contract the user deploys and owns**, holding their own USDG or
+USDC. We run the bot; the contract is what makes that survivable.
+
+- **We can never withdraw.** The operator key can open a position and close one.
+  There is no function by which it moves money out, changes the router or the
+  oracle, raises a cap, or moves a stop. The owner withdraws and revokes us at any
+  time, on-chain, without asking.
+- **The stop lives in the contract.** Stop, target and deadline are written at open
+  and are immutable. Exits are **permissionless**: `closeIfStopped`,
+  `closeIfTargetHit` and `closeIfExpired` revert unless the condition is true on a
+  Chainlink price, and pay a small bounty to whoever calls them. Our executor is the
+  fastest caller; if it is down, anyone else is paid to be. *Entries depend on our
+  uptime. Exits do not.*
+- **Oracle authorises, minimum-out protects.** Every swap must return at least the
+  Chainlink price less the owner's slippage, so a caller cannot route an exit
+  through a manipulated pool.
+- **A backtest is mandatory.** A rule is armed only against a backtest of that exact
+  rule whose *unseen* half clears a bar the user sets, after pool fees and gas.
+- **Capped while unaudited.** $500 per vault, a constant in the factory.
+
+### Deployed (mainnet)
+
+| | Address | Explorer |
+|---|---|---|
+| VaultFactory · **Robinhood Chain** (4663) | `0x04C96936670c38982D1e7eF23caDd84d6891c818` | [Blockscout](https://robinhoodchain.blockscout.com/address/0x04C96936670c38982D1e7eF23caDd84d6891c818) · [Sourcify, exact match](https://repo.sourcify.dev/4663/0x04C96936670c38982D1e7eF23caDd84d6891c818) |
+| VaultFactory · **Arbitrum One** (42161) | `0x04C96936670c38982D1e7eF23caDd84d6891c818` | [Blockscout, verified](https://arbitrum.blockscout.com/address/0x04c96936670c38982d1e7ef23cadd84d6891c818) |
+
+| Chain | Dollar | Markets |
+|---|---|---|
+| Robinhood Chain | **USDG** (Paxos) | ETH, and **Robinhood Stock Tokens: NVDA, TSLA, AAPL, SPY, QQQ** |
+| Arbitrum One | USDC | ETH, BTC |
+
+**Stock Tokens keep market hours; the vault knows it.** A Stock Token's pool trades
+around the clock, but its Chainlink feed is silent from Friday's close to Sunday
+night. Each market therefore carries its own oracle-age limit, immutable in its
+vault — 26 hours for crypto, 96 for US equities, never more than a 4-day ceiling.
+Over a weekend every swap is priced against the last market answer, so a move
+beyond the owner's slippage makes a swap refuse rather than fill badly.
+
+### How it was tested
+
+- `contracts/`: 30 offline tests, mostly refusals — the operator cannot withdraw,
+  cannot move a stop, cannot exceed a cap; a stale feed authorises nothing; a fill
+  worse than the oracle allows is refused even when the router lies about it.
+- **Fork tests against both mainnets**, run before deploying: a full round trip on
+  **every market** — deposit, grant, open through the real Uniswap pool at the real
+  Chainlink price, refuse an early exit, and a stranger closing on expiry and being
+  paid the bounty. On a Sunday, against weekend-silent stock feeds, all six
+  Robinhood Chain markets and both Arbitrum markets pass.
+- Backend: 781 tests, including exactly-once execution held by unique indexes, and a
+  shadow mode that runs the same code path as live against real prices.
+
+Details: [`contracts/README.md`](contracts/README.md).
+
+### What is not done yet
+
+- **Stock rules cannot be armed.** Signals are read from exchange candles, and no
+  exchange we read lists stocks; a stock vault is traded by hand for now. Building
+  candles from the Uniswap pools themselves is the next step.
+- **Long only.** A spot pool cannot short.
+- **Unaudited**, hence the $500 cap. The operator key is an environment variable;
+  a KMS signer comes before any cap is raised.
+
+---
+
 ## What it does
 
 **Liquidity levels.** Clusters recent price action into the levels that have
