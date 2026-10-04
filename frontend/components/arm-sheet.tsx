@@ -19,7 +19,9 @@ import {
   fmtR,
   getAccount,
   listPolicies,
-  marketForSymbol,
+  MARKET_CHAIN,
+  marketsForSymbol,
+  type Market,
   preflight,
   refusalLines,
   type ArmedPolicy,
@@ -66,7 +68,12 @@ export default function ArmSheet({
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const market = rule ? marketForSymbol(rule.symbol) : null
+  // Every market this rule's coin trades in, one per chain. ETH has two - Robinhood
+  // Chain against USDG and Arbitrum One against USDC - and which one is a choice the
+  // owner makes, because it decides which vault the money comes out of.
+  const options = useMemo(() => (rule ? marketsForSymbol(rule.symbol) : []), [rule])
+  const [picked, setPicked] = useState<Market | null>(null)
+  const market: Market | null = picked && options.includes(picked) ? picked : (options[0] ?? null)
 
   const load = useCallback(async () => {
     if (!rule) return
@@ -203,7 +210,8 @@ export default function ArmSheet({
           ) : policy?.armed ? (
             <section className="space-y-2">
               <p className="text-[11px] leading-relaxed text-foreground">
-                Trading {policy.market}, armed{" "}
+                Trading {policy.market}
+                {policy.market in MARKET_CHAIN ? ` on ${MARKET_CHAIN[policy.market as Market].name}` : ""}, armed{" "}
                 {policy.armed_at ? new Date(policy.armed_at).toISOString().slice(0, 16).replace("T", " ") : ""}.
               </p>
               {policy.preflight?.evidence ? (
@@ -241,6 +249,34 @@ export default function ArmSheet({
             </section>
           ) : (
             <>
+              {options.length > 1 && (
+                <section className="space-y-1.5">
+                  <span className="text-[11px] text-muted-foreground">Where it trades</span>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {options.map((m) => (
+                      <Button
+                        key={m}
+                        size="sm"
+                        variant={market === m ? "default" : "outline"}
+                        className="h-auto flex-col gap-0 py-1 text-xs"
+                        onClick={() => {
+                          setPicked(m)
+                          setResult(null)
+                        }}
+                      >
+                        <span>{m}</span>
+                        <span className="text-[9px] font-normal opacity-70">{MARKET_CHAIN[m].name}</span>
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] leading-relaxed text-muted-foreground">
+                    Trades come out of your {MARKET_CHAIN[market ?? options[0]].stable} vault on{" "}
+                    {MARKET_CHAIN[market ?? options[0]].name}. Same signal, same backtest; only the pool
+                    and the dollar differ.
+                  </p>
+                </section>
+              )}
+
               <section className="space-y-1.5">
                 <span className="text-[11px] text-muted-foreground">The backtest this trades on</span>
                 {runs.length === 0 ? (
