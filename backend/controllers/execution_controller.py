@@ -98,6 +98,7 @@ def _account(owner_key: str, row: Optional[Dict[str, Any]], globally_enabled: bo
             "stable_symbol": info.stable_symbol,
             "factory": factory_address(info) or None,
             "markets": dict(info.markets),
+            "stock_markets": list(info.stock_markets),
             "explorer": info.explorer,
         }
         for info in CHAINS

@@ -103,7 +103,20 @@ export interface VaultMarket {
   chainName: string
   stable: string
   asset: Address
+  /** A Robinhood Stock Token, whose price feed follows US market hours. */
+  stock?: boolean
 }
+
+const robinhoodStock = (symbol: string, asset: Address): VaultMarket => ({
+  market: `${symbol}/USDG`,
+  label: symbol,
+  chainId: ROBINHOOD_CHAIN_ID,
+  chainKey: "robinhood",
+  chainName: "Robinhood Chain",
+  stable: "USDG",
+  asset,
+  stock: true,
+})
 
 /**
  * Markets a vault can be deployed for, mirroring each chain's VaultFactory list.
@@ -139,6 +152,12 @@ export const VAULT_MARKETS: VaultMarket[] = [
     stable: "USDC",
     asset: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f",
   },
+  // Robinhood Stock Tokens, each against USDG on its deepest Uniswap pool.
+  robinhoodStock("NVDA", "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC"),
+  robinhoodStock("TSLA", "0x322F0929c4625eD5bAd873c95208D54E1c003b2d"),
+  robinhoodStock("AAPL", "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9"),
+  robinhoodStock("SPY", "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C"),
+  robinhoodStock("QQQ", "0xD5f3879160bc7c32ebb4dC785F8a4F505888de68"),
 ]
 
 export function vaultMarket(market: string): VaultMarket | null {

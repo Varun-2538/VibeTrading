@@ -198,11 +198,14 @@ def test_the_market_addresses_match_the_contracts_address_book():
     assert ROBINHOOD.chain_id == rh["CHAIN_ID"]
     assert ROBINHOOD.stable == rh["USDG"]
     assert ROBINHOOD.eth_usd_feed == rh["ETH_USD"]
-    assert ROBINHOOD.markets == {"WETH/USDG": rh["WETH"]}
+    stocks = ("NVDA", "QQQ", "TSLA", "SPY", "AAPL")
+    assert ROBINHOOD.markets == {"WETH/USDG": rh["WETH"], **{f"{s}/USDG": rh[s] for s in stocks}}
+    assert set(ROBINHOOD.stock_markets) == {f"{s}/USDG" for s in stocks}
 
 
 def test_every_chain_in_the_address_book_is_one_we_route_to():
     """A chain added to the contracts but not here would be deployable and unreachable."""
     from services.execution.markets import CHAINS
 
-    assert {c.chain_id for c in CHAINS} == {v["CHAIN_ID"] for v in _address_book().values()}
+    chains = {v["CHAIN_ID"] for v in _address_book().values() if v["CHAIN_ID"] is not None}
+    assert {c.chain_id for c in CHAINS} == chains

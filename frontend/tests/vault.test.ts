@@ -91,7 +91,22 @@ describe("the hard cap", () => {
 
 describe("markets", () => {
   it("mirrors each chain's factory list", () => {
-    expect(VAULT_MARKETS.map((m) => m.market)).toEqual(["WETH/USDG", "WETH/USDC", "WBTC/USDC"])
+    expect(VAULT_MARKETS.map((m) => m.market)).toEqual([
+      "WETH/USDG",
+      "WETH/USDC",
+      "WBTC/USDC",
+      "NVDA/USDG",
+      "TSLA/USDG",
+      "AAPL/USDG",
+      "SPY/USDG",
+      "QQQ/USDG",
+    ])
+    // Every stock is on Robinhood Chain, in USDG, and marked as keeping market hours.
+    for (const m of VAULT_MARKETS.filter((x) => x.stock)) {
+      expect(m.chainId).toBe(4663)
+      expect(m.stable).toBe("USDG")
+    }
+    expect(VAULT_MARKETS.filter((m) => m.stock)).toHaveLength(5)
     expect(assetForMarket("WETH/USDC")).toMatch(/^0x[0-9a-fA-F]{40}$/)
     expect(assetForMarket("DOGE/USDC")).toBeNull()
   })
