@@ -331,7 +331,8 @@ export default function TradingDashboard() {
             tickers={tickers}
             stockTickers={stockTickers}
             selected={currentSymbol}
-            onSelect={selectSymbol}
+            onSelect={pickSymbol}
+            robinhoodEth={ethOnRobinhood}
           />
           <section className="shrink-0 rounded-xl border border-border bg-card p-3">
             <h2 className="mb-3 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-primary/80">

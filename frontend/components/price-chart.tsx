@@ -965,6 +965,12 @@ export default function PriceChart({
           </SelectContent>
         </Select>
 
+        {onRobinhood && (
+          <Button size="sm" className="h-8 text-xs" onClick={() => openVault("WETH/USDG")}>
+            Trade ETH in your vault
+          </Button>
+        )}
+
         <div className="flex items-baseline gap-2 font-mono">
           {spot !== undefined && (
             <span className="text-xl font-semibold tabular-nums tracking-tight text-primary">
@@ -1088,6 +1094,11 @@ export default function PriceChart({
             </SelectContent>
           </Select>
 
+          {onRobinhood && (
+            <Button size="sm" className="h-8 shrink-0 px-2 text-xs" onClick={() => openVault("WETH/USDG")}>
+              Vault
+            </Button>
+          )}
           {spot !== undefined && (
             <span className="truncate text-sm tabular-nums text-foreground">
               ${formatPrice(spot)}
