@@ -106,6 +106,44 @@ services:
       - tradesmart-network
     restart: unless-stopped
 
+  # Execution: promotes fired rules into intents, sends one venue write at a time,
+  # watches open positions. Its own container because the alert sweep lives in the
+  # API - a slow RPC there would delay every other wallet's alerts - and because the
+  # backtester is deliberately starved for hour-long replays, which an exit cannot
+  # queue behind. Higher CPU weight than either: latency-sensitive and near-idle.
+  executor:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tradesmart-executor
+    command: ["python", "executor.py"]
+    environment:
+      <<: *backend-env
+      # Off unless set. The row in execution_settings is the switch that can be
+      # flipped live; this one survives a database outage and needs a restart.
+      EXECUTION_ENABLED: ${EXECUTION_ENABLED:-false}
+      EXECUTOR_ID: ${EXECUTOR_ID:-executor-1}
+      DB_POOL_MIN: 1
+      DB_POOL_MAX: 4
+    cpu_shares: 1024
+    mem_limit: 256m
+    healthcheck:
+      # 90s rather than the backtester's 180s: a dead executor holding open positions
+      # has to be noticed inside a bar.
+      test: ["CMD", "python", "-c", "import os,sys,time; sys.exit(0 if time.time() - os.path.getmtime('/tmp/executor-heartbeat') < 90 else 1)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 2
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - tradesmart-network
+    restart: unless-stopped
+
   caddy:
     image: caddy:2-alpine
     container_name: tradesmart-caddy
