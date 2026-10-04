@@ -238,3 +238,105 @@ def test_an_action_the_schema_does_not_know_is_422(monkeypatch):
     assert api.post(f"/api/execution/rules/{RULE_ID}/arm",
                     json={"action": {"kind": "dex_trade", "market": "DOGE/USDC", "exit": EXIT},
                           "backtest_job_id": JOB_ID}).status_code == 422
+
+
+class Positions:
+    def __init__(self, rows=None):
+        self.rows = rows or []
+
+    async def list_for_owner(self, owner, limit=50):
+        return [r for r in self.rows if r["owner_key"] == owner]
+
+    async def get(self, position_id, owner=None):
+        for r in self.rows:
+            if str(r["id"]) == str(position_id) and (owner is None or r["owner_key"] == owner):
+                return r
+        return None
+
+
+class Queue:
+    def __init__(self):
+        self.rows = []
+
+    async def list_for_owner(self, owner, status=None, limit=50):
+        return [r for r in self.rows if r["owner_key"] == owner and (status is None or r["status"] == status)]
+
+    async def stuck(self, older_than_seconds=300):
+        return []
+
+
+class Orders:
+    async def for_intent(self, intent_id):
+        return [{"id": 1, "client_order_id": "abc", "leg": "entry", "status": "filled",
+                 "venue_order_id": None, "submitted_at": None, "acked_at": None,
+                 "request": {"notional_usd": 100.0}, "response": {}, "error": None}]
+
+    async def in_doubt(self):
+        return []
+
+
+class Fills:
+    async def for_position(self, position_id):
+        return [{"price": 2000.0, "qty": 0.05, "fee_usd": 0.05, "gas_usd": 0.3,
+                 "tx_ref": "0xabc", "filled_at": None, "venue_fill_id": "f1"}]
+
+
+class Audit:
+    async def for_position(self, position_id):
+        return [{"at": None, "actor": "executor", "from_status": None, "to_status": "open",
+                 "reason": "opened", "detail": {"price": 2000.0}}]
+
+
+POSITION_ROW = {
+    "id": uuid.uuid4(), "owner_key": OWNER, "rule_id": uuid.UUID(RULE_ID), "status": "open",
+    "mode": "shadow", "venue": "uniswap_v3_arbitrum", "market": "WBTC/USDC", "symbol": "BTCUSDT",
+    "timeframe": "1d", "direction": 1, "entry_price": 2000.0, "qty": 0.05, "notional_usd": 100.0,
+    "stop_price": 1900.0, "target_price": 2200.0, "deadline_bar_time": None, "opened_at": None,
+    "closed_at": None, "exit_price": None, "exit_reason": None, "realised_pnl_usd": None,
+    "realised_r": None, "reference": {"entry_drift_bps": 3.5}, "plan": {"stop_atr": 1.5},
+    "parity_version": PARITY_VERSION, "entry_intent_id": uuid.uuid4(),
+}
+
+
+def with_positions(monkeypatch, rows=None, queue=None):
+    monkeypatch.setattr(ec, "ExecutionPositionRepository", Positions(rows if rows is not None else [POSITION_ROW]))
+    monkeypatch.setattr(ec, "ExecutionIntentRepository", queue or Queue())
+    monkeypatch.setattr(ec, "ExecutionOrderRepository", Orders())
+    monkeypatch.setattr(ec, "ExecutionFillRepository", Fills())
+    monkeypatch.setattr(ec, "ExecutionAuditRepository", Audit())
+    return client(monkeypatch)
+
+
+def test_positions_are_listed_for_their_owner(monkeypatch):
+    api = with_positions(monkeypatch)
+    body = api.get("/api/execution/positions").json()
+    assert len(body) == 1 and body[0]["direction"] == "long"
+    assert body[0]["stop_price"] == 1900.0 and body[0]["mode"] == "shadow"
+
+
+def test_the_audit_view_carries_the_whole_chain(monkeypatch):
+    """What someone disputing a fill needs: why, what was decided, what was sent."""
+    api = with_positions(monkeypatch)
+    body = api.get(f"/api/execution/positions/{POSITION_ROW['id']}").json()
+    assert body["position"]["id"] == str(POSITION_ROW["id"])
+    assert body["plan"]["stop_atr"] == 1.5 and body["parity_current"] is True
+    assert body["orders"][0]["request"]["notional_usd"] == 100.0
+    assert body["fills"][0]["gas_usd"] == 0.3
+    assert body["audit"][0]["actor"] == "executor"
+    # The parity number, which is what a dispute about slippage is answered with.
+    assert body["position"]["reference"]["entry_drift_bps"] == 3.5
+
+
+def test_another_wallets_position_is_404(monkeypatch):
+    api = with_positions(monkeypatch, rows=[{**POSITION_ROW, "owner_key": "0xsomeone-else"}])
+    assert api.get(f"/api/execution/positions/{POSITION_ROW['id']}").status_code == 404
+
+
+def test_health_says_whether_anything_is_actually_running(monkeypatch):
+    api = with_positions(monkeypatch)
+    body = api.get("/api/execution/health").json()
+    # Armed is not the same as running, and this is the endpoint that can tell them
+    # apart: execution ships globally off.
+    assert body["execution_enabled"] is False
+    assert body["mode"] == "off" and body["open_positions"] == 1
+    assert body["stuck_intents"] == 0 and body["orders_in_doubt"] == 0
