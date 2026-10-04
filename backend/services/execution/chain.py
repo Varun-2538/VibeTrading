@@ -14,6 +14,12 @@ The trick that makes a public node usable for sends: we sign locally, so the
 transaction hash is known *before* it is broadcast. A send that times out is
 therefore not a dead end - the hash can be asked about until the answer is definite.
 Without that, every timeout on a rate-limited node would strand an intent.
+
+A second node, when configured, is a fallback rather than a peer. A read that the
+primary cannot answer is asked again there; a revert is an answer and is not. A send
+that the primary cannot confirm is offered to the fallback too - safe for the same
+reason as above: the bytes are signed, so the hash is fixed, and a node that already
+has it says "already known", which is AlreadyBroadcast, never a second trade.
 """
 import asyncio
 from dataclasses import dataclass
@@ -52,8 +58,16 @@ class Chain:
     first to a stop and not.
     """
 
-    def __init__(self, rpc_url: str, chain_id: int, *, client: Optional[httpx.AsyncClient] = None):
+    def __init__(
+        self,
+        rpc_url: str,
+        chain_id: int,
+        *,
+        client: Optional[httpx.AsyncClient] = None,
+        fallback_url: Optional[str] = None,
+    ):
         self.rpc_url = rpc_url
+        self.fallback_url = fallback_url if fallback_url and fallback_url != rpc_url else None
         self.chain_id = chain_id
         self._client = client
         self._id = 0
@@ -70,15 +84,27 @@ class Chain:
 
     async def _rpc(self, method: str, params: List[Any], *, retries: int = 0) -> Any:
         """
-        One call. `retries` is only ever non-zero for reads, and the caller decides -
-        this function will not retry something a caller did not say is idempotent.
+        One call, on the primary node and then - only if the primary could not give
+        an answer - on the fallback. `retries` is per node, only ever non-zero for
+        reads, and the caller decides it. A revert is an answer and is never re-asked.
         """
+        try:
+            return await self._rpc_on(self.rpc_url, method, params, retries=retries)
+        except VenueUnknown as primary:
+            if self.fallback_url is None or _already_sent(primary):
+                raise
+            try:
+                return await self._rpc_on(self.fallback_url, method, params, retries=retries)
+            except VenueUnknown as fallback:
+                raise VenueUnknown(f"{primary}; fallback: {fallback}") from fallback
+
+    async def _rpc_on(self, url: str, method: str, params: List[Any], *, retries: int = 0) -> Any:
         self._id += 1
         payload = {"jsonrpc": "2.0", "id": self._id, "method": method, "params": params}
         last: Optional[Exception] = None
         for attempt in range(retries + 1):
             try:
-                response = await self._http().post(self.rpc_url, json=payload)
+                response = await self._http().post(url, json=payload)
                 response.raise_for_status()
                 body = response.json()
             except Exception as exc:  # noqa: BLE001 - mapped by the caller's semantics
@@ -158,8 +184,7 @@ class Chain:
         try:
             return await self._rpc("eth_sendRawTransaction", [signed_hex])
         except VenueUnknown as exc:
-            text = str(exc).lower()
-            if "already known" in text or "already imported" in text or "nonce too low" in text:
+            if _already_sent(exc):
                 raise AlreadyBroadcast(str(exc)) from exc
             raise
 
@@ -184,6 +209,12 @@ class Chain:
                 return got
             await asyncio.sleep(interval)
         raise VenueUnknown(f"no receipt for {tx_hash} yet")
+
+
+def _already_sent(exc: Exception) -> bool:
+    """A node saying it has, or has had, this transaction. Not a reason to ask another."""
+    text = str(exc).lower()
+    return "already known" in text or "already imported" in text or "nonce too low" in text
 
 
 class AlreadyBroadcast(Exception):
