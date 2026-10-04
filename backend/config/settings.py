@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     # it must fail at boot rather than run in that state.
     jwt_secret: str
 
+    # The address the executor signs with, published by /api/execution/account so a
+    # vault owner grants permission to the right operator. Empty until an executor
+    # key exists, and the panel refuses to offer a grant while it is.
+    executor_address: str = ""
+
     # App Config
     frontend_url: str = "http://localhost:3000"
     backend_port: int = 8000
