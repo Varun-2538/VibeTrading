@@ -25,7 +25,7 @@ const FEATURES = [
   },
   {
     title: "Strategy alerts",
-    body: "Set a condition on a pattern or a level. It runs on the server and fires with the browser closed. Alerts only: nothing here places a trade.",
+    body: "Set a condition on a pattern or a level. It runs on the server and fires with the browser closed. Alerts by default; execution only if you deploy a vault and switch it on.",
   },
   {
     title: "Plain-English assistant",
@@ -524,7 +524,9 @@ export default function Landing() {
           >
             Analysis, not advice. VibeTrading is an early-stage company founded by{" "}
             {FOUNDERS_SENTENCE}, not a broker or investment adviser. It computes technical analysis on
-            public market data — it places no trades, holds no funds, and never
+            public market data, and can trade it inside a contract you own if
+            you switch that on — it holds no funds, cannot withdraw from that
+            contract, and never
             asks for exchange API keys. Trading cryptocurrency can lose you
             money, up to everything you put in. Read the{" "}
             <Link
