@@ -155,6 +155,11 @@ interface PriceChartProps {
   quoteVolume?: number
   /** Show ETH as Robinhood Chain's ETH/USDG; the data is ETH's either way. */
   robinhood?: boolean
+  /**
+   * A stock covering this chart. The top bar stays this one - same symbol list,
+   * price and timeframes - and only drops the controls that read Binance.
+   */
+  stockView?: { symbol: string; name: string; price?: number; changePct?: number }
   /** Open vault positions on this pair: entry, take-profit and stop-loss are drawn. */
   positions?: OpenPosition[]
 }
@@ -187,6 +192,7 @@ export default function PriceChart({
   changePct,
   quoteVolume,
   robinhood = false,
+  stockView,
   positions = [],
 }: PriceChartProps) {
   const selected = symbol || "BTCUSDT"
@@ -929,14 +935,16 @@ export default function PriceChart({
   /* The desktop top bar, when the page gives it a slot: identity, price and
      every chart control except the pattern settings, which have a card. */
   const pairName = onRobinhood ? "Robinhood Chain" : CRYPTO_PAIRS.find((c) => c.symbol === selected)?.name
+  const barPrice = stockView ? stockView.price : spot
+  const barChange = stockView ? stockView.changePct : changePct
   const desktopToolbar = (
     <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <Select value={shownSymbol} onValueChange={(v) => onSymbolChange?.(v)}>
-          <SelectTrigger aria-label="Cryptocurrency" className="h-10 w-[200px] border-border bg-secondary">
+        <Select value={stockView?.symbol ?? shownSymbol} onValueChange={(v) => onSymbolChange?.(v)}>
+          <SelectTrigger aria-label="Market" className="h-10 w-[200px] border-border bg-secondary">
             <span className="flex min-w-0 items-baseline gap-2">
-              <span className="text-lg font-semibold tracking-tight">{shownLabel}</span>
-              <span className="truncate text-xs text-muted-foreground">{pairName}</span>
+              <span className="text-lg font-semibold tracking-tight">{stockView?.symbol ?? shownLabel}</span>
+              <span className="truncate text-xs text-muted-foreground">{stockView?.name ?? pairName}</span>
             </span>
           </SelectTrigger>
           <SelectContent>
@@ -966,27 +974,27 @@ export default function PriceChart({
         </Select>
 
         <div className="flex items-baseline gap-2 font-mono">
-          {spot !== undefined && (
+          {barPrice !== undefined && (
             <span className="text-xl font-semibold tabular-nums tracking-tight text-primary">
-              ${formatPrice(spot)}
+              ${formatPrice(barPrice)}
             </span>
           )}
           <span
             className="inline-flex items-center gap-1.5 rounded bg-muted px-1.5 py-0.5 text-[11px]"
-            title={live ? "Streaming live from Binance" : "Not connected to the live feed"}
+            title={stockView ? "From the stock's pool on Robinhood Chain" : live ? "Streaming live from Binance" : "Not connected to the live feed"}
           >
             <span
-              className={`inline-block h-1.5 w-1.5 rounded-full ${live ? "animate-pulse bg-primary" : "bg-muted-foreground/40"}`}
+              className={`inline-block h-1.5 w-1.5 rounded-full ${stockView || live ? "bg-primary" : "bg-muted-foreground/40"} ${!stockView && live ? "animate-pulse" : ""}`}
             />
-            {changePct !== undefined && (
-              <span style={{ color: changePct >= 0 ? SUPPORT : RESISTANCE }}>
-                {changePct >= 0 ? "+" : ""}
-                {changePct.toFixed(2)}%
+            {barChange !== undefined && (
+              <span style={{ color: barChange >= 0 ? SUPPORT : RESISTANCE }}>
+                {barChange >= 0 ? "+" : ""}
+                {barChange.toFixed(2)}%
               </span>
             )}
-            <span className="text-muted-foreground">{live ? "live" : "offline"}</span>
+            <span className="text-muted-foreground">{stockView ? "24h" : live ? "live" : "offline"}</span>
           </span>
-          {quoteVolume ? (
+          {!stockView && quoteVolume ? (
             <span className="hidden text-[11px] text-muted-foreground xl:inline">
               24h vol <span className="text-foreground">{compactUsd(quoteVolume)} USDT</span>
             </span>
@@ -996,7 +1004,7 @@ export default function PriceChart({
         {timeframeControl}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className={`flex flex-wrap items-center gap-2 ${stockView ? "hidden" : ""}`}>
         {controlGroups
           .filter((g) => !(slots?.detection && g.detection))
           .map((g) => (

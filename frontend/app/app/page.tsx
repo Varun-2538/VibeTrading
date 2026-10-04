@@ -296,12 +296,7 @@ export default function TradingDashboard() {
         <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-3 py-2">
           {/* The crypto chart portals its toolbar here. While a stock is on
               screen the stock chart carries its own, so this one steps aside. */}
-          <div ref={setToolbarEl} className={`min-w-0 flex-1 ${stock ? "hidden" : ""}`} />
-          {stock && (
-            <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-              {stock.symbol} · Robinhood Stock Token · Robinhood Chain
-            </span>
-          )}
+          <div ref={setToolbarEl} className="min-w-0 flex-1" />
           {candlesInView !== null && (
             <span className="hidden shrink-0 items-center gap-1.5 rounded bg-muted px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.06em] text-muted-foreground xl:flex">
               <Cpu className="h-3.5 w-3.5 text-primary/80" />
@@ -351,6 +346,16 @@ export default function TradingDashboard() {
           <PriceChart
             symbol={cryptoSymbol}
             robinhood={ethOnRobinhood}
+            stockView={
+              stock
+                ? {
+                    symbol: stock.symbol,
+                    name: stock.name,
+                    price: stockTickers[stock.symbol]?.price,
+                    changePct: stockTickers[stock.symbol]?.changePct,
+                  }
+                : undefined
+            }
             onSymbolChange={pickSymbol}
             timeframe={timeframe}
             onTimeframeChange={setTimeframe}
