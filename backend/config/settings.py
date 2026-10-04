@@ -57,9 +57,14 @@ class Settings(BaseSettings):
     # A chain with no factory address is a chain live mode refuses, not one it
     # guesses at. Same key signs on both: an EOA is an address on every EVM chain.
     arbitrum_rpc_url: str = "https://arb1.arbitrum.io/rpc"
+    arbitrum_rpc_fallback_url: str = "https://arb1.arbitrum.io/rpc"
     arbitrum_vault_factory_address: str = ""
     robinhood_rpc_url: str = "https://rpc.mainnet.chain.robinhood.com"
+    robinhood_rpc_fallback_url: str = "https://rpc.mainnet.chain.robinhood.com"
     robinhood_vault_factory_address: str = ""
+    # In production the primary is a keyed provider (Alchemy) and the fallback stays
+    # the chain's public endpoint, so a provider outage or quota costs latency, not
+    # an exit. When both are the same URL there is simply no fallback.
 
     # App Config
     frontend_url: str = "http://localhost:3000"
