@@ -7,7 +7,12 @@ import { disclosureText } from "@/lib/vault"
 const root = join(__dirname, "..")
 const repo = join(root, "..")
 
-const read = (path: string) => readFileSync(join(root, path), "utf8")
+/**
+ * Collapse whitespace before matching. A claim is a claim however it is wrapped, and
+ * the first version of this file asserted line breaks - so a formatter reflowing a
+ * paragraph broke a test about what the page promises.
+ */
+const read = (path: string) => readFileSync(join(root, path), "utf8").replace(/\s+/g, " ")
 
 const risk = read("app/legal/risk/page.tsx")
 const terms = read("app/legal/terms/page.tsx")
@@ -32,18 +37,22 @@ describe("claims that stopped being true", () => {
     }
   })
 
-  it("no longer says a wallet signature is the only transaction there could be", () => {
-    // Signing in still authorises nothing. What changed is that a *separate*,
-    // explicit grant now exists, and the copy has to admit it.
+  it("scopes the wallet-signature promise to alerts, and names the separate grant", () => {
+    // Signing in still authorises nothing, and the pages should still say so - what
+    // changed is that a separate, explicit grant now exists beside it. So the test is
+    // that the old claim is qualified rather than deleted: an unqualified "we could
+    // never move anything" would be the false version.
+    expect(risk).toContain("for alerts that is all it does")
+    expect(risk).toContain("Execution is a separate, explicit step")
+    expect(privacy).toContain("never part of signing in")
     expect(privacy).not.toContain("we cannot move anything, and signing in authorises no")
-    expect(risk).not.toContain("no ability\n        for us to move anything you hold")
   })
 })
 
 describe("promises that are still true, and are the reason this is safe", () => {
   it("keeps the four that matter, in the words the contract enforces", () => {
     expect(risk).toContain("We do not hold your funds")
-    expect(risk).toContain("cannot\n          withdraw from it")
+    expect(risk).toContain("cannot withdraw from it")
     expect(risk).toContain("We cannot move a stop once it is set")
     expect(risk).toContain("revoke it in one transaction")
   })
@@ -78,7 +87,7 @@ describe("the site and the contract must not contradict each other", () => {
     // the one that counted - and we would be the ones out of step.
     const signed = disclosureText()
     expect(signed).toContain("cannot withdraw")
-    expect(risk).toContain("cannot\n          withdraw from it")
+    expect(risk).toContain("cannot withdraw from it")
 
     expect(signed).toContain("revoke")
     expect(risk).toContain("revoke")
