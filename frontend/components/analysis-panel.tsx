@@ -64,6 +64,7 @@ import { cn } from "@/lib/utils"
 import BacktestSheet from "@/components/backtest-sheet"
 import VaultSheet from "@/components/vault-sheet"
 import { OPEN_VAULT_EVENT } from "@/lib/stocks"
+import { pnl, timeLeft, type OpenPosition } from "@/lib/positions"
 import ArmSheet from "@/components/arm-sheet"
 import { listBacktests, type BacktestRule, type BacktestSummary } from "@/lib/backtests"
 import { listPolicies } from "@/lib/execution"
@@ -73,6 +74,12 @@ import { PANEL_NAV_EVENT, type PanelTarget } from "@/lib/panel"
 interface AnalysisPanelProps {
   symbol: string
   timeframe: Timeframe
+  /** Open positions in the owner's vaults, read from chain by the page. */
+  openPositions?: OpenPosition[]
+  /** Latest price per chart symbol, for unrealised P&L. */
+  livePrices?: Record<string, number>
+  /** Switch the chart to a position's market. */
+  onShowPosition?: (chartSymbol: string) => void
 }
 
 type PatternKind = "W" | "M" | "HS" | "IHS" | "CUP"
@@ -152,7 +159,13 @@ function SignInGate({
   )
 }
 
-export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps) {
+export default function AnalysisPanel({
+  symbol,
+  timeframe,
+  openPositions = [],
+  livePrices = {},
+  onShowPosition,
+}: AnalysisPanelProps) {
   const {
     status,
     address,
@@ -168,6 +181,13 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
   const [rules, setRules] = useState<Rule[]>([])
   const [events, setEvents] = useState<RuleEvent[]>([])
   const [tab, setTab] = useState("build")
+  // A position that has just opened is the most important thing on this panel, so
+  // the panel turns to it - once per new position, never back again on its own.
+  const [seenPositions, setSeenPositions] = useState(0)
+  useEffect(() => {
+    if (openPositions.length > seenPositions) setTab("positions")
+    setSeenPositions(openPositions.length)
+  }, [openPositions.length]) // eslint-disable-line react-hooks/exhaustive-deps
   const [unseen, setUnseen] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -500,6 +520,14 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
               Armed
               {rules.length > 0 && (
                 <span className="ml-1 text-muted-foreground">{rules.length}</span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="positions" className="h-5 px-2 text-xs">
+              Positions
+              {openPositions.length > 0 && (
+                <span className="ml-1 rounded-full bg-primary px-1 text-[10px] text-primary-foreground">
+                  {openPositions.length}
+                </span>
               )}
             </TabsTrigger>
             <TabsTrigger value="fired" className="h-5 px-2 text-xs">
@@ -951,6 +979,96 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
           )}
         </TabsContent>
         {/* Tests: backtests this wallet has run, newest first. ------------- */}
+        <TabsContent value="positions" className="mt-0 min-h-0 flex-1 overflow-y-auto">
+          {openPositions.length === 0 ? (
+            <div className="flex h-full items-center justify-center px-6 text-center">
+              <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
+                No open positions. When a rule trades in your vault it appears here, with the stop and
+                target the vault holds - and on the chart, as entry, take-profit and stop-loss lines.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto px-3 py-2 lg:px-4">
+              <table className="w-full min-w-[640px] text-[11px]">
+                <thead>
+                  <tr className="text-left text-[10px] uppercase tracking-wide text-muted-foreground">
+                    <th className="py-1 pr-2 font-medium">Market</th>
+                    <th className="py-1 pr-2 font-medium">Entry</th>
+                    <th className="py-1 pr-2 font-medium">Stop</th>
+                    <th className="py-1 pr-2 font-medium">Target</th>
+                    <th className="py-1 pr-2 font-medium">Now</th>
+                    <th className="py-1 pr-2 font-medium">P&amp;L</th>
+                    <th className="py-1 pr-2 font-medium">Time exit</th>
+                    <th className="py-1" />
+                  </tr>
+                </thead>
+                <tbody className="font-mono tabular-nums">
+                  {openPositions.map((p) => {
+                    const now = livePrices[p.chartSymbol]
+                    const pl = pnl(p, now)
+                    const explorer =
+                      p.chainName === "Robinhood Chain"
+                        ? `https://robinhoodchain.blockscout.com/address/${p.vault}`
+                        : `https://arbiscan.io/address/${p.vault}`
+                    const rel = (to: number) => `${to >= p.entry ? "+" : ""}${((to / p.entry - 1) * 100).toFixed(1)}%`
+                    return (
+                      <tr key={p.vault} className="border-t border-border">
+                        <td className="py-1.5 pr-2 font-sans">
+                          <span className="font-semibold text-foreground">{p.label}</span>{" "}
+                          <span className="rounded bg-primary/15 px-1 text-[10px] text-primary">LONG</span>
+                          <div className="text-[10px] text-muted-foreground">
+                            {p.chainName} · ${p.spentUsd.toFixed(2)}
+                          </div>
+                        </td>
+                        <td className="py-1.5 pr-2">${p.entry.toFixed(2)}</td>
+                        <td className="py-1.5 pr-2" style={{ color: "#ff7a59" }}>
+                          ${p.stop.toFixed(2)} <span className="text-[10px]">{rel(p.stop)}</span>
+                        </td>
+                        <td className="py-1.5 pr-2" style={{ color: "#7af0ce" }}>
+                          {p.target !== null ? (
+                            <>
+                              ${p.target.toFixed(2)} <span className="text-[10px]">{rel(p.target)}</span>
+                            </>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td className="py-1.5 pr-2">{now ? `$${now.toFixed(2)}` : "—"}</td>
+                        <td className="py-1.5 pr-2" style={{ color: pl ? (pl.pct >= 0 ? "#7af0ce" : "#ff7a59") : undefined }}>
+                          {pl ? `${pl.pct >= 0 ? "+" : ""}${pl.pct.toFixed(2)}% (${pl.usd >= 0 ? "+" : "-"}$${Math.abs(pl.usd).toFixed(3)})` : "—"}
+                        </td>
+                        <td className="py-1.5 pr-2">{timeLeft(p.deadline)}</td>
+                        <td className="py-1.5 text-right font-sans">
+                          <button
+                            type="button"
+                            onClick={() => onShowPosition?.(p.chartSymbol)}
+                            className="mr-1 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+                          >
+                            Chart
+                          </button>
+                          <a
+                            href={explorer}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+                          >
+                            Vault ↗
+                          </a>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
+                Read from your vaults on chain. The stop, target and time exit are written in the contract and
+                cannot be moved; anyone may close the position once one is reached, so it does not wait on our
+                server. P&amp;L is against the chart&apos;s price, before pool fees.
+              </p>
+            </div>
+          )}
+        </TabsContent>
+
         <TabsContent value="tests" className="mt-0 min-h-0 flex-1">
           {backtests.length === 0 ? (
             <div className="flex h-full items-center justify-center px-6 text-center">

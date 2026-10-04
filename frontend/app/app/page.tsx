@@ -10,6 +10,8 @@ import AppHeader from "@/components/app-header"
 import Watchlist, { WATCHLIST } from "@/components/watchlist"
 import StockChart from "@/components/stock-chart"
 import { OPEN_VAULT_EVENT, fetchStockQuotes, isStock, stockFor } from "@/lib/stocks"
+import { useOpenPositions } from "@/lib/positions"
+import { useAccount } from "wagmi"
 import { Button } from "@/components/ui/button"
 import { BarChart3, CandlestickChart, Cpu, MessageSquare, Sparkles } from "lucide-react"
 import type { LiquidityData, Timeframe } from "@/lib/api"
@@ -159,6 +161,24 @@ export default function TradingDashboard() {
     ? Math.max(0, Math.round((shownViewport.to - shownViewport.from) / TIMEFRAME_MS[timeframe]) + 1)
     : null
   const ticker = tickers[cryptoSymbol]
+  // Open positions in the owner's vaults, read from chain, drawn on whichever chart
+  // shows their market and listed in the strategy panel.
+  const { address: owner } = useAccount()
+  const { positions: openPositions } = useOpenPositions(owner)
+  const cryptoPositions = useMemo(
+    () => openPositions.filter((p) => p.chartSymbol === cryptoSymbol),
+    [openPositions, cryptoSymbol],
+  )
+  const stockPositions = useMemo(
+    () => openPositions.filter((p) => stock && p.chartSymbol === stock.symbol),
+    [openPositions, stock],
+  )
+  const livePrices = useMemo(() => {
+    const out: Record<string, number> = {}
+    for (const [k, t] of Object.entries(tickers)) out[k] = t.price
+    for (const [k, t] of Object.entries(stockTickers)) out[k] = t.price
+    return out
+  }, [tickers, stockTickers])
 
   const clearMarks = useCallback(() => {
     setMarks([])
@@ -327,6 +347,7 @@ export default function TradingDashboard() {
             slots={slots}
             changePct={ticker?.changePct}
             quoteVolume={ticker?.quoteVolume}
+            positions={cryptoPositions}
           />
           {/* A stock covers the crypto chart rather than replacing it, so that one
               keeps its size and its stream and is exactly as it was on return. */}
@@ -340,6 +361,7 @@ export default function TradingDashboard() {
                 onSymbolChange={selectSymbol}
                 onViewportChange={setStockViewport}
                 marks={marks}
+                positions={stockPositions}
               />
             </div>
           )}
@@ -361,7 +383,13 @@ export default function TradingDashboard() {
           >
             <div className="absolute left-1/2 top-1/2 h-1 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-border" />
           </div>
-          <AnalysisPanel symbol={cryptoSymbol} timeframe={timeframe} />
+          <AnalysisPanel
+            symbol={cryptoSymbol}
+            timeframe={timeframe}
+            openPositions={openPositions}
+            livePrices={livePrices}
+            onShowPosition={selectSymbol}
+          />
         </div>
 
         {/* Chat: a resizable card at lg, a full-screen region below it. */}
