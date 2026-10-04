@@ -69,7 +69,7 @@ class Strictness:
 
 PRESETS: Dict[str, Strictness] = {
     "strict": Strictness(tol=0.5, depth=2.0, near_frac=0.15, max_bars=120, tol_height=0.15),
-    "balanced": Strictness(tol=1.0, depth=1.0, near_frac=0.25, max_bars=120, tol_height=0.3),
+    "balanced": Strictness(tol=1.0, depth=1.0, near_frac=0.25, max_bars=120, tol_height=0.4),
     "loose": Strictness(tol=2.0, depth=0.7, near_frac=0.40, max_bars=150, tol_height=0.45),
 }
 
@@ -110,7 +110,7 @@ MAX_LETTER_BARS = 60
 # The first arm stands above the neckline by at least this share of the W's
 # height: the target is the top of that arm, and a target barely past the
 # neckline is no trade.
-MIN_ARM_EXCESS = 0.5
+MIN_ARM_EXCESS = 0.3
 
 # Which prices the shape is measured on. Wicks are the classic definition and
 # the default; closes ignore spikes. Note that neither changes how a break is
@@ -320,7 +320,7 @@ def _detect_one_kind(
             # The neckline breaks about as soon as the second low took to form,
             # or it is not this pattern: a W still "forming" a hundred candles
             # later is a range, and a break that late is a different move.
-            if (break_at + 1 if broken else len(after)) > separation:
+            if (break_at + 1 if broken else len(after)) > 1.5 * separation:
                 continue
             # After the break, price must reach the target before the pattern's
             # time runs out; until then it is live, after that it is void.
@@ -401,7 +401,7 @@ def _last_index(pattern: Dict[str, Any]) -> int:
 
 
 # See detect_double_patterns: the smallest W worth drawing, against the window.
-MIN_SCREEN_SHARE = 0.15
+MIN_SCREEN_SHARE = 0.08
 
 
 def _height(pattern: Dict[str, Any]) -> float:
