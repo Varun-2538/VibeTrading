@@ -13,6 +13,7 @@ import {
   parseUsdc,
   toFeedPrice,
   VAULT_MARKETS,
+  vaultMarket,
 } from "@/lib/vault"
 
 describe("the disclosure a vault stores", () => {
@@ -89,9 +90,22 @@ describe("the hard cap", () => {
 })
 
 describe("markets", () => {
-  it("mirrors the factory's fixed list", () => {
-    expect(VAULT_MARKETS.map((m) => m.market)).toEqual(["WETH/USDC", "WBTC/USDC"])
+  it("mirrors each chain's factory list", () => {
+    expect(VAULT_MARKETS.map((m) => m.market)).toEqual(["WETH/USDG", "WETH/USDC", "WBTC/USDC"])
     expect(assetForMarket("WETH/USDC")).toMatch(/^0x[0-9a-fA-F]{40}$/)
     expect(assetForMarket("DOGE/USDC")).toBeNull()
+  })
+
+  it("puts each market on the chain its dollar belongs to", () => {
+    // USDG is Robinhood Chain's dollar and USDC is Arbitrum One's. A market listed
+    // on the wrong chain would deploy a vault against a factory that has never heard
+    // of its asset.
+    for (const m of VAULT_MARKETS) {
+      expect(m.market.endsWith(`/${m.stable}`)).toBe(true)
+      expect(m.chainId).toBe(m.stable === "USDG" ? 4663 : 42161)
+    }
+    expect(vaultMarket("WETH/USDG")?.asset).toBe("0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73")
+    // The same token symbol is a different contract on each chain.
+    expect(vaultMarket("WETH/USDG")?.asset).not.toBe(vaultMarket("WETH/USDC")?.asset)
   })
 })

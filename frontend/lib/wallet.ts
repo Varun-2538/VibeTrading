@@ -1,5 +1,5 @@
 import { createConfig, http, type CreateConnectorFn } from "wagmi"
-import { arbitrum } from "wagmi/chains"
+import { arbitrum, robinhood } from "wagmi/chains"
 // Narrow subpaths, not the "wagmi/connectors" barrel: the barrel re-exports
 // every connector including Coinbase and Safe, which would pull their code into
 // the bundle for wallets this feature does not offer.
@@ -8,6 +8,15 @@ import { walletConnect } from "wagmi/connectors/walletConnect"
 
 export const ARBITRUM_CHAIN_ID = arbitrum.id
 export const ARBITRUM_NAME = arbitrum.name
+
+/**
+ * Chains a wallet may be on. Sign-in names Arbitrum One, but an address is the same
+ * on every EVM chain, so a wallet sitting on Robinhood Chain - where a USDG vault
+ * lives - is not on the wrong network. Each vault transaction switches to its own
+ * chain before it is sent.
+ */
+export const SUPPORTED_CHAIN_IDS: readonly number[] = [arbitrum.id, robinhood.id]
+export const SUPPORTED_NETWORKS = `${arbitrum.name} or ${robinhood.name}`
 
 /**
  * Injected first, WalletConnect second.
@@ -54,12 +63,13 @@ export function pickConnector<T extends { id: string }>(
 }
 
 export const wagmiConfig = createConfig({
-  chains: [arbitrum],
+  chains: [arbitrum, robinhood],
   connectors: buildConnectors(process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID),
   transports: {
-    // The default public RPC. Nothing here reads chain state - the address and a
-    // signature are all this feature needs - so no paid provider is required.
+    // The default public RPCs. The vault panel reads a handful of values per open,
+    // which they carry comfortably, so no paid provider is required.
     [arbitrum.id]: http(),
+    [robinhood.id]: http(),
   },
   // Next.js renders client components on the server too. Without this, wagmi
   // reads persisted state during SSR and the first client render disagrees with

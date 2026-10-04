@@ -11,7 +11,7 @@ import {
   verifySignature,
   type Session,
 } from "@/lib/session"
-import { ARBITRUM_CHAIN_ID, pickConnector } from "@/lib/wallet"
+import { ARBITRUM_CHAIN_ID, SUPPORTED_CHAIN_IDS, pickConnector } from "@/lib/wallet"
 
 export type SessionStatus =
   | "disconnected"
@@ -62,7 +62,7 @@ export function useSession() {
     setSession(sessionFor(address))
   }, [address])
 
-  const onWrongChain = isConnected && chainId !== ARBITRUM_CHAIN_ID
+  const onWrongChain = isConnected && !SUPPORTED_CHAIN_IDS.includes(chainId ?? -1)
 
   const status: SessionStatus = !isConnected
     ? "disconnected"
