@@ -11,7 +11,17 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { AlertCircle, Bell, FlaskConical, Loader2, Plus, Trash2, Wallet, Zap } from "lucide-react"
+import {
+  AlertCircle,
+  Bell,
+  FlaskConical,
+  Loader2,
+  Plus,
+  ShieldCheck,
+  Trash2,
+  Wallet,
+  Zap,
+} from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -52,6 +62,7 @@ import { useStrategySocket } from "@/hooks/use-strategy-socket"
 import { ARBITRUM_NAME, shortAddress } from "@/lib/wallet"
 import { cn } from "@/lib/utils"
 import BacktestSheet from "@/components/backtest-sheet"
+import VaultSheet from "@/components/vault-sheet"
 import { listBacktests, type BacktestRule, type BacktestSummary } from "@/lib/backtests"
 import { TRIGGERS, signalParams, triggerById, triggerName } from "@/lib/triggers"
 
@@ -158,6 +169,7 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
   const [busy, setBusy] = useState(false)
   const [testing, setTesting] = useState<string | null>(null)
   const [backtestRule, setBacktestRule] = useState<BacktestRule | null>(null)
+  const [vaultOpen, setVaultOpen] = useState(false)
   const [backtestJobId, setBacktestJobId] = useState<string | undefined>(undefined)
   const [backtests, setBacktests] = useState<BacktestSummary[]>([])
 
@@ -406,6 +418,17 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
               >
                 <Wallet className="h-2.5 w-2.5" />
                 {shortAddress(address)}
+              </button>
+            )}
+            {status === "ready" && (
+              <button
+                type="button"
+                onClick={() => setVaultOpen(true)}
+                title="Your vault, and whether anything is allowed to trade"
+                className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+              >
+                <ShieldCheck className="h-2.5 w-2.5" />
+                Vault
               </button>
             )}
           </div>
@@ -904,6 +927,7 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
           )}
         </TabsContent>
       </Tabs>
+        <VaultSheet open={vaultOpen} onOpenChange={setVaultOpen} />
         <BacktestSheet
           rule={backtestRule}
           jobId={backtestJobId}

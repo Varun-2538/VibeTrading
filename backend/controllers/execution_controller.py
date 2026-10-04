@@ -23,6 +23,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from config import settings
 from controllers.rules_controller import require_owner
 from models.execution_schemas import AccountSettings, ArmRequest, PreflightThresholds
 from repositories.backtest_repository import BacktestRepository
@@ -78,6 +79,10 @@ def _account(owner_key: str, row: Optional[Dict[str, Any]], globally_enabled: bo
     # while execution is switched off is the most confusing state to debug.
     base["execution_enabled"] = globally_enabled
     base["parity_version"] = PARITY_VERSION
+    # The address a vault owner grants to. Published rather than configured in the
+    # browser: one source of truth, so a redeployed executor cannot leave owners
+    # granting permission to an address that no longer signs anything.
+    base["operator_address"] = settings.executor_address or None
     return base
 
 
