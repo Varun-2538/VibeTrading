@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { canBeNeutral, costNote, DEFAULT_EXIT, equityLines, fmtPct, gasPct, markable, overfit, POOL_TIERS, roundTripPct, settingLabel, stopPctForCostBudget, tradeMarks, tradeVerdict, verdict, type BacktestReport, type PeriodStudy, type TradePeriod, type TradeRow, type TuningReport } from "@/lib/backtests"
+import { canBeNeutral, costNote, DEFAULT_EXIT, equityLines, fmtPct, gasPct, markable, overfit, POOL_TIERS, roundTripPct, settingLabel, SIDES, stopPctForCostBudget, tradeMarks, tradeVerdict, verdict, type BacktestReport, type PeriodStudy, type TradePeriod, type TradeRow, type TuningReport } from "@/lib/backtests"
 
 function period(over: Partial<PeriodStudy> = {}, edge = 0.4, ci: [number, number] | null = [0.1, 0.7]): PeriodStudy {
   return {
@@ -114,6 +114,13 @@ describe("trades", () => {
       " Costs took -0.30R per trade: -0.10R before them, -0.40R after.",
     )
     expect(costNote(tp({ expectancy_r: 0.2, gross_expectancy_r: 0.2, cost_r: 0 }))).toBe("")
+  })
+
+  it("offers the directions a venue can take, and defaults to measuring both", () => {
+    // The default keeps every existing report comparable; the spot venue needs
+    // "long" and the arming gate is what will insist on it.
+    expect(SIDES.map((s) => s.value)).toEqual(["both", "long", "short"])
+    expect(SIDES[1].label).toBe("Long only")
   })
 
   it("prices a round trip the way the pool does", () => {

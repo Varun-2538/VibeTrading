@@ -76,6 +76,7 @@ def tune(
     plan: ExitPlan,
     *,
     neutral: str,
+    sides: str = "both",
     start: int,
     split: int,
     grid: Grid,
@@ -106,7 +107,7 @@ def tune(
             )
             signals_by_filter[key] = distinct_setups(fires)
 
-        sim = simulate(candles, signals_by_filter[key], start, split, plan_for(plan, setting), neutral)
+        sim = simulate(candles, signals_by_filter[key], start, split, plan_for(plan, setting), neutral, sides)
         metrics = period_metrics(candles, sim, timeframe_ms)
         rows.append({
             "settings": setting.as_dict(),

@@ -13,7 +13,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from repositories.rule_repository import RuleEventRepository
+from repositories.rule_repository import RuleEventRepository, RuleRepository
+from services.actions import ACTIONS
+from services.actions.base import PENDING, ActionResult
 from services.rule_engine import (
     BLOCKED_COOLDOWN,
     BLOCKED_DEDUP,
@@ -470,3 +472,101 @@ async def test_pattern_rule_accepts_big_kinds_and_reads_their_bias(monkeypatch):
     assert blocked is None and signal is not None
     assert signal.direction == "bearish"
     assert signal.evidence["kind"] == "HS"
+
+
+class TestFire:
+    """
+    What happens to the event row after a fire, with the repository faked out.
+
+    The status write is a compare-and-set now, because an action may hand the
+    fire to another process that moves the row on itself - and a late writer
+    overwriting that outcome would hide an abandoned trade.
+    """
+
+    @pytest.fixture
+    def recorded(self, monkeypatch):
+        writes = []
+
+        async def insert(**kw):
+            return {"id": 7, "fired_at": datetime.now(timezone.utc)}
+
+        async def mark_fired(_rule_id, _at):
+            return None
+
+        async def set_if(event_id, expected, status, result):
+            writes.append((event_id, tuple(expected), status, result))
+            return True
+
+        monkeypatch.setattr(RuleEventRepository, "insert", insert)
+        monkeypatch.setattr(RuleRepository, "mark_fired", mark_fired)
+        monkeypatch.setattr(RuleEventRepository, "set_action_result_if", set_if)
+        return writes
+
+    def signal(self, provisional=False):
+        return Signal(
+            rule_id=rule()["id"], agent="pattern", symbol="BTCUSDT", timeframe="1h",
+            candle_time=datetime.now(timezone.utc), identity="W:confirmed:1000",
+            direction="bullish", price=100.0, provisional=provisional, evidence={},
+        )
+
+    async def test_an_alert_is_written_only_from_pending(self, recorded, monkeypatch):
+        sent = []
+
+        class Spy:
+            async def execute(self, _rule, _signal, event_id):
+                sent.append(event_id)
+                return ActionResult(status="sent", result={"channel": "ws"})
+
+        monkeypatch.setitem(ACTIONS, "alert", Spy())
+        event = await RuleEngine.fire(rule(), self.signal())
+        assert event["id"] == 7 and sent == [7]
+        assert recorded == [(7, PENDING, "sent", {"channel": "ws"})]
+
+    async def test_a_provisional_signal_may_only_alert(self, recorded, monkeypatch):
+        """
+        A repaintable signal can be undone by the next bar, so it must never
+        reach an action that spends. The gate is the cheapest safety rail in the
+        engine and it predates any executor - this registers a spender to prove
+        the gate is what stops it, not the absence of a handler.
+        """
+        spent = []
+
+        class Spender:
+            async def execute(self, _rule, _signal, event_id):
+                spent.append(event_id)
+                return ActionResult(status="sent")
+
+        monkeypatch.setitem(ACTIONS, "dex_trade", Spender())
+        event = await RuleEngine.fire(
+            rule(action={"kind": "dex_trade"}), self.signal(provisional=True)
+        )
+        assert event is not None
+        assert spent == []  # the point
+        assert recorded == [(7, PENDING, "skipped", {"reason": "provisional signal"})]
+
+    async def test_a_confirmed_signal_does_reach_that_action(self, recorded, monkeypatch):
+        """The mirror of the gate: without provisional, the same rule executes."""
+        spent = []
+
+        class Spender:
+            async def execute(self, _rule, _signal, event_id):
+                spent.append(event_id)
+                return ActionResult(status="queued", result={"kind": "entry"})
+
+        monkeypatch.setitem(ACTIONS, "dex_trade", Spender())
+        await RuleEngine.fire(rule(action={"kind": "dex_trade"}), self.signal())
+        assert spent == [7]
+        assert recorded == [(7, PENDING, "queued", {"kind": "entry"})]
+
+    async def test_an_unknown_action_is_recorded_and_skipped(self, recorded):
+        await RuleEngine.fire(rule(action={"kind": "carrier_pigeon"}), self.signal())
+        event_id, expected, status, result = recorded[0]
+        assert (event_id, expected, status) == (7, PENDING, "skipped")
+        assert "carrier_pigeon" in result["reason"]
+
+    async def test_a_repeat_fire_is_dropped_by_the_dedup_key(self, monkeypatch):
+        async def already_there(**kw):
+            return None
+
+        monkeypatch.setattr(RuleEventRepository, "insert", already_there)
+        assert await RuleEngine.fire(rule(), self.signal()) is None

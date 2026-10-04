@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     timescale_user: str
     timescale_password: str
 
+    # Postgres pool, per process. Three processes share one database - the API,
+    # the backtest worker and (later) the executor - and Postgres defaults to 100
+    # connections, so a background process that only polls asks for far fewer
+    # than the API, which serves every request and every socket.
+    db_pool_min: int = 5
+    db_pool_max: int = 20
+
     # Redis
     redis_url: str = "redis://localhost:6379"
 
