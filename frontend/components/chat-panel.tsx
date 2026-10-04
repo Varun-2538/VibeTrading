@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Send, Sparkles, X, Loader2, Check, XIcon, Bell, Eye, EyeOff, FlaskConical, MapPin } from "lucide-react"
 import { API_BASE, type Timeframe } from "@/lib/api"
+import { parseIndicatorRequest, sendIndicators, specLabel } from "@/lib/indicators"
 import { markKey, type ChatTurn, type FellowAnswer, type Mark, type PatternSettings, type Viewport } from "@/lib/marks"
 import {
   announceRulesChanged,
@@ -70,7 +71,7 @@ const HISTORY_CHARS = 300
 const SUGGESTIONS = [
   "Which patterns are forming?",
   "Any doji or hammer here?",
-  "Where is support?",
+  "Show EMA 9 and 21",
   "Is there a MACD cross?",
 ]
 
@@ -139,6 +140,32 @@ export default function ChatPanel({
     setMessages((prev) => [...prev, userMessage])
     const userInput = input
     setInput("")
+
+    // Indicators the message names go on the chart straight away - "show EMA 9 and
+    // 21", or "is there a MACD cross?", which is easier to judge with MACD drawn.
+    // A message that only asks to draw is answered here; anything else still goes
+    // to the assistant.
+    const drawing = parseIndicatorRequest(userInput)
+    if (drawing.specs.length > 0) {
+      sendIndicators(drawing.remove ? { remove: drawing.specs } : { add: drawing.specs })
+      if (drawing.drawOnly) {
+        const names = drawing.specs.map((s) => (s.kind !== "macd" && s.period === 0 ? `every ${s.kind.toUpperCase()}` : specLabel(s)))
+        const list = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0]
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: (Date.now() + 1).toString(),
+            role: "assistant",
+            content: drawing.remove
+              ? `Took ${list} off the chart.`
+              : `Drew ${list} on the chart. Averages ride on the price; RSI and MACD sit in panes under it. ` +
+                "Each has a chip with a cross in the Indicators bar above the chart, to take it off again.",
+          },
+        ])
+        return
+      }
+    }
+
     setIsLoading(true)
 
     try {

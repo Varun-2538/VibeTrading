@@ -19,7 +19,7 @@ import { ShieldCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import MarkOverlay from "@/components/mark-overlay"
 import PositionOverlay from "@/components/position-overlay"
-import { DEFAULT_INDICATORS, IndicatorSwitches, useIndicatorPanes } from "@/components/indicator-panes"
+import { IndicatorBar, useChartIndicators, useIndicatorPanes } from "@/components/indicator-panes"
 import type { OpenPosition } from "@/lib/positions"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger } from "@/components/ui/select"
 import type { Timeframe } from "@/lib/api"
@@ -83,7 +83,7 @@ export default function StockChart({
   const [loading, setLoading] = useState(true)
   const [last, setLast] = useState<number | null>(null)
   const [oracle, setOracle] = useState<{ price: number; ageHours: number } | null>(null)
-  const [indicators, setIndicators] = useState(DEFAULT_INDICATORS)
+  const [indicators, setIndicators] = useChartIndicators()
   const [candleVersion, setCandleVersion] = useState(0)
   const client = usePublicClient({ chainId: ROBINHOOD_CHAIN_ID })
   useIndicatorPanes(chartRef.current, candlesRef.current, candleVersion, indicators, true)
@@ -284,8 +284,6 @@ export default function StockChart({
           ))}
         </div>
 
-        <IndicatorSwitches value={indicators} onChange={setIndicators} />
-
         <Button size="sm" className="ml-auto h-8 gap-1.5 text-xs" onClick={() => openVault(stock.market)}>
           <ShieldCheck className="h-3.5 w-3.5" /> Trade {stock.symbol} in your vault
         </Button>
@@ -307,6 +305,9 @@ export default function StockChart({
 
       <div className="relative min-h-0 flex-1">
         <div ref={containerRef} className="absolute inset-0" />
+        <div className="pointer-events-none absolute left-2 right-16 top-2 z-20">
+          <IndicatorBar specs={indicators} onChange={setIndicators} />
+        </div>
         {/* The crypto chart's overlay, reused: it draws levels, bar markers such as
             sweeps, and pattern shapes, and both charts keep candle times in seconds. */}
         {marks.length > 0 && (
