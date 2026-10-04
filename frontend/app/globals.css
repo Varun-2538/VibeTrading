@@ -90,6 +90,34 @@
   --sidebar-ring: oklch(0.65 0.19 252);
 }
 
+/*
+ * The trading panel wears the brand. Scoped with :has() on the root rather
+ * than on the panel's own div, because every select, sheet and dialog the
+ * panel opens is portalled to <body> and would otherwise fall back to the
+ * neutral tokens above. Pages without .vt-panel are unaffected.
+ */
+:root:has(.vt-panel) {
+  --background: #0a1513;
+  --foreground: #d8e5e1;
+  --card: #111d1b;
+  --card-foreground: #d8e5e1;
+  --popover: #13211e;
+  --popover-foreground: #d8e5e1;
+  --primary: #7af0ce;
+  --primary-foreground: #002018;
+  --secondary: #1b2926;
+  --secondary-foreground: #d8e5e1;
+  --muted: #16231f;
+  --muted-foreground: #8ea39c;
+  --accent: #1f2f2b;
+  --accent-foreground: #e6f4ef;
+  --destructive: #ff7a59;
+  --destructive-foreground: #1a0600;
+  --border: rgba(122, 240, 206, 0.11);
+  --input: rgba(122, 240, 206, 0.16);
+  --ring: #7af0ce;
+}
+
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);

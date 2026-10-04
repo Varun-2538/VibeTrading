@@ -67,6 +67,7 @@ import ArmSheet from "@/components/arm-sheet"
 import { listBacktests, type BacktestRule, type BacktestSummary } from "@/lib/backtests"
 import { listPolicies } from "@/lib/execution"
 import { TRIGGERS, signalParams, triggerById, triggerName } from "@/lib/triggers"
+import { PANEL_NAV_EVENT, type PanelTarget } from "@/lib/panel"
 
 interface AnalysisPanelProps {
   symbol: string
@@ -191,6 +192,21 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
   useEffect(() => {
     void refreshBacktests()
   }, [refreshBacktests])
+
+  // The header's Rules / Backtest / Vault links. Before sign-in the gate is
+  // what is on screen, so a vault request waits rather than opening later.
+  useEffect(() => {
+    const onNav = (event: Event) => {
+      const target = (event as CustomEvent<PanelTarget>).detail
+      if (target === "vault") {
+        if (status === "ready") setVaultOpen(true)
+      } else {
+        setTab(target)
+      }
+    }
+    window.addEventListener(PANEL_NAV_EVENT, onNav)
+    return () => window.removeEventListener(PANEL_NAV_EVENT, onNav)
+  }, [status])
 
   const refreshTrading = useCallback(async () => {
     if (status !== "ready") return
@@ -406,7 +422,7 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
     return (
       <div className="flex h-full w-full flex-col bg-card">
         <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2 lg:px-4">
-          <h2 className="text-sm font-semibold text-foreground">Strategy</h2>
+          <h2 className="text-sm font-semibold text-foreground lg:text-lg lg:tracking-tight">Strategy</h2>
           <span className="font-mono text-[11px] text-muted-foreground">
             {symbol} · {timeframe}
           </span>
@@ -428,7 +444,7 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
       <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col gap-0">
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2 lg:px-4">
           <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold text-foreground">Strategy</h2>
+            <h2 className="text-sm font-semibold text-foreground lg:text-lg lg:tracking-tight">Strategy</h2>
             <span className="font-mono text-[11px] text-muted-foreground">
               {symbol} · {timeframe}
             </span>
@@ -873,9 +889,9 @@ export default function AnalysisPanel({ symbol, timeframe }: AnalysisPanelProps)
                       className={cn(
                         "h-3.5 w-3.5 shrink-0",
                         event.direction === "bullish"
-                          ? "text-emerald-500"
+                          ? "text-primary"
                           : event.direction === "bearish"
-                            ? "text-red-500"
+                            ? "text-destructive"
                             : "text-muted-foreground",
                       )}
                     />

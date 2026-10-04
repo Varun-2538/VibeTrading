@@ -280,11 +280,11 @@ export default function ChatPanel({
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-3 lg:px-4">
         <div className="flex min-w-0 items-center gap-2">
           <Sparkles className="h-4 w-4 shrink-0 text-primary" />
-          <h2 className="text-sm font-semibold text-foreground">AI Assistant</h2>
+          <h2 className="text-sm font-semibold text-foreground lg:text-lg lg:tracking-tight">AI Assistant</h2>
         </div>
         <div className="flex shrink-0 items-center gap-2 lg:gap-3">
           <div className="flex items-center gap-2">
-            <div className={`h-2 w-2 rounded-full ${isLoading ? "bg-yellow-500 animate-pulse" : "bg-green-500"}`} />
+            <div className={`h-2 w-2 rounded-full ${isLoading ? "bg-yellow-500 animate-pulse" : "bg-primary"}`} />
             <span className="text-xs text-muted-foreground">{isLoading ? "Thinking..." : "Online"}</span>
           </div>
           <Button onClick={onClose} size="icon" variant="ghost" className="h-9 w-9 lg:h-7 lg:w-7">
@@ -465,7 +465,7 @@ export default function ChatPanel({
                       <Button
                         size="sm"
                         onClick={() => handleAcceptLevels(message.id)}
-                        className="h-9 flex-1 bg-green-600 text-white hover:bg-green-700"
+                        className="h-9 flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
                       >
                         <Check className="h-4 w-4 mr-1" />
                         Mark on Chart
@@ -474,7 +474,7 @@ export default function ChatPanel({
                         size="sm"
                         variant="outline"
                         onClick={() => handleRejectLevels(message.id)}
-                        className="h-9 flex-1 border-red-500/50 text-red-500 hover:bg-red-500/10"
+                        className="h-9 flex-1 border-destructive/50 text-destructive hover:bg-destructive/10"
                       >
                         <XIcon className="h-4 w-4 mr-1" />
                         Dismiss
