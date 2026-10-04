@@ -218,6 +218,31 @@ def test_a_rule_that_failed_is_409_with_every_reason(monkeypatch):
     assert "cannot be armed" in detail["message"] and len(detail["reasons"]) >= 2
 
 
+def test_a_quality_failure_says_it_can_be_overruled(monkeypatch):
+    res = client(monkeypatch, jobs=Jobs(good=False)).post(f"/api/execution/rules/{RULE_ID}/arm", json=ARM)
+    assert res.status_code == 409 and res.json()["detail"]["overridable"] is True
+
+
+def test_the_owner_may_arm_against_the_gates_advice(monkeypatch):
+    policies = Policies()
+    res = client(monkeypatch, policies=policies, jobs=Jobs(good=False)).post(
+        f"/api/execution/rules/{RULE_ID}/arm", json={**ARM, "override": True}
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["armed"] is True
+    assert body["preflight"]["passed"] is False and body["preflight"]["overridden"] is True
+    assert len(body["preflight"]["reasons"]) >= 2
+
+
+def test_an_override_does_not_reach_a_report_about_something_else(monkeypatch):
+    res = client(monkeypatch).post(
+        f"/api/execution/rules/{RULE_ID}/arm",
+        json={**ARM, "override": True, "backtest_job_id": str(uuid.uuid4())},
+    )
+    assert res.status_code == 409 and res.json()["detail"]["overridable"] is False
+
+
 def test_preflight_reports_without_arming(monkeypatch):
     policies = Policies()
     res = client(monkeypatch, policies=policies).post(

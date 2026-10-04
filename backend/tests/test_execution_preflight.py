@@ -194,6 +194,22 @@ class TestCostHonesty:
         assert gate(realised_cost_r=0.06, positions_closed=25).passed
 
 
+class TestOverride:
+    def test_a_quality_failure_is_advice_the_owner_may_overrule(self):
+        result = gate(job(unseen={"expectancy_r": -0.2}, study={"flags": ["no_edge_detected"]}))
+        assert not result.passed and result.overridable
+        assert result.as_dict()["overridable"] is True
+
+    def test_an_identity_failure_cannot_be_overruled(self):
+        """A report about another rule says nothing about this one, whatever the owner wants."""
+        result = gate(job(rule_id="33333333-3333-3333-3333-333333333333", unseen={"expectancy_r": -0.2}))
+        assert not result.passed and not result.overridable
+        assert not gate(job(meta={"sides": "both"})).overridable
+
+    def test_a_pass_has_nothing_to_overrule(self):
+        assert not gate().overridable
+
+
 def test_every_failure_is_reported_not_just_the_first():
     """
     An owner fixing one at a time learns nothing about the rest, and this is the
