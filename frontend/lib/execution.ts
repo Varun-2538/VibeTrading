@@ -43,6 +43,8 @@ export interface ExecutionChain {
   factory: string | null
   /** Market name to the token a position is held in. */
   markets: Record<string, string>
+  /** Markets whose feed follows US market hours: vaultable, not yet armable. */
+  stock_markets?: string[]
   explorer: string
 }
 

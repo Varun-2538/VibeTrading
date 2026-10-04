@@ -160,7 +160,9 @@ def test_the_account_publishes_where_vaults_can_live(monkeypatch):
     assert chains["robinhood"]["chain_id"] == 4663
     assert chains["robinhood"]["stable_symbol"] == "USDG"
     assert chains["robinhood"]["factory"] == "0x" + "b" * 40
-    assert set(chains["robinhood"]["markets"]) == {"WETH/USDG"}
+    assert {"WETH/USDG", "NVDA/USDG", "TSLA/USDG"} <= set(chains["robinhood"]["markets"])
+    assert "NVDA/USDG" in chains["robinhood"]["stock_markets"]
+    assert chains["arbitrum"]["stock_markets"] == []
     assert chains["arbitrum"]["factory"] is None
     assert set(chains["arbitrum"]["markets"]) == {"WETH/USDC", "WBTC/USDC"}
 

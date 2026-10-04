@@ -369,7 +369,7 @@ export default function VaultSheet({
           <section className="space-y-2">
             <span className="text-[11px] text-muted-foreground">Market</span>
             <div className="grid grid-cols-3 gap-1.5">
-              {VAULT_MARKETS.map((m) => (
+              {VAULT_MARKETS.filter((m) => !m.stock).map((m) => (
                 <Button
                   key={m.market}
                   size="sm"
@@ -382,6 +382,30 @@ export default function VaultSheet({
                 </Button>
               ))}
             </div>
+            <span className="block pt-1 text-[11px] text-muted-foreground">Stocks · Robinhood Chain, in USDG</span>
+            <div className="grid grid-cols-5 gap-1.5">
+              {VAULT_MARKETS.filter((m) => m.stock).map((m) => (
+                <Button
+                  key={m.market}
+                  size="sm"
+                  variant={market === m.market ? "default" : "outline"}
+                  className="h-7 text-xs"
+                  onClick={() => setMarket(m.market)}
+                >
+                  {m.label}
+                </Button>
+              ))}
+            </div>
+            {chosen.stock && (
+              <p className="rounded border border-border bg-secondary/40 p-2 text-[10px] leading-relaxed text-muted-foreground">
+                {chosen.label} is a Robinhood Stock Token. Its pool trades around the clock, but its Chainlink
+                price follows the US market and is silent from Friday&apos;s close to Sunday night. Over a
+                weekend the vault prices every swap against the last market price: a move larger than your
+                slippage makes a swap refuse rather than fill badly, and a stop cannot fire until the market
+                reopens. Stock rules cannot be armed yet - signals are read from exchange candles, and no
+                exchange we read lists stocks - so a stock vault is traded by hand for now.
+              </p>
+            )}
             <p className="text-[10px] leading-relaxed text-muted-foreground">
               {chosen.chainName}, held in {chosen.stable}
               {chosen.chainKey === "robinhood" ? ", the Paxos dollar native to Robinhood Chain" : ""}. Your

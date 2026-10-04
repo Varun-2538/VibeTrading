@@ -126,5 +126,6 @@ VAULT_ERRORS = _error_selectors(
         "Slippage",
         "Reentrancy",
         "TransferFailed",
+        "BadOracleAge",
     )
 )

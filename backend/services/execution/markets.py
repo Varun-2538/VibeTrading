@@ -28,6 +28,10 @@ class ChainInfo:
     eth_usd_feed: str  # Chainlink ETH/USD on this chain, used only to price gas
     markets: Dict[str, str] = field(default_factory=dict)  # market name -> asset address
     explorer: str = ""
+    # Markets whose feed follows US market hours. Their vaults accept a weekend-old
+    # price; and no rule can trade them yet, because signals come from Binance
+    # candles and Binance lists no stocks.
+    stock_markets: Tuple[str, ...] = ()
 
 
 ARBITRUM = ChainInfo(
@@ -55,8 +59,14 @@ ROBINHOOD = ChainInfo(
     eth_usd_feed="0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9",
     markets={
         "WETH/USDG": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+        "NVDA/USDG": "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC",
+        "QQQ/USDG": "0xD5f3879160bc7c32ebb4dC785F8a4F505888de68",
+        "TSLA/USDG": "0x322F0929c4625eD5bAd873c95208D54E1c003b2d",
+        "SPY/USDG": "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C",
+        "AAPL/USDG": "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",
     },
     explorer="https://robinhoodchain.blockscout.com",
+    stock_markets=("NVDA/USDG", "QQQ/USDG", "TSLA/USDG", "SPY/USDG", "AAPL/USDG"),
 )
 
 CHAINS: Tuple[ChainInfo, ...] = (ARBITRUM, ROBINHOOD)

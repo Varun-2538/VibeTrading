@@ -78,6 +78,13 @@ class TestTheActionSchema:
         action = DexTradeActionConfig(market="WETH/USDG", venue="uniswap_v3_robinhood", exit=EXIT)
         assert action.venue == "uniswap_v3_robinhood"
 
+    def test_a_stock_market_cannot_be_armed_until_there_is_a_signal_for_it(self):
+        # The vault can hold NVDA; a rule cannot trade it, because no candle source
+        # the rules read has ever seen a stock.
+        with pytest.raises(ValidationError):
+            DexTradeActionConfig(market="NVDA/USDG", exit=EXIT)
+        assert not trades_symbol("NVDA/USDG", "BTCUSDT")
+
     def test_a_market_on_no_chain_is_a_422(self):
         with pytest.raises(ValidationError):
             DexTradeActionConfig(market="WBTC/USDG", exit=EXIT)
