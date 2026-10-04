@@ -16,15 +16,19 @@ from typing import Annotated, Literal, Optional, Union
 from pydantic import BaseModel, Field, model_validator
 
 from models.backtest_schemas import ExitPlan
+from services.execution.markets import BY_MARKET
 from services.trade_plan import PARITY_VERSION
 
-# Venues an action may name. One for now; the string is here so a policy row
-# records which venue it was armed for and a later one cannot be read as this one.
-VENUES = ("uniswap_v3_arbitrum",)
+# Venues an action may name, one per chain. The string is stored on the policy row
+# so a rule records which chain it was armed for and a later one cannot be read as it.
+Venue = Literal["uniswap_v3_arbitrum", "uniswap_v3_robinhood"]
+VENUES = ("uniswap_v3_arbitrum", "uniswap_v3_robinhood")
 
 # Markets, as the vault understands them: the asset a position is held in, against
-# the stablecoin it returns to.
-MARKETS = ("WETH/USDC", "WBTC/USDC")
+# the stablecoin it returns to. The quote token names the chain - USDC is Arbitrum
+# One's, USDG is Robinhood Chain's - so no market is on two chains.
+Market = Literal["WETH/USDC", "WBTC/USDC", "WETH/USDG"]
+MARKETS = ("WETH/USDC", "WBTC/USDC", "WETH/USDG")
 
 # The longest a live position may stay open, whatever max_bars says. ExitPlan
 # allows max_bars up to 500, which on a daily chart is sixteen months - fine as a
@@ -49,8 +53,9 @@ class DexTradeActionConfig(BaseModel):
     """
 
     kind: Literal["dex_trade"] = "dex_trade"
-    venue: Literal["uniswap_v3_arbitrum"] = "uniswap_v3_arbitrum"
-    market: Literal["WETH/USDC", "WBTC/USDC"]
+    # Optional because the market already decides it; when sent, it must agree.
+    venue: Optional[Venue] = None
+    market: Market
 
     # Verbatim, so live and the report cannot mean different things by a stop.
     exit: ExitPlan
@@ -85,6 +90,19 @@ class DexTradeActionConfig(BaseModel):
                 "A live trade needs a way out: set a target, or bring max_bars "
                 "under 200 so the time exit is a real bound"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _venue_follows_market(self) -> "DexTradeActionConfig":
+        """
+        The market decides the chain. A venue that disagrees is a 422, not a
+        tiebreak: either reading would arm a rule on a chain the owner did not pick.
+        """
+        venue = BY_MARKET[self.market].venue
+        if self.venue is None:
+            self.venue = venue
+        elif self.venue != venue:
+            raise ValueError(f"{self.market} trades on {venue}, not {self.venue}")
         return self
 
 

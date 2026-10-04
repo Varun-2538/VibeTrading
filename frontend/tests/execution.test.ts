@@ -5,6 +5,8 @@ import {
   fmtUsd,
   healthTrouble,
   marketForSymbol,
+  marketsForSymbol,
+  MARKET_CHAIN,
   MARKETS,
   refusalLines,
   type ExecutionAccount,
@@ -16,6 +18,7 @@ function account(over: Partial<ExecutionAccount> = {}): ExecutionAccount {
     owner_key: "0xabc", configured: true, mode: "off", kill_switch: false, equity_usd: 0,
     max_notional_usd: 100, max_concurrent_positions: 1, max_trades_per_day: 5,
     daily_loss_limit_usd: 25, halted_reason: null, execution_enabled: false, parity_version: 1,
+    operator_address: null,
     ...over,
   }
 }
@@ -105,15 +108,22 @@ describe("formatting", () => {
 })
 
 describe("markets", () => {
-  it("mirrors the two the factory deploys vaults for", () => {
-    expect(MARKETS).toEqual(["WETH/USDC", "WBTC/USDC"])
+  it("mirrors the three the factories deploy vaults for", () => {
+    expect(MARKETS).toEqual(["WETH/USDC", "WBTC/USDC", "WETH/USDG"])
+  })
+
+  it("names each market's chain by its dollar", () => {
+    expect(MARKET_CHAIN["WETH/USDG"].key).toBe("robinhood")
+    expect(MARKET_CHAIN["WETH/USDC"].key).toBe("arbitrum")
+    expect(MARKET_CHAIN["WBTC/USDC"].key).toBe("arbitrum")
   })
 })
 
 describe("which rules can trade at all", () => {
-  it("maps a symbol to the market a vault exists for", () => {
-    expect(marketForSymbol("ETHUSDT")).toBe("WETH/USDC")
-    expect(marketForSymbol("BTCUSDT")).toBe("WBTC/USDC")
+  it("maps a symbol to every market a vault exists for, Robinhood Chain first", () => {
+    expect(marketsForSymbol("ETHUSDT")).toEqual(["WETH/USDG", "WETH/USDC"])
+    expect(marketForSymbol("ETHUSDT")).toBe("WETH/USDG")
+    expect(marketsForSymbol("BTCUSDT")).toEqual(["WBTC/USDC"])
     expect(marketForSymbol("btcusdt")).toBe("WBTC/USDC")
   })
 
@@ -123,6 +133,7 @@ describe("which rules can trade at all", () => {
     // never be armed to trade - and the panel has to say that rather than fail later.
     for (const symbol of ["SOLUSDT", "XRPUSDT", "ADAUSDT", "DOGEUSDT", "DOTUSDT", "AVAXUSDT", "BNBUSDT"]) {
       expect(marketForSymbol(symbol)).toBeNull()
+      expect(marketsForSymbol(symbol)).toEqual([])
     }
     expect(marketForSymbol("")).toBeNull()
   })

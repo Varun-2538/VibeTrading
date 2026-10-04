@@ -63,6 +63,14 @@ services:
       # every session, which is the intended way to force everyone to sign in again.
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       BACKEND_PORT: 8000
+      # Execution's public configuration. None of these is a secret: the operator
+      # address is published to every vault owner, and the factories are on chain.
+      # Empty is a normal state - live mode refuses a chain with no factory.
+      EXECUTOR_ADDRESS: ${EXECUTOR_ADDRESS:-}
+      ARBITRUM_RPC_URL: ${ARBITRUM_RPC_URL:-https://arb1.arbitrum.io/rpc}
+      ARBITRUM_VAULT_FACTORY_ADDRESS: ${ARBITRUM_VAULT_FACTORY_ADDRESS:-}
+      ROBINHOOD_RPC_URL: ${ROBINHOOD_RPC_URL:-https://rpc.mainnet.chain.robinhood.com}
+      ROBINHOOD_VAULT_FACTORY_ADDRESS: ${ROBINHOOD_VAULT_FACTORY_ADDRESS:-}
     depends_on:
       timescaledb:
         condition: service_healthy
@@ -123,6 +131,9 @@ services:
       # flipped live; this one survives a database outage and needs a restart.
       EXECUTION_ENABLED: ${EXECUTION_ENABLED:-false}
       EXECUTOR_ID: ${EXECUTOR_ID:-executor-1}
+      # The signing key, and only here: the API, the worker and the backtester never
+      # see it. Empty means the executor idles in shadow, which is a normal state.
+      EXECUTOR_PRIVATE_KEY: ${EXECUTOR_PRIVATE_KEY:-}
       DB_POOL_MIN: 1
       DB_POOL_MAX: 4
     cpu_shares: 1024

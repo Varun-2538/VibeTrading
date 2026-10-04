@@ -148,6 +148,25 @@ def test_an_unconfigured_account_reads_as_off_with_the_starting_caps(monkeypatch
     assert body["parity_version"] == PARITY_VERSION
 
 
+def test_the_account_publishes_where_vaults_can_live(monkeypatch):
+    """
+    The factory a browser deploys through has to be the one the executor reads, so
+    it is published here. A chain without one is listed as null, not hidden.
+    """
+    monkeypatch.setattr(ec.settings, "arbitrum_vault_factory_address", "")
+    monkeypatch.setattr(ec.settings, "robinhood_vault_factory_address", "0x" + "b" * 40)
+    chains = {c["key"]: c for c in client(monkeypatch).get("/api/execution/account").json()["chains"]}
+
+    assert chains["robinhood"]["chain_id"] == 4663
+    assert chains["robinhood"]["stable_symbol"] == "USDG"
+    assert chains["robinhood"]["factory"] == "0x" + "b" * 40
+    assert {"WETH/USDG", "NVDA/USDG", "TSLA/USDG"} <= set(chains["robinhood"]["markets"])
+    assert "NVDA/USDG" in chains["robinhood"]["stock_markets"]
+    assert chains["arbitrum"]["stock_markets"] == []
+    assert chains["arbitrum"]["factory"] is None
+    assert set(chains["arbitrum"]["markets"]) == {"WETH/USDC", "WBTC/USDC"}
+
+
 def test_saving_rails_stores_every_cap(monkeypatch):
     accounts = Accounts()
     res = client(monkeypatch, accounts=accounts).put(
